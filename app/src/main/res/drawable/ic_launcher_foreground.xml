@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Faceted gem: six triangles around the centre, lit from the top-left -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.85" android:pathData="M54,54 L54,30 L75,42 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.60" android:pathData="M54,54 L75,42 L75,66 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.38" android:pathData="M54,54 L75,66 L54,78 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.50" android:pathData="M54,54 L54,78 L33,66 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.72" android:pathData="M54,54 L33,66 L33,42 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="1.00" android:pathData="M54,54 L33,42 L54,30 Z" />
+</vector>

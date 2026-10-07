@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+/* ---- design tokens: tweak these and re-run render.sh ---- */
+:root{
+  --bg:#13111a; --surface:#1d1a28; --surface2:#262236; --outline:#37314d;
+  --primary:#8b6cff; --on-primary:#17102e; --text:#ece9f6; --muted:#9a94b3;
+  --task:#6ee7b7; --link:#7cc4ff; --radius:20px;
+}
+*{box-sizing:border-box;margin:0}
+body{width:1000px;height:980px;background:#0b0a10;font-family:"Segoe UI",Roboto,sans-serif;color:var(--text);
+  display:flex;gap:50px;justify-content:center;align-items:center}
+.phone{width:390px;height:844px;background:var(--bg);border-radius:44px;border:2px solid #2a2640;
+  padding:22px 20px 0;position:relative;overflow:hidden}
+.status{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:26px}
+.label{position:absolute;top:-0px}
+h1{font-size:34px;font-weight:700;letter-spacing:-.5px}
+.sub{color:var(--muted);font-size:14px;margin:4px 0 22px}
+.seg{display:flex;background:var(--surface);border-radius:999px;padding:4px;margin-bottom:20px}
+.seg div{flex:1;text-align:center;padding:11px 0;border-radius:999px;font-weight:600;font-size:14px;color:var(--muted)}
+.seg .on{background:var(--primary);color:var(--on-primary)}
+.field{background:var(--surface);border:1.5px solid var(--primary);border-radius:var(--radius);padding:14px 16px;min-height:120px}
+.field small{color:var(--primary);font-size:12px;font-weight:600}
+.field p{margin-top:6px;font-size:18px;line-height:1.35}
+.field p.ph{color:var(--muted)}
+.cursor{display:inline-block;width:2px;height:20px;background:var(--primary);vertical-align:middle;margin-left:1px}
+.chips{display:flex;gap:8px;margin:14px 0 18px}
+.chip{padding:9px 16px;border-radius:12px;border:1.5px solid var(--outline);font-size:14px;color:var(--text)}
+.chip.on{background:var(--surface2);border-color:var(--primary);color:var(--primary);font-weight:600}
+.btn{background:var(--primary);color:var(--on-primary);text-align:center;border-radius:999px;padding:16px;font-weight:700;font-size:16px}
+.btn.dis{opacity:.4}
+h2{font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:26px 0 10px}
+.item{display:flex;gap:12px;align-items:center;background:var(--surface);border-radius:16px;padding:13px 14px;margin-bottom:8px;font-size:15px}
+.dot{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:16px;flex:none}
+.item small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.dot.t{background:#16352c}.dot.l{background:#142c40}
+.vault{position:absolute;bottom:26px;left:20px;right:20px;display:flex;justify-content:space-between;align-items:center;
+  font-size:12px;color:var(--muted);border-top:1px solid var(--outline);padding-top:14px}
+.vault b{color:var(--primary);font-weight:600}
+.snack{position:absolute;bottom:80px;left:20px;right:20px;background:#e8e3fa;color:#1b1630;border-radius:14px;padding:14px 16px;font-size:14px}
+.head{display:flex;align-items:center;gap:14px}.logo{width:44px;height:44px;border-radius:13px;overflow:hidden}
+</style></head><body>
+
+<!-- Screen 1: Task -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <div class="head"><div class="logo"><svg viewBox="0 0 108 108" width="100%" height="100%"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A58BFF"/><stop offset="1" stop-color="#5B3FD6"/></linearGradient></defs><rect width="108" height="108" fill="url(#g)"/><path fill="#fff" fill-opacity=".85" d="M54,54 L54,30 L75,42Z"/><path fill="#fff" fill-opacity=".6" d="M54,54 L75,42 L75,66Z"/><path fill="#fff" fill-opacity=".38" d="M54,54 L75,66 L54,78Z"/><path fill="#fff" fill-opacity=".5" d="M54,54 L54,78 L33,66Z"/><path fill="#fff" fill-opacity=".72" d="M54,54 L33,66 L33,42Z"/><path fill="#fff" d="M54,54 L33,42 L54,30Z"/></svg></div><h1>Capture</h1></div>
+  <div class="sub">Straight into your vault</div>
+  <div class="seg"><div class="on">Task</div><div>Read later</div></div>
+  <div class="field"><small>What needs doing?</small><p>Order replacement SD cards<span class="cursor"></span></p></div>
+  <div class="chips"><div class="chip">Today</div><div class="chip on">Tomorrow</div><div class="chip">Pick date</div></div>
+  <div class="btn">Add task</div>
+  <h2>Just added</h2>
+  <div class="item"><div class="dot t">✓</div><div>Sort shelves in garage<small>Task · due 20 Oct</small></div></div>
+  <div class="item"><div class="dot t">✓</div><div>Clean car<small>Task · due today</small></div></div>
+  <div class="vault"><span>Vault: <b>Vaultymcvaultface</b></span><b>Change</b></div>
+</div>
+
+<!-- Screen 2: Read later -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <div class="head"><div class="logo"><svg viewBox="0 0 108 108" width="100%" height="100%"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A58BFF"/><stop offset="1" stop-color="#5B3FD6"/></linearGradient></defs><rect width="108" height="108" fill="url(#g)"/><path fill="#fff" fill-opacity=".85" d="M54,54 L54,30 L75,42Z"/><path fill="#fff" fill-opacity=".6" d="M54,54 L75,42 L75,66Z"/><path fill="#fff" fill-opacity=".38" d="M54,54 L75,66 L54,78Z"/><path fill="#fff" fill-opacity=".5" d="M54,54 L54,78 L33,66Z"/><path fill="#fff" fill-opacity=".72" d="M54,54 L33,66 L33,42Z"/><path fill="#fff" d="M54,54 L33,42 L54,30Z"/></svg></div><h1>Capture</h1></div>
+  <div class="sub">Straight into your vault</div>
+  <div class="seg"><div>Task</div><div class="on">Read later</div></div>
+  <div class="field" style="min-height:76px"><small>Paste a link</small><p style="font-size:16px;word-break:break-all">https://blog.example.com/homelab-vlans</p></div>
+  <div style="height:18px"></div>
+  <div class="btn">Save link</div>
+  <h2>Just added</h2>
+  <div class="item"><div class="dot l">🔗</div><div>youtube.com/watch?v=dQw4…<small>Read later</small></div></div>
+  <div class="item"><div class="dot t">✓</div><div>Order replacement SD cards<small>Task · due tomorrow</small></div></div>
+  <div class="snack">Saved to Read It Later</div>
+  <div class="vault"><span>Vault: <b>Vaultymcvaultface</b></span><b>Change</b></div>
+</div>
+</body></html>
