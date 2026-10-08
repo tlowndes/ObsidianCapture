@@ -121,13 +121,10 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
         save(file, lines)
     }
 
-    /** One note per link in the Read It Later inbox, same shape the read-it-later plugin produces. */
-    fun addLink(url: String, title: String?) {
-        val inbox = dir("$INBOX/$RIL_DIR")
-        val stamp = SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
-        val file = inbox.createFile("text/markdown", "Article $stamp") ?: error("Cannot create link note")
-        val label = title?.takeIf { it.isNotBlank() && it != url } ?: url
-        write(file, "[[ReadItLater]] [[Article]]\n\n[$label]($url)\n")
+    /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
+    fun addNote(name: String, content: String) {
+        val file = dir("$INBOX/$RIL_DIR").createFile("text/markdown", name) ?: error("Cannot create note")
+        write(file, content)
     }
 
     companion object {

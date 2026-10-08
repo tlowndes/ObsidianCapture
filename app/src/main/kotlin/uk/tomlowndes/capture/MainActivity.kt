@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -109,20 +110,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Share-sheet entry: save the link immediately and close, no UI. */
+    /** Share-sheet entry: fetch the page, save it to Read It Later, then close. Shows a brief "Saving" screen. */
     private fun handleShare(i: Intent) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
+        setContent {
+            CaptureTheme {
+                Box(Modifier.fillMaxSize().background(Bg), contentAlignment = Alignment.Center) {
+                    Text("Saving to Read It Later…", color = Muted, fontSize = 16.sp)
+                }
+            }
+        }
         val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
         val url = Regex("https?://\\S+").find(text)?.value ?: text
         val title = i.getStringExtra(Intent.EXTRA_SUBJECT) ?: text.replace(url, "").trim().ifBlank { null }
         val vault = prefs.getString("vault", null)?.let(Uri::parse)
-        val msg = when {
-            vault == null -> "Open Vault Capture once and pick your vault first"
-            url.isBlank() -> "Nothing to save"
-            else -> runCatching { VaultWriter(this, vault).addLink(url, title) }
-                .fold({ "Saved to Read It Later" }, { "Failed: ${it.message}" })
+        lifecycleScope.launch {
+            val msg = when {
+                vault == null -> "Open Vault Capture once and pick your vault first"
+                url.isBlank() -> "Nothing to save"
+                else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
+                    .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
+                        { "Failed: ${it.message}" })
+            }
+            Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
+            finish()
         }
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-        finish()
     }
 }
 
@@ -302,19 +317,22 @@ fun CaptureScreen(vault: Uri?, onVaultPicked: (Uri) -> Unit) {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val w = VaultWriter(ctx, uri)
                     if (wasLink) {
                         val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value
                         else "https://$value"
-                        w.addLink(url, null)
-                    } else w.addTask(value, wasDue?.toString())
+                        ReadLater.save(ctx, uri, url, null)
+                    } else { VaultWriter(ctx, uri).addTask(value, wasDue?.toString()); true }
                 }
             }
             busy = false
-            result.onSuccess {
-                if (wasLink) history.add(0, Entry(true, value, "Read later")) else reload()
+            result.onSuccess { fullPage ->
+                if (wasLink) history.add(0, Entry(true, value, if (fullPage) "Read later · full page" else "Read later · link only"))
+                else reload()
                 text = ""; due = null
-                snack.showSnackbar(if (wasLink) "Saved to Read It Later" else "Task added")
+                snack.showSnackbar(
+                    if (!wasLink) "Task added"
+                    else if (fullPage) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)"
+                )
             }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
     }
