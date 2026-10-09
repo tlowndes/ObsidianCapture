@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css">
+<style>
+body{width:1380px;height:930px}
+.thumb{width:58px;height:58px;border-radius:12px;flex:none}
+.g1{background:linear-gradient(135deg,#5b3fd6,#2b1d6b)}
+.g2{background:linear-gradient(135deg,#1f7a6a,#0f3a38)}
+.g3{background:linear-gradient(135deg,#8a5a2b,#3b2410)}
+.icard{display:flex;gap:12px;background:var(--surface);border-radius:18px;padding:12px;margin-bottom:10px}
+.icard h3{font-size:15.5px;font-weight:700;margin-bottom:3px}
+.icard p{font-size:12.5px;color:var(--muted);line-height:1.35}
+.meta{display:flex;gap:8px;margin-top:6px;font-size:11px;color:var(--muted)}
+.fab{position:absolute;right:20px;bottom:92px;background:var(--primary);color:var(--on-primary);font-weight:700;border-radius:18px;padding:14px 20px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.search{background:var(--surface);border-radius:999px;padding:11px 16px;color:var(--muted);font-size:14px;margin-bottom:14px}
+.ent{border-left:2px solid var(--outline);margin-left:6px;padding:0 0 14px 16px;position:relative}
+.ent::before{content:"";position:absolute;left:-6px;top:3px;width:10px;height:10px;border-radius:50%;background:var(--primary)}
+.ent .d{font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between}
+.ent .d span:last-child{color:var(--primary)}
+.ent p{font-size:14px;line-height:1.4}
+.imgs{display:flex;gap:8px;margin-top:8px}
+.imgs div{width:110px;height:78px;border-radius:12px}
+.comp{position:absolute;left:0;right:0;bottom:0;background:#191623;border-top:1px solid var(--outline);padding:10px 16px 22px}
+.comp .in{background:var(--surface);border-radius:18px;padding:11px 14px;font-size:14px;color:var(--muted);margin-bottom:10px}
+.ibtn{width:42px;height:42px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;font-size:18px}
+.back{font-size:22px;color:var(--text)}
+.setrow{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid var(--outline);font-size:14.5px}
+.setrow small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.time{background:var(--surface2);border-radius:10px;padding:6px 12px;font-weight:700;font-size:14px}
+.notif{background:#2a2540;border-radius:20px;padding:12px 14px;margin-bottom:14px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.notif .h{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.notif .ic{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#a58bff,#5b3fd6)}
+.notif b{display:block;font-size:14px;margin-bottom:2px}
+.notif span{font-size:13px;color:#cfc9e6}
+.act{display:flex;gap:18px;margin-top:9px;font-size:12.5px;font-weight:700;color:var(--primary)}
+</style></head><body>
+
+<!-- 4. IDEAS LIST -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <h1>Ideas</h1>
+  <div class="sub">03 - Projects · 6 ideas</div>
+  <div class="search">🔍  Search ideas</div>
+
+  <div class="icard"><div class="thumb g1"></div><div><h3>Garage workshop layout</h3><p>Pegboard wall, fold-down bench, and a dust extractor by the door…</p><div class="meta"><span>7 entries</span><span>·</span><span>🖼 4</span><span>·</span><span>Today</span></div></div></div>
+  <div class="icard"><div class="thumb g2"></div><div><h3>Home Assistant dashboard</h3><p>Wall tablet in the hall showing heating, doors and bin days.</p><div class="meta"><span>3 entries</span><span>·</span><span>🖼 1</span><span>·</span><span>Tue</span></div></div></div>
+  <div class="icard"><div class="thumb g3"></div><div><h3>Camping box v2</h3><p>Stackable crates, one per meal. Label colours per trip type.</p><div class="meta"><span>5 entries</span><span>·</span><span>🖼 2</span><span>·</span><span>3 Oct</span></div></div></div>
+  <div class="icard"><div class="thumb g1"></div><div><h3>Blog: wardriving setup</h3><p>Outline of parts list, antenna test results, route maps.</p><div class="meta"><span>2 entries</span><span>·</span><span>28 Sep</span></div></div></div>
+
+  <div class="fab">＋ New idea</div>
+  <div class="nav"><div><i>＋</i>Capture</div><div><i>✓</i>Tasks</div><div><i>☀</i>Log</div><div class="on"><i>💡</i>Ideas</div></div>
+</div>
+
+<!-- 5. IDEA DETAIL -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <div class="row between" style="margin-bottom:10px"><span class="back">←</span><span class="tag grn">idea</span><span style="color:var(--muted);font-size:20px">⋮</span></div>
+  <h1 style="font-size:24px">Garage workshop layout</h1>
+  <div class="sub">03 - Projects / Garage workshop layout</div>
+
+  <div class="sec-h" style="margin-top:4px">Summary <span style="float:right;color:var(--primary);text-transform:none;letter-spacing:0">✎ Edit</span></div>
+  <div class="card" style="font-size:13.5px;line-height:1.4;margin-bottom:6px">Make the garage a proper workshop: one wall of pegboard, a fold-down bench and dust extraction.</div>
+
+  <div class="sec-h">Log</div>
+  <div class="ent"><div class="d"><span>Today · 14:32</span><span>✎</span></div><p>Measured the back wall: 3.4 m clear. Bench could be 2.4 m long and still leave the door swing.</p>
+    <div class="imgs"><div class="g1"></div><div class="g2"></div></div></div>
+  <div class="ent"><div class="d"><span>Tue 7 Oct · 19:05</span><span>✎</span></div><p>Pegboard from the old shop is the right height. Need 6 more hooks and a shadow-board outline.</p></div>
+  <div class="ent" style="padding-bottom:0"><div class="d"><span>Sat 4 Oct · 11:20</span><span>✎</span></div><p>First sketch of the bench position.</p><div class="imgs"><div class="g3"></div></div></div>
+
+  <div class="comp">
+    <div class="in">Add more to this idea…</div>
+    <div class="row between"><div class="row gap8"><div class="ibtn">📷</div><div class="ibtn">🖼</div></div><div class="btn" style="padding:11px 34px;font-size:14px">Add to log</div></div>
+  </div>
+</div>
+
+<!-- 6. SETTINGS + REMINDER -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <div class="notif"><div class="h"><div class="ic"></div>Vault Capture · now</div><b>☀ Morning log</b><span>What’s your first step, and your top 3?</span><div class="act"><span>Open log</span><span>Snooze</span></div></div>
+
+  <h1 style="font-size:26px;margin-bottom:6px">Settings</h1>
+
+  <div class="sec-h">Reminders</div>
+  <div class="setrow"><div>Morning log<small>Skipped if already filled in</small></div><div class="row gap12"><div class="time">08:00</div><div class="tog on"></div></div></div>
+  <div class="setrow"><div>Evening log<small>Skipped if already filled in</small></div><div class="row gap12"><div class="time">21:00</div><div class="tog on"></div></div></div>
+
+  <div class="sec-h">Tasks</div>
+  <div class="setrow"><div>Recurring tasks<small>Ticking one creates the next occurrence</small></div><div class="tog on"></div></div>
+
+  <div class="sec-h">Vault locations</div>
+  <div class="setrow"><div>Vault<small>Vaultymcvaultface_sync</small></div><span style="color:var(--primary);font-weight:600">Change</span></div>
+  <div class="setrow"><div>Ideas folder<small>03 - Projects</small></div><span style="color:var(--muted)">›</span></div>
+  <div class="setrow"><div>Images<small>99 - Meta/Assets</small></div><span style="color:var(--muted)">›</span></div>
+  <div class="setrow"><div>Daily notes<small>04 - Journal/01 Daily/YYYY/MM</small></div><span style="color:var(--muted)">›</span></div>
+
+  <div class="nav"><div><i>＋</i>Capture</div><div><i>✓</i>Tasks</div><div><i>☀</i>Log</div><div><i>💡</i>Ideas</div></div>
+</div>
+</body></html>

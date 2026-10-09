@@ -1,0 +1,115 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css">
+<style>
+body{width:1380px;height:930px}
+.grp{display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px;font-size:12px;letter-spacing:1.2px;font-weight:700;text-transform:uppercase;color:var(--muted)}
+.grp.red{color:var(--warn)}
+.t{display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:16px;padding:9px 8px 9px 13px;margin-bottom:7px}
+.t .o{width:24px;height:24px;border-radius:50%;border:2px solid var(--primary);flex:none}
+.t .x{flex:1;font-size:14.5px;line-height:1.25}
+.t small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.due{font-size:11.5px;font-weight:700;border-radius:10px;padding:5px 9px;background:var(--surface2);color:var(--text);flex:none}
+.due.red{background:#3a1d22;color:var(--warn)}
+.dim{position:absolute;inset:0;background:rgba(5,4,10,.62)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#1b1827;border-radius:28px 28px 0 0;padding:14px 20px 26px;border-top:1px solid var(--outline)}
+.grab{width:40px;height:4px;border-radius:9px;background:var(--outline);margin:0 auto 14px}
+.fchips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.cbx{width:22px;height:22px;border-radius:7px;border:2px solid var(--primary);flex:none}
+.cbx.done{background:var(--primary);position:relative}
+.custom{font-size:10px;font-weight:700;background:#2a2250;color:var(--primary);border-radius:7px;padding:2px 7px;margin-left:8px}
+</style></head><body>
+
+<!-- 1. TASKS BY DUE DATE -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <div class="row between"><h1>Tasks</h1><div class="chip on">By due date ▾</div></div>
+  <div class="sub">Quick Task note · 11 open</div>
+
+  <div class="grp red"><span>Overdue</span><span class="tag red">1</span></div>
+  <div class="t"><div class="o"></div><div class="x">Hoover upstairs</div><div class="due red">Tue 7 Oct</div></div>
+
+  <div class="grp"><span>Today · Thu 9 Oct</span><span class="tag pur">3</span></div>
+  <div class="t"><div class="o"></div><div class="x">Update C5 and memory card</div><div class="due">Today</div></div>
+  <div class="t"><div class="o"></div><div class="x">Clean car, take out items not required</div><div class="due">Today</div></div>
+  <div class="t"><div class="o"></div><div class="x">Water plants<small>🔁 every week</small></div><div class="due">Today</div></div>
+
+  <div class="grp"><span>Tomorrow</span><span class="tag pur">1</span></div>
+  <div class="t"><div class="o"></div><div class="x">Order replacement SD cards</div><div class="due">Fri 10 Oct</div></div>
+
+  <div class="grp"><span>This week</span><span class="tag pur">2</span></div>
+  <div class="t"><div class="o"></div><div class="x">Sort room out</div><div class="due">Sat 11 Oct</div></div>
+  <div class="t"><div class="o"></div><div class="x">Add dual boot for main pc</div><div class="due">Sat 11 Oct</div></div>
+
+  <div class="grp"><span>Later</span><span class="tag pur">2</span></div>
+  <div class="t"><div class="o"></div><div class="x">Sort edc bag for car</div><div class="due">12 Oct</div></div>
+
+  <div class="snack"><span>Done · next “Water plants”: <b>16 Oct</b></span><b>Undo</b></div>
+  <div class="nav"><div><i>＋</i>Capture</div><div class="on"><i>✓</i>Tasks</div><div><i>☀</i>Log</div><div><i>💡</i>Ideas</div></div>
+</div>
+
+<!-- 2. DAILY LOG - MORNING -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <h1>Daily log</h1>
+  <div class="sub">Thursday 9 October · saves into 09-10-2026</div>
+  <div class="pill"><div class="on">☀ Morning</div><div>🌙 Evening</div><div>All</div></div>
+
+  <div class="lbl">🎯 Do this first</div>
+  <div class="field act">Put the SD cards on the desk and label them<span style="color:var(--primary)">|</span></div>
+
+  <div class="lbl">Energy</div>
+  <div class="row gap8" style="margin-bottom:14px"><div class="chip">Low</div><div class="chip on">Medium</div><div class="chip">High</div></div>
+
+  <div class="row between" style="margin-bottom:14px"><div class="lbl" style="margin:0">Overwhelmed?</div><div class="tog"></div></div>
+
+  <div class="lbl">If today is hard, the one thing that counts</div>
+  <div class="field ph">Tap to write…</div>
+
+  <div class="lbl">🌤️ Top 3</div>
+  <div class="bul"><b>1</b>Clean car</div>
+  <div class="bul"><b>2</b>Update C5 and memory card</div>
+  <div class="bul empty"><b>3</b>Add another…</div>
+
+  <div class="btn" style="margin-top:14px">Save morning log</div>
+  <div class="nav"><div><i>＋</i>Capture</div><div><i>✓</i>Tasks</div><div class="on"><i>☀</i>Log</div><div><i>💡</i>Ideas</div></div>
+</div>
+
+<!-- 3. DAILY LOG - EVENING + ADD SECTION SHEET -->
+<div class="phone">
+  <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+  <h1>Daily log</h1>
+  <div class="sub">Thursday 9 October · saves into 09-10-2026</div>
+  <div class="pill"><div>☀ Morning</div><div class="on">🌙 Evening</div><div>All</div></div>
+
+  <div class="lbl">Went well</div>
+  <div class="bul"><b>•</b>Got the SD cards sorted</div>
+  <div class="bul empty"><b>•</b>Add another…</div>
+
+  <div class="lbl" style="margin-top:12px">Leave for tomorrow</div>
+  <div class="bul"><b>•</b>Clean car</div>
+
+  <div class="lbl" style="margin-top:12px">First step tomorrow</div>
+  <div class="field ph">Tap to write…</div>
+
+  <div class="lbl">🧘 Gratitude<span class="custom">CUSTOM</span></div>
+  <div class="bul empty"><b>☐</b>Three small things…</div>
+
+  <div class="btn ghost">＋ Add section</div>
+
+  <div class="dim"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:14px">New section</div>
+    <div class="lbl">Name</div>
+    <div class="field act" style="margin-bottom:12px">🧘 Gratitude<span style="color:var(--primary)">|</span></div>
+    <div class="lbl">Type</div>
+    <div class="fchips"><div class="chip">Short text</div><div class="chip">Bullets</div><div class="chip on">Checklist</div><div class="chip">Choice</div><div class="chip">Yes / no</div></div>
+    <div class="lbl">Shows in</div>
+    <div class="fchips"><div class="chip">Morning</div><div class="chip on">Evening</div><div class="chip">Anytime</div></div>
+    <div class="lbl">Place it after</div>
+    <div class="field" style="margin-bottom:10px">Wind down ▾</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Adds a <b style="color:var(--text)">## 🧘 Gratitude</b> heading to your Daily Note template and to today’s note.</div>
+    <div class="btn">Create section</div>
+  </div>
+</div>
+</body></html>

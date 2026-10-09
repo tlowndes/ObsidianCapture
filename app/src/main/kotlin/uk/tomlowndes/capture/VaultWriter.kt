@@ -9,7 +9,10 @@ import java.util.Date
 import java.util.Locale
 
 /** An open task from the "## Active" section; [raw] is the exact line as it appears in the note. */
-data class TaskItem(val raw: String, val text: String, val due: LocalDate?)
+data class TaskItem(val raw: String, val text: String, val due: LocalDate?, val recurrence: String? = null)
+
+/** Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active. */
+data class Completion(val doneLine: String, val nextLine: String?)
 
 /** Reads and writes the Obsidian vault through the Storage Access Framework folder the user picked. */
 class VaultWriter(private val ctx: Context, treeUri: Uri) {
@@ -78,21 +81,25 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
 
     private fun parse(line: String): TaskItem? {
         val body = OPEN_TASK.matchEntire(line.trimEnd())?.groupValues?.get(1) ?: return null
-        val due = DUE.find(body)?.groupValues?.get(1)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        val text = body.replace("#task", "").replace(DUE, "").replace(INLINE_FIELD, "")
-            .replace(Regex("\\s+"), " ").trim()
-        return TaskItem(line, text.ifBlank { body.trim() }, due)
+        val text = TaskRules.cleanText(body)
+        return TaskItem(line, text.ifBlank { body.trim() }, TaskRules.due(body), TaskRules.recurrence(body))
     }
 
-    /** Ticks the task and moves it to the top of "## Archive". Returns the completed line (for undo). */
-    fun completeTask(raw: String): String {
+    /**
+     * Ticks the task and moves it to the top of "## Archive". With [recurring], a task that has a 🔁 rule
+     * also leaves its next occurrence in place, like the Tasks plugin does.
+     */
+    fun completeTask(raw: String, recurring: Boolean = true): Completion {
         val file = taskFile(false) ?: error("Task note not found")
         val lines = readLines(file)
         val i = lines.indexOf(raw)
         if (i < 0) error("Task changed in Obsidian, refreshed")
         lines.removeAt(i)
+        val today = LocalDate.now()
+        val next = if (recurring) TaskRules.nextOccurrence(raw, today) else null
+        if (next != null) lines.add(i, next)
         val ticked = raw.replaceFirst("- [ ]", "- [x]")
-        val done = if (ticked.contains("✅")) ticked else ticked.trimEnd() + " ✅ ${LocalDate.now()}"
+        val done = if (ticked.contains("✅")) ticked else ticked.trimEnd() + " ✅ $today"
         val archive = lines.archiveStart()
         if (archive >= 0) {
             var at = archive + 1
@@ -102,7 +109,19 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
             lines.addAll(listOf("", "## Archive", "", done))
         }
         save(file, lines)
-        return done
+        return Completion(done, next)
+    }
+
+    /** Changes (or clears, for null) a task's due date in place. Returns the task's new line. */
+    fun rescheduleTask(raw: String, date: LocalDate?): String {
+        val file = taskFile(false) ?: error("Task note not found")
+        val lines = readLines(file)
+        val i = lines.indexOf(raw)
+        if (i < 0) error("Task changed in Obsidian, refreshed")
+        val updated = TaskRules.withDue(raw, date)
+        lines[i] = updated
+        save(file, lines)
+        return updated
     }
 
     fun deleteTask(raw: String) {
@@ -112,12 +131,13 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
         save(file, lines)
     }
 
-    /** Undo for [completeTask] (pass its [doneLine]) or [deleteTask] (pass null). */
-    fun restoreTask(raw: String, doneLine: String?) {
+    /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (null) or a reschedule ([replace]). */
+    fun restoreTask(raw: String, done: Completion?, replace: String? = null) {
         val file = taskFile(true) ?: return
         val lines = readLines(file)
-        if (doneLine != null) lines.remove(doneLine)
-        lines.insertActive(raw)
+        if (done != null) lines.remove(done.doneLine)
+        val at = (done?.nextLine ?: replace)?.let { lines.indexOf(it) } ?: -1
+        if (at >= 0) lines[at] = raw else lines.insertActive(raw)
         save(file, lines)
     }
 

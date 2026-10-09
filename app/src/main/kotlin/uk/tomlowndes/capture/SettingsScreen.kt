@@ -1,0 +1,80 @@
+package uk.tomlowndes.capture
+
+import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+@Composable
+internal fun SettingRow(title: String, sub: String? = null, trailing: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp)
+            if (sub != null) Text(sub, fontSize = 12.sp, color = Muted)
+        }
+        trailing()
+    }
+}
+
+@Composable
+internal fun AppSwitch(checked: Boolean, onChange: (Boolean) -> Unit) = Switch(
+    checked, onChange,
+    colors = SwitchDefaults.colors(
+        checkedTrackColor = Primary, checkedThumbColor = Color.White,
+        uncheckedTrackColor = Outline, uncheckedThumbColor = Muted, uncheckedBorderColor = Outline
+    )
+)
+
+@Composable
+internal fun PathField(label: String, value: String, onChange: (String) -> Unit) {
+    var v by remember(value) { mutableStateOf(value) }
+    OutlinedTextField(
+        v, { v = it; onChange(it) }, label = { Text(label) }, singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = fieldColors()
+    )
+}
+
+@Composable
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit) {
+    var recurring by remember { mutableStateOf(prefs.recurring) }
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
+        ScreenTitle("Settings")
+
+        GroupLabel("Tasks")
+        SettingRow("Recurring tasks", "Ticking one creates the next occurrence") {
+            AppSwitch(recurring) { recurring = it; prefs.recurring = it }
+        }
+
+        Text("", Modifier.padding(top = 8.dp))
+        GroupLabel("Vault locations")
+        SettingRow("Vault", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
+            TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
+        }
+        PathField("Ideas folder", prefs.ideasDir) { prefs.ideasDir = it }
+        PathField("Images folder", prefs.imagesDir) { prefs.imagesDir = it }
+        PathField("Daily notes folder (blank = from Obsidian)", prefs.dailyDir) { prefs.dailyDir = it }
+    }
+}
