@@ -115,6 +115,24 @@ internal fun PillSwitch(options: List<String>, selected: Int, onSelect: (Int) ->
     }
 }
 
+/** Filter chip with the app's look: purple outline and text when selected. */
+@Composable
+internal fun AppChip(
+    selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp)
+) {
+    androidx.compose.material3.FilterChip(
+        selected, onClick, label, shape = shape,
+        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+            containerColor = Color.Transparent, labelColor = TextMain,
+            selectedContainerColor = Surface2, selectedLabelColor = Primary
+        ),
+        border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+            enabled = true, selected = selected, borderColor = Outline, selectedBorderColor = Primary
+        )
+    )
+}
+
 @Composable
 internal fun SmallLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Primary, modifier = modifier.padding(bottom = 6.dp))

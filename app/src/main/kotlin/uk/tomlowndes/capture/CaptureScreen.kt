@@ -141,11 +141,11 @@ fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSettings: () -> U
                 val today = LocalDate.now()
                 val custom = due != null && due != today && due != today.plusDays(1)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(due == today, { due = if (due == today) null else today },
+                    AppChip(due == today, { due = if (due == today) null else today },
                         { Text("Today") }, shape = RoundedCornerShape(12.dp))
-                    FilterChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) },
+                    AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) },
                         { Text("Tomorrow") }, shape = RoundedCornerShape(12.dp))
-                    FilterChip(custom, { showPicker = true },
+                    AppChip(custom, { showPicker = true },
                         { Text(if (custom) dueLabel(due!!) else "Pick date") }, shape = RoundedCornerShape(12.dp))
                 }
             }

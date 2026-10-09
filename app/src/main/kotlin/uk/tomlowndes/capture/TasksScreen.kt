@@ -161,7 +161,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { reload() }) { Text("↻", color = Muted, fontSize = 20.sp) }
                 Column {
-                    FilterChip(true, { menu = true }, { Text(if (byDue) "By due date ▾" else "Note order ▾") },
+                    AppChip(true, { menu = true }, { Text(if (byDue) "By due date ▾" else "Note order ▾") },
                         shape = RoundedCornerShape(12.dp))
                     DropdownMenu(menu, { menu = false }, modifier = Modifier.background(Surface2)) {
                         DropdownMenuItem(text = { Text("By due date") }, onClick = { byDue = true; prefs.sortByDue = true; menu = false })
@@ -246,12 +246,12 @@ private fun RescheduleDialog(t: TaskItem, onDate: (LocalDate?) -> Unit, onRemove
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Move due date", color = Muted, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(false, { onDate(today) }, { Text("Today") }, shape = RoundedCornerShape(12.dp))
-                    FilterChip(false, { onDate(today.plusDays(1)) }, { Text("Tomorrow") }, shape = RoundedCornerShape(12.dp))
+                    AppChip(false, { onDate(today) }, { Text("Today") }, shape = RoundedCornerShape(12.dp))
+                    AppChip(false, { onDate(today.plusDays(1)) }, { Text("Tomorrow") }, shape = RoundedCornerShape(12.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(false, { onDate(today.plusDays(7)) }, { Text("Next week") }, shape = RoundedCornerShape(12.dp))
-                    FilterChip(false, { picking = true }, { Text("Pick date…") }, shape = RoundedCornerShape(12.dp))
+                    AppChip(false, { onDate(today.plusDays(7)) }, { Text("Next week") }, shape = RoundedCornerShape(12.dp))
+                    AppChip(false, { picking = true }, { Text("Pick date…") }, shape = RoundedCornerShape(12.dp))
                 }
                 if (t.due != null) TextButton(onClick = { onDate(null) }) { Text("Clear due date", color = Primary) }
             }

@@ -50,6 +50,10 @@ class AppPrefs(ctx: Context) {
         get() = p.getBoolean("skip_filled", true)
         set(v) { p.edit().putBoolean("skip_filled", v).apply() }
 
+    var askedNotif: Boolean
+        get() = p.getBoolean("asked_notif", false)
+        set(v) { p.edit().putBoolean("asked_notif", v).apply() }
+
     fun draft(key: String): String = p.getString("draft_$key", "") ?: ""
     fun setDraft(key: String, text: String) {
         p.edit().apply { if (text.isEmpty()) remove("draft_$key") else putString("draft_$key", text) }.apply()

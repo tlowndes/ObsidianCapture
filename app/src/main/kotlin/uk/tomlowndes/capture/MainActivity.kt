@@ -1,6 +1,8 @@
 package uk.tomlowndes.capture
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -124,6 +126,15 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var settings by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
     val snack = remember { SnackbarHostState() }
+
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
+    LaunchedEffect(Unit) {
+        Reminders.scheduleAll(ctx, prefs)
+        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn) && !prefs.askedNotif) {
+            prefs.askedNotif = true
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     LaunchedEffect(request) {
         request?.let { tab = it.first; logSlot = it.second; settings = false; openIdea = null; onRequestHandled() }
