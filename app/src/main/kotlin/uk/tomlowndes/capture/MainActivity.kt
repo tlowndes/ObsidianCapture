@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class Tab(val label: String, val icon: String) {
-    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), LOG("Log", "☀"), IDEAS("Ideas", "💡")
+    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), LOG("Log", "☀"), IDEAS("Ideas", "💡"), READ("Read", "📖")
 }
 
 class MainActivity : ComponentActivity() {
@@ -125,6 +125,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var logSlot by remember { mutableStateOf(request?.second) }
     var settings by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
+    var openArticle by remember { mutableStateOf<ReadRef?>(null) }
     val snack = remember { SnackbarHostState() }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
@@ -137,7 +138,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     }
 
     LaunchedEffect(request) {
-        request?.let { tab = it.first; logSlot = it.second; settings = false; openIdea = null; onRequestHandled() }
+        request?.let { tab = it.first; logSlot = it.second; settings = false; openIdea = null; openArticle = null; onRequestHandled() }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -150,11 +151,15 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = settings || openIdea != null) {
-        if (settings) settings = false else openIdea = null
+    BackHandler(enabled = settings || openIdea != null || openArticle != null) {
+        when {
+            settings -> settings = false
+            openArticle != null -> openArticle = null
+            else -> openIdea = null
+        }
     }
 
-    val hideNav = openIdea != null
+    val hideNav = (tab == Tab.IDEAS && openIdea != null) || (tab == Tab.READ && openArticle != null)
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
@@ -166,7 +171,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 tab == Tab.CAPTURE -> CaptureScreen(vault, snack) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
                 tab == Tab.LOG -> LogScreen(vault, prefs, snack, logSlot)
-                else -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
+                tab == Tab.IDEAS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
+                else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
             }
         }
     }
@@ -182,8 +188,8 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
         ) {
             Tab.values().forEach { t ->
                 val on = t == selected
-                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) Surface2 else Color.Transparent).padding(horizontal = 18.dp, vertical = 3.dp)) {
+                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.clip(CircleShape).background(if (on) Surface2 else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
                     Text(t.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)

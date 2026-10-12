@@ -12,6 +12,9 @@ object Md {
         return -1
     }
 
+    /** The note without its frontmatter block. */
+    fun fmBody(lines: List<String>): List<String> = lines.drop(fmEnd(lines) + 1)
+
     fun fmGet(lines: List<String>, key: String): String? {
         val end = fmEnd(lines)
         if (end < 0) return null
