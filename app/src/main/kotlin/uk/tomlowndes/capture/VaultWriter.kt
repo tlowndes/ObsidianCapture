@@ -100,6 +100,15 @@ class VaultWriter(private val ctx: Context, private val treeUri: Uri) {
         }
     }
 
+    /** Every note in the vault except dot-folders, for quick search. */
+    fun allNotes(): List<VaultNote> = VaultScan.notes(ctx, treeUri) { p -> p.split("/").any { it.startsWith(".") } }
+
+    /** Adds a `#task` line (with optional [due]) under the note's "## Tasks", or [text] as a plain line at its end. */
+    fun addToNote(note: VaultNote, text: String, asTask: Boolean, due: LocalDate?) {
+        val line = if (asTask) TaskNote.newTask(text.replace(Regex("\\s*\\n\\s*"), " "), due?.toString()) else text.trim()
+        edit(note.file(ctx)) { if (asTask) NoteSearch.addTask(it, line) else NoteSearch.addLine(it, line) }
+    }
+
     /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
     fun addNote(name: String, content: String) {
         val file = dir("$INBOX/$RIL_DIR").createFile("text/markdown", name) ?: error("Cannot create note")

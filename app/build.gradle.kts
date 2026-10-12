@@ -10,8 +10,8 @@ android {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 4
+        versionName = "1.4"
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
     signingConfigs {

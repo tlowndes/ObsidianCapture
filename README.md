@@ -29,6 +29,9 @@ your sync tool keeps up to date). Five tabs:
   whether you've finished it (Mark read, Archive or Keep unread). Read state is `status: unread|read|archived` in
   frontmatter (no status counts as unread). Archive moves the note to `ReadItLater Inbox/Archive/`, with Undo.
 
+**Find a note** (🔍 on Capture): search every note by name or folder, then add a task (under the note's `## Tasks`
+heading if it has one, otherwise at the end, with an optional due date) or a plain line at the end of the note.
+
 Settings (gear on Capture) holds the vault folder, reminder times, recurring-task switch and folder names.
 
 First launch: pick your vault root folder on the phone (the one containing `.obsidian`).

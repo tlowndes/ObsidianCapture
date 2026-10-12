@@ -124,6 +124,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var tab by remember { mutableStateOf(request?.first ?: Tab.CAPTURE) }
     var logSlot by remember { mutableStateOf(request?.second) }
     var settings by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
     var openArticle by remember { mutableStateOf<ReadRef?>(null) }
     val snack = remember { SnackbarHostState() }
@@ -138,7 +139,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     }
 
     LaunchedEffect(request) {
-        request?.let { tab = it.first; logSlot = it.second; settings = false; openIdea = null; openArticle = null; onRequestHandled() }
+        request?.let { tab = it.first; logSlot = it.second; settings = false; search = false; openIdea = null; openArticle = null; onRequestHandled() }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -151,9 +152,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = settings || openIdea != null || openArticle != null) {
+    BackHandler(enabled = settings || search || openIdea != null || openArticle != null) {
         when {
             settings -> settings = false
+            search -> search = false
             openArticle != null -> openArticle = null
             else -> openIdea = null
         }
@@ -163,12 +165,13 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
-        bottomBar = { if (!hideNav) NavBar(if (settings) null else tab) { tab = it; settings = false } }
+        bottomBar = { if (!hideNav) NavBar(if (settings || search) null else tab) { tab = it; settings = false; search = false } }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
                 settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) })
-                tab == Tab.CAPTURE -> CaptureScreen(vault, snack) { settings = true }
+                search -> SearchScreen(vault, snack) { search = false }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
                 tab == Tab.LOG -> LogScreen(vault, prefs, snack, logSlot)
                 tab == Tab.IDEAS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
