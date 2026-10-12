@@ -6,7 +6,6 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.net.URI
 import java.time.Instant
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -62,46 +61,13 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     /** Inbox and archive together, newest first. Only the head of each note is read. */
     fun list(): List<SavedArticle> = listOf(false, true).flatMap { archived ->
         folder(archived)?.listFiles().orEmpty().filter { it.isFile && it.name.orEmpty().endsWith(".md") }.map { f ->
-            val doc = parse(ReadRef(f.name!!, archived), read(f, HEAD), f.lastModified())
-            SavedArticle(doc.ref, doc.title, doc.url, snippet(doc.body), doc.read, doc.saved,
+            val doc = ReadNote.parse(ReadRef(f.name!!, archived), read(f, HEAD), f.lastModified())
+            SavedArticle(doc.ref, doc.title, doc.url, ReadNote.snippet(doc.body), doc.read, doc.saved,
                 (f.length() / 6).toInt())
         }
     }.sortedByDescending { it.saved }
 
-    fun load(ref: ReadRef): ArticleDoc = fileOf(ref).let { parse(ref, read(it), it.lastModified()) }
-
-    private fun parse(ref: ReadRef, text: String, modified: Long): ArticleDoc {
-        val lines = text.replace("\r", "").split("\n")
-        val status = Md.fmGet(lines, "status")?.lowercase()
-        val saved = Md.fmGet(lines, "saved")?.let(::parseStamp) ?: modified
-        val body = Md.fmBody(lines).dropWhile { it.isBlank() || TAG_LINE.matches(it.trim()) }.toMutableList()
-        var title = ref.file.removeSuffix(".md")
-        var url: String? = null
-        val first = body.indexOfFirst { it.isNotBlank() }
-        if (first >= 0) {
-            val line = body[first].trim()
-            val linked = TITLE_LINK.matchEntire(line)
-            when {
-                linked != null -> { title = linked.groupValues[2]; url = linked.groupValues[3]; body.removeAt(first) }
-                line.startsWith("# ") -> { title = line.removePrefix("# ").trim(); body.removeAt(first) }
-            }
-        }
-        if (url == null) url = body.firstNotNullOfOrNull { LINK.find(it)?.groupValues?.get(2) }
-        // Highlights live in their own "## Highlights" section; the reader shows them inline instead.
-        val highlights = mutableListOf<String>()
-        Md.sectionRange(body, HIGHLIGHTS)?.let { r ->
-            body.slice(r).map { it.trim() }.filter { it.startsWith(">") }.mapTo(highlights) { it.removePrefix(">").trim() }
-            repeat(r.last - r.first + 2) { body.removeAt(r.first - 1) }
-        }
-        return ArticleDoc(ref, title, url, ref.archived || status == "read" || status == "archived", saved, body, highlights)
-    }
-
-    private fun snippet(body: List<String>): String {
-        val plain = body.asSequence().map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("!") && !it.startsWith("```") && it != "---" }
-            .map { plainText(it) }.filter { it.isNotBlank() }
-        return (plain.firstOrNull { it.length >= 60 } ?: plain.firstOrNull()).orEmpty().take(200)
-    }
+    fun load(ref: ReadRef): ArticleDoc = fileOf(ref).let { ReadNote.parse(ref, read(it), it.lastModified()) }
 
     // ---- writing ----
 
@@ -116,24 +82,7 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     fun setRead(ref: ReadRef, read: Boolean) = edit(fileOf(ref)) { Md.fmSet(it, "status", if (read) "read" else "unread") }
 
     /** Adds [text] as a `> ` line under "## Highlights" (created at the end of the note), or removes it if already there. */
-    fun toggleHighlight(ref: ReadRef, text: String) = edit(fileOf(ref)) { lines ->
-        val line = "> " + text.replace("\n", " ").trim()
-        val r = Md.sectionRange(lines, HIGHLIGHTS)
-        if (r == null) {
-            while (lines.isNotEmpty() && lines.last().isBlank()) lines.removeAt(lines.size - 1)
-            lines.addAll(listOf("", "## $HIGHLIGHTS", "", line, ""))
-            return@edit
-        }
-        val at = r.firstOrNull { lines[it].trim() == line }
-        if (at != null) {
-            lines.removeAt(at)
-            if (at < lines.size && lines[at].isBlank() && at > 0 && lines[at - 1].isBlank()) lines.removeAt(at)
-        } else {
-            var end = r.last + 1
-            while (end > r.first && lines[end - 1].isBlank()) end--
-            lines.addAll(end, listOf("", line))
-        }
-    }
+    fun toggleHighlight(ref: ReadRef, text: String) = edit(fileOf(ref)) { ReadNote.toggleHighlight(it, text) }
 
     /** Marks archived and moves the note into Archive/. Returns where it ended up. */
     fun archive(ref: ReadRef): ReadRef {
@@ -163,30 +112,16 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
 
     companion object {
         const val ARCHIVE = "Archive"
-        const val HIGHLIGHTS = "Highlights"
+        const val HIGHLIGHTS = ReadNote.HIGHLIGHTS
         private const val HEAD = 6000
         private val STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
-        private val TAG_LINE = Regex("^(\\[\\[[^\\]]+]]\\s*)+$")
-        private val TITLE_LINK = Regex("^#\\s+(\\[(.+)]\\((\\S+)\\))$")
-        private val LINK = Regex("\\[([^\\]]*)]\\((https?://[^)\\s]+)\\)")
 
         fun stamp(millis: Long = System.currentTimeMillis()): String =
             Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDateTime().format(STAMP)
 
-        private fun parseStamp(s: String): Long? = runCatching {
-            val t = s.trim().trim('"')
-            val dt = if (t.length == 10) java.time.LocalDate.parse(t).atStartOfDay() else LocalDateTime.parse(t.replace(' ', 'T'))
-            dt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        }.getOrNull()
-
         fun host(url: String?): String? = url?.let { runCatching { URI(it).host?.removePrefix("www.") }.getOrNull() }
 
         /** Markdown line to plain text for previews. */
-        fun plainText(s: String): String = s
-            .replace(Regex("!\\[[^\\]]*]\\([^)]*\\)"), "")
-            .replace(Regex("\\[([^\\]]*)]\\([^)]*\\)"), "$1")
-            .replace(Regex("^(>\\s*|[-*+]\\s+|\\d+\\.\\s+)"), "")
-            .replace(Regex("[*`_]"), "")
-            .trim()
+        fun plainText(s: String): String = ReadNote.plainText(s)
     }
 }

@@ -17,6 +17,8 @@ local.properties
 # Signing keys: never commit these
 *.jks
 *.keystore
+# ...except the shared debug key, so CI and local builds install over each other
+!app/debug.keystore
 
 # Design renders/screenshots from the emulator
 design/emulator*.png

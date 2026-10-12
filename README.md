@@ -48,6 +48,14 @@ two places:
 ## Build
 
 Open this folder in Android Studio, let it sync, then Run on your phone (or Build > Build APK).
-Use a JDK between 17 and 22 for Gradle (Android Studio's bundled JBR 21 is fine; Java 25 is not).
+Use a JDK between 17 and 22 for Gradle (a JBR 21 is fine; Java 25 is not).
+Debug builds are signed with `app/debug.keystore`, so a build from any machine or from CI installs over any other.
+
+`./gradlew testDebugUnitTest` runs the unit tests. They cover the note formats the app reads and writes: the task
+list and recurring tasks, the daily note form (including not overwriting edits made on another device), idea notes
+and Read It Later notes, so a change that would mangle a note fails here first.
+
+GitHub Actions runs the tests and builds a debug APK on every push and pull request; the APK is attached to the run.
+Pushing a tag like `v1.2` also creates a GitHub Release with the APK.
 
 `design/` has the HTML mockups (`render.sh`, `render2.sh` re-render the PNGs).

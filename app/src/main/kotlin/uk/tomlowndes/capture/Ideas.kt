@@ -53,7 +53,7 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
         return folder.listFiles().filter { it.isDirectory }.mapNotNull { d ->
             val name = d.name ?: return@mapNotNull null
             val note = d.findFile("$name.md") ?: return@mapNotNull null
-            val doc = parse(name, read(note))
+            val doc = IdeaNote.parse(name, read(note))
             IdeaSummary(
                 name, doc.summary.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
                 doc.entries.size, doc.entries.sumOf { it.images.size },
@@ -63,103 +63,38 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
         }.sortedByDescending { it.modified }
     }
 
-    fun load(title: String): IdeaDoc = parse(title, read(noteOf(title)))
+    fun load(title: String): IdeaDoc = IdeaNote.parse(title, read(noteOf(title)))
 
     /** Image file name -> uri for everything in the images folder (one directory listing). */
     fun imageIndex(): Map<String, Uri> =
         dir(prefs.imagesDir, false)?.listFiles()?.mapNotNull { f -> f.name?.let { it to f.uri } }?.toMap() ?: emptyMap()
 
-    private fun parse(title: String, text: String): IdeaDoc {
-        val lines = text.split("\n")
-        val entries = entryRanges(lines).map { entryAt(lines, it) }
-        return IdeaDoc(title, Md.fmGet(lines, "status") ?: "idea", summaryOf(lines), entries)
-    }
-
-    private fun summaryOf(lines: List<String>) =
-        Md.sectionRange(lines, "Summary")?.let { lines.slice(it) }?.joinToString("\n")?.trim().orEmpty()
-
-    /** Each Log entry, from its `### ` heading up to the next one. */
-    private fun entryRanges(lines: List<String>): List<IntRange> {
-        val log = Md.sectionRange(lines, "Log") ?: return emptyList()
-        val starts = log.filter { lines[it].startsWith("### ") }
-        return starts.mapIndexed { n, s -> s until (if (n + 1 < starts.size) starts[n + 1] else log.last + 1) }
-    }
-
-    private fun entryAt(lines: List<String>, r: IntRange): IdeaEntry {
-        val body = lines.subList(r.first + 1, r.last + 1)
-        val images = body.mapNotNull { IMAGE.find(it.trim())?.groupValues?.get(1) }
-        val text = body.filter { IMAGE.find(it.trim()) == null }.joinToString("\n").trim()
-        return IdeaEntry(lines[r.first].removePrefix("### ").trim(), text, images)
-    }
-
     // ---- writing ----
 
     fun create(rawTitle: String, summary: String): String {
-        val title = safeName(rawTitle)
+        val title = IdeaNote.safeName(rawTitle)
         require(title.isNotBlank()) { "Give the idea a title" }
         val parent = dir(prefs.ideasDir, true) ?: error("Cannot create ideas folder")
         require(parent.findFile(title) == null) { "\"$title\" already exists" }
         val folder = parent.createDirectory(title) ?: error("Cannot create folder")
         val note = folder.createFile("text/markdown", title) ?: error("Cannot create note")
-        val today = java.time.LocalDate.now()
-        VaultIo.write(ctx, note, "---\ntype: idea\nstatus: idea\ncreated: $today\ntags: []\n---\n\n# $title\n\n## Summary\n\n${summary.trim()}\n\n## Log\n\n")
+        VaultIo.write(ctx, note, IdeaNote.newNote(title, summary, java.time.LocalDate.now()))
         return title
     }
 
     /** [was] is the summary as shown when editing started; stops rather than overwrite a change made elsewhere. */
-    fun setSummary(title: String, was: String, text: String) = edit(title) { lines ->
-        if (summaryOf(lines) != was.trim()) error("Summary was changed on another device, refreshed")
-        val r = Md.sectionRange(lines, "Summary")
-        if (r == null) {
-            val log = Md.headingIndex(lines, "Log")
-            val at = if (log >= 0) log else lines.size
-            lines.addAll(at, listOf("## Summary", "", text.trim(), ""))
-        } else {
-            repeat(r.last - r.first + 1) { lines.removeAt(r.first) }
-            lines.addAll(r.first, listOf("", text.trim(), ""))
-        }
-    }
+    fun setSummary(title: String, was: String, text: String) = edit(title) { IdeaNote.setSummary(it, was, text) }
 
     fun setStatus(title: String, status: String) = edit(title) { Md.fmSet(it, "status", status) }
 
     /** New entries go at the top of the Log, newest first. */
-    fun addEntry(title: String, text: String, images: List<String>) = edit(title) { lines ->
-        if (Md.headingIndex(lines, "Log") < 0) lines.addAll(listOf("", "## Log", ""))
-        val h = Md.headingIndex(lines, "Log")
-        val stamp = LocalDateTime.now().format(STAMP)
-        lines.addAll(h + 1, listOf("") + entryLines(stamp, text, images))
-    }
+    fun addEntry(title: String, text: String, images: List<String>) =
+        edit(title) { IdeaNote.addEntry(it, LocalDateTime.now().format(STAMP), text, images) }
 
     /** [entry] is the entry as shown when editing started. */
-    fun editEntry(title: String, entry: IdeaEntry, text: String) = edit(title) { lines ->
-        val r = entryRange(lines, entry)
-        val images = lines.slice(r).mapNotNull { IMAGE.find(it.trim())?.groupValues?.get(1) }
-        repeat(r.last - r.first + 1) { lines.removeAt(r.first) }
-        lines.addAll(r.first, entryLines(entry.heading, text, images))
-    }
+    fun editEntry(title: String, entry: IdeaEntry, text: String) = edit(title) { IdeaNote.editEntry(it, entry, text) }
 
-    fun deleteEntry(title: String, entry: IdeaEntry) = edit(title) { lines ->
-        val r = entryRange(lines, entry)
-        repeat(r.last - r.first + 1) { lines.removeAt(r.first) }
-    }
-
-    private fun entryLines(heading: String, text: String, images: List<String>): List<String> {
-        val out = mutableListOf("### $heading", "")
-        if (text.isNotBlank()) { out.addAll(text.trim().split("\n")); out.add("") }
-        if (images.isNotEmpty()) { images.forEach { out.add("![[$it]]") }; out.add("") }
-        return out
-    }
-
-    /**
-     * Finds [entry] by its heading and text rather than its position, so entries added elsewhere don't shift it.
-     * Stops if the entry itself was changed or removed on another device.
-     */
-    private fun entryRange(lines: List<String>, entry: IdeaEntry): IntRange {
-        val same = entryRanges(lines).filter { entryAt(lines, it).heading == entry.heading }
-        if (same.isEmpty()) error("Entry was removed on another device, refreshed")
-        return same.firstOrNull { entryAt(lines, it).text == entry.text }
-            ?: error("Entry was changed on another device, refreshed")
-    }
+    fun deleteEntry(title: String, entry: IdeaEntry) = edit(title) { IdeaNote.deleteEntry(it, entry) }
 
     /** Shrinks the picked/captured image to at most 1600 px, saves it as JPEG in the images folder. */
     fun saveImage(src: Uri, baseName: String): Pair<String, Uri> {
@@ -191,8 +126,7 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
     }
 
     companion object {
-        private val IMAGE = Regex("^!\\[\\[(.+?)(?:\\|[^\\]]*)?]]$")
         private val STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-        fun safeName(s: String) = s.replace(Regex("[\\\\/:*?\"<>|#^\\[\\]]"), "-").replace(Regex("\\s+"), " ").trim().take(80).trim()
+        fun safeName(s: String) = IdeaNote.safeName(s)
     }
 }
