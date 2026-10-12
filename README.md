@@ -19,10 +19,12 @@ your sync tool keeps up to date). Five tabs:
   photos (camera or gallery, shrunk to 1600 px and saved to `99 - Meta/Assets`, embedded as `![[...]]`),
   edit or delete old entries, change status. Unsent text is kept as a draft.
 
-- **Read**: the Read It Later inbox as a reading list (Unread, Read, Archived, with search). Articles open in a
-  clean reader view; opening one marks it read. Read state is `status: unread|read|archived` in the note's
+- **Read**: the Read It Later inbox as a reading list (Unread, Read, Archived, with search). Swipe right to mark
+  read/unread, left to archive (long-press for the same menu). Articles open in a clean reader view with a progress
+  bar, Aa for text size and serif/sans, and the place you got to is remembered. Long-press a paragraph to highlight
+  it; highlights are kept as `> ` quotes under `## Highlights` at the end of the note. Leaving an unread article asks
+  whether you've finished it (Mark read, Archive or Keep unread). Read state is `status: unread|read|archived` in
   frontmatter (no status counts as unread). Archive moves the note to `ReadItLater Inbox/Archive/`, with Undo.
-  Long-press an article in the list to mark it read/unread or archive it without opening it.
 
 Settings (gear on Capture) holds the vault folder, reminder times, recurring-task switch and folder names.
 
