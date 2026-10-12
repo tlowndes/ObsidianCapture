@@ -68,6 +68,13 @@ object ReadNote {
         }
     }
 
+
+    /** What the Read widget shows: how many articles are unread and the newest one to read next. */
+    fun unread(items: List<SavedArticle>): Pair<Int, SavedArticle?> {
+        val unread = items.filter { !it.read && !it.ref.archived }
+        return unread.size to unread.maxByOrNull { it.saved }
+    }
+
     fun parseStamp(s: String): Long? = runCatching {
         val t = s.trim().trim('"')
         val dt = if (t.length == 10) java.time.LocalDate.parse(t).atStartOfDay() else LocalDateTime.parse(t.replace(' ', 'T'))

@@ -31,6 +31,7 @@ object ReadLater {
         val name = noteName(article, sharedTitle)
             ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
         VaultWriter(ctx, vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp()))
+        Widgets.readChanged(ctx)
         return article != null
     }
 
