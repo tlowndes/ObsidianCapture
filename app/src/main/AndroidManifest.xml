@@ -22,7 +22,23 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- Add-task / save-link sheet opened from the capture widget -->
+        <activity android:name=".QuickCaptureActivity" android:exported="false"
+            android:theme="@style/Theme.VaultCapture.Sheet" android:taskAffinity="" android:excludeFromRecents="true"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize" />
         <receiver android:name=".SnoozeReceiver" android:exported="false" />
+        <receiver android:name=".TasksWidgetReceiver" android:exported="true" android:label="Today's tasks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/tasks_widget_info" />
+        </receiver>
+        <receiver android:name=".CaptureWidgetReceiver" android:exported="true" android:label="Quick capture">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/capture_widget_info" />
+        </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

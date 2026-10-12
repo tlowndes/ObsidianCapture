@@ -42,9 +42,11 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
             ?: error("Cannot write ${file.name}")
     }
 
+    /** Writes the task note and lets the home screen widget know. */
     private fun save(file: DocumentFile, lines: List<String>) {
         val out = lines.joinToString("\n")
         write(file, if (out.endsWith("\n")) out else out + "\n")
+        Widgets.tasksChanged(ctx)
     }
 
     private fun MutableList<String>.activeStart() = indexOfFirst { it.trim() == "## Active" }
