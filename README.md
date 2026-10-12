@@ -1,7 +1,7 @@
 # Vault Capture
 
 Android app that writes straight into an Obsidian vault (no plugin needed; it uses the vault folder
-your sync tool keeps up to date). Four tabs:
+your sync tool keeps up to date). Five tabs:
 
 - **Capture**: add a task to `01 - Inbox/⚡ Quick Task.md` (`- [ ] #task ... 📅 date`), or save a link as a
   full article note in `01 - Inbox/ReadItLater Inbox/`. The app is also in the Android Share sheet, so
@@ -18,6 +18,11 @@ your sync tool keeps up to date). Four tabs:
 - **Ideas**: each idea is `03 - Projects/<Title>/<Title>.md` with a Summary and a newest-first Log. Add text and
   photos (camera or gallery, shrunk to 1600 px and saved to `99 - Meta/Assets`, embedded as `![[...]]`),
   edit or delete old entries, change status. Unsent text is kept as a draft.
+
+- **Read**: the Read It Later inbox as a reading list (Unread, Read, Archived, with search). Articles open in a
+  clean reader view; opening one marks it read. Read state is `status: unread|read|archived` in the note's
+  frontmatter (no status counts as unread). Archive moves the note to `ReadItLater Inbox/Archive/`, with Undo.
+  Long-press an article in the list to mark it read/unread or archive it without opening it.
 
 Settings (gear on Capture) holds the vault folder, reminder times, recurring-task switch and folder names.
 

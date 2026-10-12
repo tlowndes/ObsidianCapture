@@ -34,10 +34,11 @@ object ReadLater {
             article.video -> "[[ReadItLater]] [[Youtube]]\n\n# [${article.title}]($url)\n\n![]($url)\n"
             else -> "[[ReadItLater]] [[Article]]\n\n# [${article.title}]($url)\n\n${article.markdown}\n"
         }
+        val frontmatter = "---\nstatus: unread\nsaved: ${ReadStore.stamp()}\n---\n\n"
         val name = article?.title?.let(::safeName)?.takeIf { it.isNotBlank() }
             ?: sharedTitle?.let(::safeName)?.takeIf { it.isNotBlank() }
             ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
-        VaultWriter(ctx, vault).addNote(name, note)
+        VaultWriter(ctx, vault).addNote(name, frontmatter + note)
         return article != null
     }
 
