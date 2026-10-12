@@ -31,7 +31,8 @@ Settings (gear on Capture) holds the vault folder, reminder times, recurring-tas
 First launch: pick your vault root folder on the phone (the one containing `.obsidian`).
 
 Every write is a read-modify-write of just the part it owns, so edits made in Obsidian are kept. It is written to
-sit alongside a sync tool such as Resilio Sync, which keeps whichever copy was written last:
+sit alongside Obsidian Sync, which syncs the phone's vault while the Obsidian app runs and merges edits made in
+two places:
 
 - Just before saving, the note is read again. If it changed in the meantime (a sync landed), the app redoes its
   change on the new copy instead of writing over it.

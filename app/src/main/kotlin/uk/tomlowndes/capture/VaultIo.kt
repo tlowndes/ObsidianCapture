@@ -4,9 +4,9 @@ import android.content.Context
 import androidx.documentfile.provider.DocumentFile
 
 /**
- * Reads and writes vault notes while a sync tool (Resilio, Syncthing...) may be changing the same files.
- * Resilio keeps whichever copy was written last, so the app must never write over a version it hasn't seen,
- * and must never leave a half-written note behind for the sync tool to pick up.
+ * Reads and writes vault notes while a sync tool (Obsidian Sync, Resilio...) may be changing the same files.
+ * The app must never write over a version it hasn't seen, and must never leave a half-written note behind
+ * for the sync tool to pick up and merge.
  */
 object VaultIo {
     private const val ATTEMPTS = 4
