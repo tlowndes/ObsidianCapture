@@ -87,14 +87,12 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
         return d.findFile(name) ?: if (create) d.createFile("text/markdown", name.removeSuffix(".md")) else null
     }
 
-    private fun read(f: DocumentFile) = ctx.contentResolver.openInputStream(f.uri)?.bufferedReader()?.readText().orEmpty()
-    private fun write(f: DocumentFile, text: String) {
-        ctx.contentResolver.openOutputStream(f.uri, "wt")?.use { it.write(text.toByteArray()) } ?: error("Cannot write ${f.name}")
-    }
+    private fun read(f: DocumentFile) = VaultIo.read(ctx, f)
     private fun lines(text: String) = text.split("\n").map { it.trimEnd('\r') }.toMutableList()
-    private fun save(f: DocumentFile, lines: List<String>) {
-        val out = lines.joinToString("\n")
-        write(f, if (out.endsWith("\n")) out else out + "\n")
+    /** Read-modify-write of [f]; redone on the fresh copy if a sync lands in between. */
+    private fun edit(f: DocumentFile, change: (MutableList<String>) -> Unit) = VaultIo.edit(ctx, f) { ls ->
+        ls.replaceAll { it.trimEnd('\r') }
+        change(ls)
     }
 
     // ---- configuration ----
@@ -167,13 +165,41 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
         return read(fs).values.any { !it.isEmpty() }
     }
 
-    fun save(fields: List<LogField>, values: Map<String, Value>) {
-        val path = todayPath()
-        val note = fileAt(path, true) ?: error("Cannot create today's note")
-        var ls = lines(read(note))
-        if (ls.all { it.isBlank() }) ls = lines(renderTemplate(LocalDate.now()))
-        for (f in fields) values[f.id]?.let { writeValue(ls, f, it) }
-        save(note, ls)
+    /** Fields left alone by [save] because they changed in the note since the form was loaded. */
+    class Saved(val skipped: List<LogField>, val inNote: Map<String, Value>)
+
+    /**
+     * Writes only the fields whose value differs from [loaded] (what the form showed when it was read), so sections
+     * filled in on another device meanwhile are kept. A field changed both here and in the note is skipped, and
+     * reported in [Saved.skipped]; [Saved.inNote] is what the note holds now, to use as the next [loaded].
+     */
+    fun save(fields: List<LogField>, values: Map<String, Value>, loaded: Map<String, Value>): Saved {
+        val note = fileAt(todayPath(), true) ?: error("Cannot create today's note")
+        val skipped = mutableListOf<LogField>()
+        val template = renderTemplate(LocalDate.now())
+        edit(note) { ls ->
+            skipped.clear()
+            if (ls.all { it.isBlank() }) { ls.clear(); ls.addAll(lines(template)) }
+            for (f in fields) {
+                val v = values[f.id] ?: continue
+                if (same(v, loaded[f.id])) continue
+                val now = readValue(ls, f)
+                if (!same(now, loaded[f.id]) && !same(now, v)) { skipped.add(f); continue }
+                writeValue(ls, f, v)
+            }
+        }
+        return Saved(skipped, read(fields))
+    }
+
+    /** Equal once blanks and spacing are ignored; a missing value counts as empty. */
+    private fun same(a: Value?, b: Value?): Boolean = norm(a) == norm(b)
+
+    private fun norm(v: Value?): Any = when (v) {
+        null -> ""
+        is Value.Text -> v.s.trim()
+        is Value.Items -> v.items.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { "" }
+        is Value.Checks -> v.items.filter { it.second.isNotBlank() }.map { it.first to it.second.trim() }.ifEmpty { "" }
+        is Value.Flag -> if (v.on) true else ""
     }
 
     private fun renderTemplate(date: LocalDate): String {
@@ -210,13 +236,13 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
             if (kind == Kind.CHOICE) Md.fmSet(ls, id, "") else if (kind == Kind.YESNO) Md.fmSet(ls, id, "false")
         }
         val template = fileAt(cfg().template, false) ?: error("Daily Note template not found")
-        lines(read(template)).also { apply(it); save(template, it) }
-        fileAt(todayPath(), false)?.let { n -> lines(read(n)).also { apply(it); save(n, it) } }
+        edit(template) { apply(it) }
+        fileAt(todayPath(), false)?.let { n -> edit(n) { apply(it) } }
 
         val arr = JSONArray().also { a -> existing.forEach { a.put(it) } }
         arr.put(JSONObject().put("id", id).put("title", title).put("kind", kind.name).put("slot", slot.name)
             .put("choices", JSONArray(choices)))
-        write(configFile(true) ?: error("Cannot write config"), JSONObject().put("sections", arr).toString(2))
+        VaultIo.write(ctx, configFile(true) ?: error("Cannot write config"), JSONObject().put("sections", arr).toString(2))
     }
 
     // ---- per-location read/write ----

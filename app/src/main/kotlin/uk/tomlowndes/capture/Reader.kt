@@ -56,9 +56,6 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
             String(buf, 0, n)
         }.orEmpty()
 
-    private fun write(f: DocumentFile, text: String) {
-        ctx.contentResolver.openOutputStream(f.uri, "wt")?.use { it.write(text.toByteArray()) } ?: error("Cannot write ${f.name}")
-    }
 
     // ---- reading ----
 
@@ -109,11 +106,11 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     // ---- writing ----
 
     private fun edit(f: DocumentFile, change: (MutableList<String>) -> Unit) {
-        val lines = read(f).split("\n").toMutableList()
-        if (Md.fmGet(lines, "saved") == null) Md.fmSet(lines, "saved", stamp(f.lastModified()))
-        change(lines)
-        val out = lines.joinToString("\n")
-        write(f, if (out.endsWith("\n")) out else out + "\n")
+        val saved = stamp(f.lastModified())
+        VaultIo.edit(ctx, f) { lines ->
+            if (Md.fmGet(lines, "saved") == null) Md.fmSet(lines, "saved", saved)
+            change(lines)
+        }
     }
 
     fun setRead(ref: ReadRef, read: Boolean) = edit(fileOf(ref)) { Md.fmSet(it, "status", if (read) "read" else "unread") }
@@ -158,7 +155,8 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
         if (moved != null) return DocumentFile.fromSingleUri(ctx, moved)?.name ?: name
         // Provider can't move: copy, then remove the original.
         val copy = to.createFile("text/markdown", name.removeSuffix(".md")) ?: error("Cannot move $name")
-        write(copy, read(f))
+        val text = read(f)
+        if (VaultIo.write(ctx, copy, text) != text) error("Cannot move $name")
         f.delete()
         return copy.name ?: name
     }

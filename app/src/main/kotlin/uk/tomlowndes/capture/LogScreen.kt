@@ -68,6 +68,8 @@ fun LogScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, slot: Stri
     var headings by remember { mutableStateOf<List<String>>(emptyList()) }
     var noteName by remember { mutableStateOf("") }
     val values = remember { mutableStateMapOf<String, Value>() }
+    // What today's note held when the form was filled from it: Save only writes fields that differ from this.
+    var inNote by remember { mutableStateOf<Map<String, Value>>(emptyMap()) }
     var loaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
@@ -83,7 +85,7 @@ fun LogScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, slot: Stri
                 }
             }
             r.onSuccess { (f, v, hn) ->
-                fields = f; values.clear(); values.putAll(v); headings = hn.first; noteName = hn.second; loaded = true
+                fields = f; values.clear(); values.putAll(v); inNote = v; headings = hn.first; noteName = hn.second; loaded = true
             }.onFailure { snack.showSnackbar("Couldn't read the daily note: ${it.message}") }
         }
     }
@@ -99,9 +101,16 @@ fun LogScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, slot: Stri
         busy = true
         val snapshot = values.toMap()
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { DailyLogStore(ctx, uri, prefs).save(visible, snapshot) } }
+            val base = inNote
+            val r = withContext(Dispatchers.IO) { runCatching { DailyLogStore(ctx, uri, prefs).save(visible, snapshot, base) } }
             busy = false
-            r.onSuccess { snack.showSnackbar("Saved to $noteName") }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            r.onSuccess { saved ->
+                inNote = inNote + saved.inNote
+                if (saved.skipped.isEmpty()) snack.showSnackbar("Saved to $noteName")
+                else snack.showSnackbar(
+                    "Not saved: ${saved.skipped.joinToString { it.label }} changed on another device. Save again to replace it."
+                )
+            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
     }
 
