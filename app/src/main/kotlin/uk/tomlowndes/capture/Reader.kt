@@ -59,7 +59,12 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     // ---- reading ----
 
     /** Inbox and archive together, newest first. Only the head of each note is read. */
-    fun list(): List<SavedArticle> = listOf(false, true).flatMap { archived ->
+    fun list(): List<SavedArticle> = articles(listOf(false, true))
+
+    /** Just the inbox (no Archive), for the Read widget. */
+    fun inbox(): List<SavedArticle> = articles(listOf(false))
+
+    private fun articles(folders: List<Boolean>): List<SavedArticle> = folders.flatMap { archived ->
         folder(archived)?.listFiles().orEmpty().filter { it.isFile && it.name.orEmpty().endsWith(".md") }.map { f ->
             val doc = ReadNote.parse(ReadRef(f.name!!, archived), read(f, HEAD), f.lastModified())
             SavedArticle(doc.ref, doc.title, doc.url, ReadNote.snippet(doc.body), doc.read, doc.saved,
@@ -77,6 +82,7 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
             if (Md.fmGet(lines, "saved") == null) Md.fmSet(lines, "saved", saved)
             change(lines)
         }
+        Widgets.readChanged(ctx)
     }
 
     fun setRead(ref: ReadRef, read: Boolean) = edit(fileOf(ref)) { Md.fmSet(it, "status", if (read) "read" else "unread") }
@@ -88,14 +94,14 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     fun archive(ref: ReadRef): ReadRef {
         val f = fileOf(ref)
         edit(f) { Md.fmSet(it, "status", "archived") }
-        return ReadRef(move(f, folder(false)!!, folder(true, create = true)!!), true)
+        return ReadRef(move(f, folder(false)!!, folder(true, create = true)!!), true).also { Widgets.readChanged(ctx) }
     }
 
     /** Moves the note back to the inbox as read. */
     fun unarchive(ref: ReadRef): ReadRef {
         val f = fileOf(ref)
         edit(f) { Md.fmSet(it, "status", "read") }
-        return ReadRef(move(f, folder(true)!!, folder(false)!!), false)
+        return ReadRef(move(f, folder(true)!!, folder(false)!!), false).also { Widgets.readChanged(ctx) }
     }
 
     private fun move(f: DocumentFile, from: DocumentFile, to: DocumentFile): String {

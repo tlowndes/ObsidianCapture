@@ -56,6 +56,9 @@ import java.util.Locale
 /** What the tasks widget shows: overdue and today's open tasks, oldest first. */
 data class WidgetTasks(val hasVault: Boolean, val items: List<TaskItem>, val error: String? = null)
 
+/** What the Read widget shows: the unread count and the newest unread article. */
+data class WidgetRead(val hasVault: Boolean, val unread: Int, val next: SavedArticle?, val error: String? = null)
+
 /** Home screen widgets: shared loading and refresh. */
 object Widgets {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -80,6 +83,28 @@ object Widgets {
     fun tasksChanged(ctx: Context) {
         val app = ctx.applicationContext
         scope.launch { runCatching { refreshTasks(app) } }
+    }
+
+    internal val read = MutableStateFlow<WidgetRead?>(null)
+
+    internal fun loadRead(ctx: Context): WidgetRead {
+        val vault = AppPrefs(ctx).vault ?: return WidgetRead(false, 0, null)
+        return runCatching { ReadNote.unread(ReadStore(ctx, vault).inbox()) }.fold(
+            { (count, next) -> WidgetRead(true, count, next) },
+            { WidgetRead(true, 0, null, "Couldn't read the inbox") }
+        )
+    }
+
+    suspend fun refreshRead(ctx: Context) {
+        val app = ctx.applicationContext
+        read.value = withContext(Dispatchers.IO) { loadRead(app) }
+        ReadWidget().updateAll(app)
+    }
+
+    /** Fire-and-forget refresh after an article is saved, read or archived. */
+    fun readChanged(ctx: Context) {
+        val app = ctx.applicationContext
+        scope.launch { runCatching { refreshRead(app) } }
     }
 
     internal fun openTab(ctx: Context, tab: Tab) =
@@ -189,6 +214,60 @@ class TickAction : ActionCallback {
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         Widgets.refreshTasks(context)
+    }
+}
+
+// ---- Read It Later ----
+
+class ReadWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Exact
+
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        Widgets.read.value = withContext(Dispatchers.IO) { Widgets.loadRead(context.applicationContext) }
+        provideContent {
+            val data by Widgets.read.collectAsState()
+            ReadContent(context, data)
+        }
+    }
+}
+
+class ReadWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = ReadWidget()
+}
+
+@Composable
+private fun ReadContent(ctx: Context, data: WidgetRead?) {
+    val openList = actionStartActivity(Widgets.openTab(ctx, Tab.READ))
+    val next = data?.next
+    val openNext = next?.let { actionStartActivity(Widgets.openTab(ctx, Tab.READ).putExtra("slot", it.ref.file)) } ?: openList
+    Column(GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(14.dp)) {
+        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "📖 " + when (val n = data?.unread ?: 0) { 0 -> "Read"; 1 -> "1 unread"; else -> "$n unread" },
+                style = TextStyle(color = cp(TextMain), fontSize = 17.sp, fontWeight = FontWeight.Bold),
+                modifier = GlanceModifier.defaultWeight().clickable(openList)
+            )
+            Text("↻", style = TextStyle(color = cp(Muted), fontSize = 20.sp),
+                modifier = GlanceModifier.padding(start = 8.dp).clickable(actionRunCallback<RefreshReadAction>()))
+        }
+        Spacer(GlanceModifier.height(6.dp))
+        when {
+            data == null -> Message("Loading…", openList)
+            !data.hasVault -> Message("Open Vault Capture to pick your vault", openList)
+            data.error != null -> Message(data.error, openList)
+            next == null -> Message("All caught up", openList)
+            else -> Column(GlanceModifier.fillMaxSize().clickable(openNext)) {
+                Text("Next up", style = TextStyle(color = cp(Muted), fontSize = 11.sp))
+                Text(next.title, maxLines = 3, style = TextStyle(color = cp(TextMain), fontSize = 14.sp, fontWeight = FontWeight.Medium))
+                ReadStore.host(next.url)?.let { Text(it, maxLines = 1, style = TextStyle(color = cp(Muted), fontSize = 11.sp)) }
+            }
+        }
+    }
+}
+
+class RefreshReadAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        Widgets.refreshRead(context)
     }
 }
 

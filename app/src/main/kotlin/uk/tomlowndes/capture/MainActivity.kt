@@ -55,7 +55,7 @@ enum class Tab(val label: String, val icon: String) {
 class MainActivity : ComponentActivity() {
     private val prefs by lazy { AppPrefs(this) }
 
-    /** Set by notification taps (a tab plus which slot) and read by [App]. */
+    /** Set by notification and widget taps (a tab plus which log slot or article) and read by [App]. */
     private var openRequest by mutableStateOf<Pair<Tab, String?>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -138,7 +138,12 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     }
 
     LaunchedEffect(request) {
-        request?.let { tab = it.first; logSlot = it.second; settings = false; openIdea = null; openArticle = null; onRequestHandled() }
+        request?.let {
+            tab = it.first; logSlot = it.second; settings = false; openIdea = null
+            // From the Read widget the second part is the article's file name in the inbox.
+            openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
+            onRequestHandled()
+        }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->

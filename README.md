@@ -26,6 +26,9 @@ your sync tool keeps up to date). Five tabs:
   whether you've finished it (Mark read, Archive or Keep unread). Read state is `status: unread|read|archived` in
   frontmatter (no status counts as unread). Archive moves the note to `ReadItLater Inbox/Archive/`, with Undo.
 
+Home screen widgets: **Today's tasks** (overdue and today, tick them off), **Read It Later** (unread count and the
+newest unread article; tap to open it in the reader) and **Quick capture** (add a task or save a link).
+
 Settings (gear on Capture) holds the vault folder, reminder times, recurring-task switch and folder names.
 
 First launch: pick your vault root folder on the phone (the one containing `.obsidian`).

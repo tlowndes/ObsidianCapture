@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_tasks_desc">Overdue and today\'s tasks from Quick Task. Tick them off here.</string>
+    <string name="widget_read_desc">How many articles are unread, and the newest one. Tap to read it.</string>
     <string name="widget_capture_desc">Add a task or save a link without opening the app.</string>
 </resources>

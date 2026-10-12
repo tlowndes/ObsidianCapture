@@ -139,4 +139,19 @@ class ReadLaterTest {
         assertTrue(a.video)
         assertEquals("A talk", a.title)
     }
+
+    @Test fun `the Read widget counts unread articles and offers the newest`() {
+        fun saved(file: String, read: Boolean, at: String, archived: Boolean = false) =
+            SavedArticle(ReadRef(file, archived), file.removeSuffix(".md"), null, "", read, epoch(at), 100)
+        val items = listOf(
+            saved("Old.md", read = false, at = "2026-10-01T08:00"),
+            saved("Newest.md", read = false, at = "2026-10-12T09:00"),
+            saved("Done.md", read = true, at = "2026-10-12T10:00"),
+            saved("Filed.md", read = false, at = "2026-10-12T11:00", archived = true)
+        )
+        val (count, next) = ReadNote.unread(items)
+        assertEquals(2, count)
+        assertEquals("Newest.md", next?.ref?.file)
+        assertEquals(0 to null, ReadNote.unread(items.filter { it.read }))
+    }
 }
