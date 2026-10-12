@@ -66,7 +66,7 @@ private fun HistoryItem(e: Entry) {
 }
 
 @Composable
-fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSettings: () -> Unit) {
+fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSearch: () -> Unit, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val history = remember { mutableStateListOf<Entry>() }
@@ -120,7 +120,10 @@ fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSettings: () -> U
                     }
                     Text("Straight into your vault", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
                 }
-                TextButton(onClick = onOpenSettings) { Text("⚙", color = Muted, fontSize = 24.sp) }
+                Row {
+                    TextButton(onClick = onOpenSearch) { Text("🔍", color = Muted, fontSize = 20.sp) }
+                    TextButton(onClick = onOpenSettings) { Text("⚙", color = Muted, fontSize = 24.sp) }
+                }
             }
             Spacer(Modifier.height(2.dp))
 
