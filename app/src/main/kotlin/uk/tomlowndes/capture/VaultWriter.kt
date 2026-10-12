@@ -34,18 +34,11 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
     }
 
     private fun readLines(file: DocumentFile): MutableList<String> =
-        ctx.contentResolver.openInputStream(file.uri)?.bufferedReader()?.readText().orEmpty()
-            .split("\n").toMutableList()
+        VaultIo.read(ctx, file).split("\n").toMutableList()
 
-    private fun write(file: DocumentFile, content: String) {
-        ctx.contentResolver.openOutputStream(file.uri, "wt")?.use { it.write(content.toByteArray()) }
-            ?: error("Cannot write ${file.name}")
-    }
-
-    /** Writes the task note and lets the home screen widget know. */
-    private fun save(file: DocumentFile, lines: List<String>) {
-        val out = lines.joinToString("\n")
-        write(file, if (out.endsWith("\n")) out else out + "\n")
+    /** Edits the task note (redone on the fresh copy if a sync lands meanwhile) and lets the home screen widget know. */
+    private fun edit(file: DocumentFile, change: (MutableList<String>) -> Unit) {
+        VaultIo.edit(ctx, file, change)
         Widgets.tasksChanged(ctx)
     }
 
@@ -66,9 +59,7 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
 
     fun addTask(text: String, due: String?) {
         val file = taskFile(true) ?: error("Cannot create task note")
-        val lines = readLines(file)
-        lines.insertActive("- [ ] #task ${text.trim()}" + (due?.let { " 📅 $it" } ?: ""))
-        save(file, lines)
+        edit(file) { it.insertActive("- [ ] #task ${text.trim()}" + (due?.let { " 📅 $it" } ?: "")) }
     }
 
     /** Open tasks in the order they appear in the note. */
@@ -93,60 +84,58 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
      */
     fun completeTask(raw: String, recurring: Boolean = true): Completion {
         val file = taskFile(false) ?: error("Task note not found")
-        val lines = readLines(file)
-        val i = lines.indexOf(raw)
-        if (i < 0) error("Task changed in Obsidian, refreshed")
-        lines.removeAt(i)
         val today = LocalDate.now()
         val next = if (recurring) TaskRules.nextOccurrence(raw, today) else null
-        if (next != null) lines.add(i, next)
         val ticked = raw.replaceFirst("- [ ]", "- [x]")
         val done = if (ticked.contains("✅")) ticked else ticked.trimEnd() + " ✅ $today"
-        val archive = lines.archiveStart()
-        if (archive >= 0) {
-            var at = archive + 1
-            if (at < lines.size && lines[at].isBlank()) at++
-            lines.add(at, done)
-        } else {
-            lines.addAll(listOf("", "## Archive", "", done))
+        edit(file) { lines ->
+            val i = lines.indexOf(raw)
+            if (i < 0) error("Task changed in Obsidian, refreshed")
+            lines.removeAt(i)
+            if (next != null) lines.add(i, next)
+            val archive = lines.archiveStart()
+            if (archive >= 0) {
+                var at = archive + 1
+                if (at < lines.size && lines[at].isBlank()) at++
+                lines.add(at, done)
+            } else {
+                lines.addAll(listOf("", "## Archive", "", done))
+            }
         }
-        save(file, lines)
         return Completion(done, next)
     }
 
     /** Changes (or clears, for null) a task's due date in place. Returns the task's new line. */
     fun rescheduleTask(raw: String, date: LocalDate?): String {
         val file = taskFile(false) ?: error("Task note not found")
-        val lines = readLines(file)
-        val i = lines.indexOf(raw)
-        if (i < 0) error("Task changed in Obsidian, refreshed")
         val updated = TaskRules.withDue(raw, date)
-        lines[i] = updated
-        save(file, lines)
+        edit(file) { lines ->
+            val i = lines.indexOf(raw)
+            if (i < 0) error("Task changed in Obsidian, refreshed")
+            lines[i] = updated
+        }
         return updated
     }
 
     fun deleteTask(raw: String) {
         val file = taskFile(false) ?: error("Task note not found")
-        val lines = readLines(file)
-        if (!lines.remove(raw)) error("Task changed in Obsidian, refreshed")
-        save(file, lines)
+        edit(file) { if (!it.remove(raw)) error("Task changed in Obsidian, refreshed") }
     }
 
     /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (null) or a reschedule ([replace]). */
     fun restoreTask(raw: String, done: Completion?, replace: String? = null) {
         val file = taskFile(true) ?: return
-        val lines = readLines(file)
-        if (done != null) lines.remove(done.doneLine)
-        val at = (done?.nextLine ?: replace)?.let { lines.indexOf(it) } ?: -1
-        if (at >= 0) lines[at] = raw else lines.insertActive(raw)
-        save(file, lines)
+        edit(file) { lines ->
+            if (done != null) lines.remove(done.doneLine)
+            val at = (done?.nextLine ?: replace)?.let { lines.indexOf(it) } ?: -1
+            if (at >= 0) lines[at] = raw else lines.insertActive(raw)
+        }
     }
 
     /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
     fun addNote(name: String, content: String) {
         val file = dir("$INBOX/$RIL_DIR").createFile("text/markdown", name) ?: error("Cannot create note")
-        write(file, content)
+        VaultIo.write(ctx, file, content)
     }
 
     companion object {

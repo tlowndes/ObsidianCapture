@@ -354,15 +354,15 @@ private fun IdeaDetail(
         }
     }
 
-    if (editSummary && d != null) TextEditDialog("Summary", d.summary, onSave = { editSummary = false; run { setSummary(title, it) } },
+    if (editSummary && d != null) TextEditDialog("Summary", d.summary, onSave = { editSummary = false; run { setSummary(title, d.summary, it) } },
         onDismiss = { editSummary = false })
 
     editIndex?.let { i ->
         val e = d?.entries?.getOrNull(i)
         if (e != null) TextEditDialog(
             entryLabel(e.heading), e.text,
-            onSave = { editIndex = null; run { editEntry(title, i, it) } },
-            onDelete = { editIndex = null; run { deleteEntry(title, i) } },
+            onSave = { editIndex = null; run { editEntry(title, e, it) } },
+            onDelete = { editIndex = null; run { deleteEntry(title, e) } },
             onDismiss = { editIndex = null }
         )
     }

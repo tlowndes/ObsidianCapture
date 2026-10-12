@@ -30,8 +30,20 @@ Settings (gear on Capture) holds the vault folder, reminder times, recurring-tas
 
 First launch: pick your vault root folder on the phone (the one containing `.obsidian`).
 
-Every write is a read-modify-write of just the part it owns, so edits made in Obsidian are kept.
-If your sync tool and the app change the same file at the same moment you can still get a sync conflict.
+Every write is a read-modify-write of just the part it owns, so edits made in Obsidian are kept. It is written to
+sit alongside Obsidian Sync, which syncs the phone's vault while the Obsidian app runs and merges edits made in
+two places:
+
+- Just before saving, the note is read again. If it changed in the meantime (a sync landed), the app redoes its
+  change on the new copy instead of writing over it.
+- Each save is written in one go and read back, so a half-written note is never left for the sync tool to pick up.
+- **Log** only saves the sections you changed in the form. If one of them was also changed on another device since
+  the form loaded, it is left alone and you're told; Save again replaces it.
+- If today's note isn't on the phone yet, Log creates it from the template and reminds you to open Obsidian first next
+  time, since Sync may then merge it with the desktop's copy.
+- **Ideas** finds an entry by its heading and text, not its position, and won't edit an entry or summary that was
+  changed elsewhere.
+- Tasks are matched by their exact line, so a task changed in Obsidian is never overwritten.
 
 ## Build
 
