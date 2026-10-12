@@ -34,6 +34,7 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -68,15 +69,24 @@ object Widgets {
         val vault = AppPrefs(ctx).vault ?: return WidgetTasks(false, emptyList())
         val today = LocalDate.now()
         return runCatching { VaultWriter(ctx, vault).listTasks() }.fold(
-            { all -> WidgetTasks(true, all.filter { it.due != null && !it.due.isAfter(today) }.sortedBy { it.due }) },
+            { all -> WidgetTasks(true, dueBy(all, today)) },
             { WidgetTasks(true, emptyList(), "Couldn't read tasks") }
         )
     }
+
+    /** Overdue and today's tasks, oldest first; undated and future tasks are left out. */
+    internal fun dueBy(all: List<TaskItem>, today: LocalDate) =
+        all.filter { it.due != null && !it.due.isAfter(today) }.sortedBy { it.due }
+
+    internal fun tasksTitle(count: Int) = "Today" + (count.takeIf { it > 0 }?.let { " · $it" } ?: "")
+
+    internal fun readTitle(unread: Int) = "📖 " + when (unread) { 0 -> "Read"; 1 -> "1 unread"; else -> "$unread unread" }
 
     suspend fun refreshTasks(ctx: Context) {
         val app = ctx.applicationContext
         tasks.value = withContext(Dispatchers.IO) { load(app) }
         TasksWidget().updateAll(app)
+        CombinedWidget().updateAll(app)
     }
 
     /** Fire-and-forget refresh after the app changes the task note. */
@@ -99,6 +109,7 @@ object Widgets {
         val app = ctx.applicationContext
         read.value = withContext(Dispatchers.IO) { loadRead(app) }
         ReadWidget().updateAll(app)
+        CombinedWidget().updateAll(app)
     }
 
     /** Fire-and-forget refresh after an article is saved, read or archived. */
@@ -139,13 +150,18 @@ class TasksWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun TasksContent(ctx: Context, data: WidgetTasks?) {
+    TasksPanel(ctx, data, GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(14.dp))
+}
+
+@Composable
+private fun TasksPanel(ctx: Context, data: WidgetTasks?, modifier: GlanceModifier) {
     val today = LocalDate.now()
     val openTasks = actionStartActivity(Widgets.openTab(ctx, Tab.TASKS))
-    Column(GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(14.dp)) {
+    Column(modifier) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(GlanceModifier.defaultWeight().clickable(openTasks)) {
                 Text(
-                    "Today" + (data?.items?.size?.takeIf { it > 0 }?.let { " · $it" } ?: ""),
+                    Widgets.tasksTitle(data?.items?.size ?: 0), maxLines = 1,
                     style = TextStyle(color = cp(TextMain), fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 )
                 Text(
@@ -240,13 +256,18 @@ class ReadWidgetReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun ReadContent(ctx: Context, data: WidgetRead?) {
+    ReadPanel(ctx, data, GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(14.dp))
+}
+
+@Composable
+private fun ReadPanel(ctx: Context, data: WidgetRead?, modifier: GlanceModifier) {
     val openList = actionStartActivity(Widgets.openTab(ctx, Tab.READ))
     val next = data?.next
     val openNext = next?.let { actionStartActivity(Widgets.openTab(ctx, Tab.READ).putExtra("slot", it.ref.file)) } ?: openList
-    Column(GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(14.dp)) {
+    Column(modifier) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "📖 " + when (val n = data?.unread ?: 0) { 0 -> "Read"; 1 -> "1 unread"; else -> "$n unread" },
+                Widgets.readTitle(data?.unread ?: 0), maxLines = 1,
                 style = TextStyle(color = cp(TextMain), fontSize = 17.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier.defaultWeight().clickable(openList)
             )
@@ -271,6 +292,38 @@ private fun ReadContent(ctx: Context, data: WidgetRead?) {
 class RefreshReadAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         Widgets.refreshRead(context)
+    }
+}
+
+// ---- Tasks and Read It Later, side by side ----
+
+class CombinedWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Exact
+
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val app = context.applicationContext
+        withContext(Dispatchers.IO) {
+            Widgets.tasks.value = Widgets.load(app)
+            Widgets.read.value = Widgets.loadRead(app)
+        }
+        provideContent {
+            val tasks by Widgets.tasks.collectAsState()
+            val read by Widgets.read.collectAsState()
+            CombinedContent(context, tasks, read)
+        }
+    }
+}
+
+class CombinedWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = CombinedWidget()
+}
+
+@Composable
+private fun CombinedContent(ctx: Context, tasks: WidgetTasks?, read: WidgetRead?) {
+    Row(GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(vertical = 14.dp)) {
+        TasksPanel(ctx, tasks, GlanceModifier.defaultWeight().fillMaxHeight().padding(horizontal = 14.dp))
+        Box(GlanceModifier.width(1.dp).fillMaxHeight().background(Surface2)) {}
+        ReadPanel(ctx, read, GlanceModifier.defaultWeight().fillMaxHeight().padding(horizontal = 14.dp))
     }
 }
 
