@@ -5,14 +5,17 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.time.LocalDate
 
-/** An open task from the "## Active" section; [raw] is the exact line as it appears in the note. */
-data class TaskItem(val raw: String, val text: String, val due: LocalDate?, val recurrence: String? = null)
+/** An open task; [raw] is the exact line as it appears in the note at vault [path]. */
+data class TaskItem(
+    val raw: String, val text: String, val due: LocalDate?, val recurrence: String? = null,
+    val path: String = VaultTasks.QUICK_TASK
+)
 
 /** Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active. */
 data class Completion(val doneLine: String, val nextLine: String?)
 
 /** Reads and writes the Obsidian vault through the Storage Access Framework folder the user picked. */
-class VaultWriter(private val ctx: Context, treeUri: Uri) {
+class VaultWriter(private val ctx: Context, private val treeUri: Uri) {
     private val root = DocumentFile.fromTreeUri(ctx, treeUri) ?: error("Vault folder unavailable")
 
     private fun dir(path: String): DocumentFile {
@@ -33,7 +36,7 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
     private fun readLines(file: DocumentFile): MutableList<String> =
         VaultIo.read(ctx, file).split("\n").toMutableList()
 
-    /** Edits the task note (redone on the fresh copy if a sync lands meanwhile) and lets the home screen widget know. */
+    /** Edits a note (redone on the fresh copy if a sync lands meanwhile) and lets the home screen widget know. */
     private fun edit(file: DocumentFile, change: (MutableList<String>) -> Unit) {
         VaultIo.edit(ctx, file, change)
         Widgets.tasksChanged(ctx)
@@ -44,40 +47,57 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
         edit(file) { TaskNote.insertActive(it, TaskNote.newTask(text, due)) }
     }
 
-    /** Open tasks in the order they appear in the note. */
-    fun listTasks(): List<TaskItem> {
+    /** Open tasks in Quick Task's "## Active" section, in note order. */
+    fun listQuickTasks(): List<TaskItem> {
         val file = taskFile(false) ?: return emptyList()
         return TaskNote.list(readLines(file))
     }
 
+    /** Quick Task's open tasks first, then `#task` tasks from every other note in the vault. */
+    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(ctx, treeUri)
+
+    private fun isQuick(t: TaskItem) = t.path == VaultTasks.QUICK_TASK
+
+    /** The note [t] lives in. */
+    private fun noteOf(t: TaskItem): DocumentFile {
+        if (isQuick(t)) return taskFile(false) ?: error("Task note not found")
+        var cur = root
+        for (part in t.path.split("/")) cur = cur.findFile(part) ?: error("Note moved in Obsidian, refreshed")
+        return cur
+    }
+
     /**
-     * Ticks the task and moves it to the top of "## Archive". With [recurring], a task that has a 🔁 rule
-     * also leaves its next occurrence in place, like the Tasks plugin does.
+     * Ticks the task. In Quick Task it moves to the top of "## Archive"; in any other note it is ticked where it is.
+     * With [recurring], a task that has a 🔁 rule also leaves its next occurrence in place, like the Tasks plugin does.
      */
-    fun completeTask(raw: String, recurring: Boolean = true): Completion {
-        val file = taskFile(false) ?: error("Task note not found")
-        val c = TaskNote.completion(raw, LocalDate.now(), recurring)
-        edit(file) { TaskNote.complete(it, raw, c) }
+    fun completeTask(t: TaskItem, recurring: Boolean = true): Completion {
+        val c = TaskNote.completion(t.raw, LocalDate.now(), recurring)
+        edit(noteOf(t)) { if (isQuick(t)) TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
         return c
     }
 
     /** Changes (or clears, for null) a task's due date in place. Returns the task's new line. */
-    fun rescheduleTask(raw: String, date: LocalDate?): String {
-        val file = taskFile(false) ?: error("Task note not found")
-        val updated = TaskRules.withDue(raw, date)
-        edit(file) { TaskNote.replace(it, raw, updated) }
+    fun rescheduleTask(t: TaskItem, date: LocalDate?): String {
+        val updated = TaskRules.withDue(t.raw, date)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
         return updated
     }
 
-    fun deleteTask(raw: String) {
-        val file = taskFile(false) ?: error("Task note not found")
-        edit(file) { TaskNote.delete(it, raw) }
+    /** Removes the task. Returns the line it was on, for [restoreTask]. */
+    fun deleteTask(t: TaskItem): Int {
+        var at = -1
+        edit(noteOf(t)) { at = VaultTasks.delete(it, t.raw) }
+        return at
     }
 
-    /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (null) or a reschedule ([replace]). */
-    fun restoreTask(raw: String, done: Completion?, replace: String? = null) {
-        val file = taskFile(true) ?: return
-        edit(file) { TaskNote.restore(it, raw, done, replace) }
+    /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (its line [at]) or a reschedule ([replace]). */
+    fun restoreTask(t: TaskItem, done: Completion?, replace: String? = null, at: Int? = null) {
+        if (isQuick(t)) {
+            val file = taskFile(true) ?: return
+            edit(file) { TaskNote.restore(it, t.raw, done, replace) }
+        } else {
+            edit(noteOf(t)) { VaultTasks.restoreInPlace(it, t.raw, done, replace, at) }
+        }
     }
 
     /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
