@@ -3,6 +3,9 @@ package uk.tomlowndes.capture
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.time.temporal.IsoFields
+import java.util.Locale
 
 /**
  * The edits [DailyLogStore] makes to the daily note and its template, as plain functions on lines so they can be
@@ -30,12 +33,59 @@ object DailyNote {
 
     // ---- paths and template ----
 
-    /** Converts the Moment.js tokens Obsidian uses in date formats to java.time ones. */
-    fun momentToJava(f: String) = f.replace("YYYY", "yyyy").replace("DD", "dd").replace("dddd", "EEEE")
+    private val MOMENT_TOKEN = Regex("""\[[^\]]*]|YYYY|YY|Y|GGGG|GG|gggg|gg|Qo|Q|MMMM|MMM|Mo|MM|M|DDDD|DDDo|DDD|Do|DD|D|dddd|ddd|do|dd|d|E|e|WW|Wo|W|ww|wo|w""")
+
+    private fun ordinal(n: Int) = "$n" + when {
+        n % 100 in 11..13 -> "th"
+        n % 10 == 1 -> "st"
+        n % 10 == 2 -> "nd"
+        n % 10 == 3 -> "rd"
+        else -> "th"
+    }
+
+    /**
+     * Formats [date] with a Moment.js format, as Obsidian does for daily note names. Covers the date tokens;
+     * `[text]` is literal and anything else passes through. Week tokens (`w`, `W`, `gggg`, `GGGG`) use ISO weeks.
+     */
+    fun formatMoment(format: String, date: LocalDate): String = MOMENT_TOKEN.replace(format) { m ->
+        val t = m.value
+        val week = date.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)
+        val weekYear = date.get(IsoFields.WEEK_BASED_YEAR)
+        val dow = date.dayOfWeek
+        when (t) {
+            "YYYY", "Y" -> "${date.year}"
+            "YY" -> "%02d".format(date.year % 100)
+            "GGGG", "gggg" -> "$weekYear"
+            "GG", "gg" -> "%02d".format(weekYear % 100)
+            "Q" -> "${date.get(IsoFields.QUARTER_OF_YEAR)}"
+            "Qo" -> ordinal(date.get(IsoFields.QUARTER_OF_YEAR))
+            "MMMM" -> date.month.getDisplayName(TextStyle.FULL, Locale.UK)
+            "MMM" -> date.month.getDisplayName(TextStyle.SHORT, Locale.UK).take(3)
+            "MM" -> "%02d".format(date.monthValue)
+            "Mo" -> ordinal(date.monthValue)
+            "M" -> "${date.monthValue}"
+            "DDDD" -> "%03d".format(date.dayOfYear)
+            "DDDo" -> ordinal(date.dayOfYear)
+            "DDD" -> "${date.dayOfYear}"
+            "DD" -> "%02d".format(date.dayOfMonth)
+            "Do" -> ordinal(date.dayOfMonth)
+            "D" -> "${date.dayOfMonth}"
+            "dddd" -> dow.getDisplayName(TextStyle.FULL, Locale.UK)
+            "ddd" -> dow.getDisplayName(TextStyle.SHORT, Locale.UK).take(3)
+            "dd" -> dow.getDisplayName(TextStyle.SHORT, Locale.UK).take(2)
+            "d" -> "${dow.value % 7}"
+            "do" -> ordinal(dow.value % 7)
+            "E" -> "${dow.value}"
+            "e" -> "${dow.value - 1}"
+            "WW", "ww" -> "%02d".format(week)
+            "Wo", "wo" -> ordinal(week)
+            "W", "w" -> "$week"
+            else -> t.removePrefix("[").removeSuffix("]")
+        }
+    }
 
     /** Vault path of the daily note for [date], with `.md`. */
-    fun notePath(folder: String, format: String, date: LocalDate) =
-        "$folder/${date.format(DateTimeFormatter.ofPattern(momentToJava(format)))}.md"
+    fun notePath(folder: String, format: String, date: LocalDate) = "$folder/${formatMoment(format, date)}.md"
 
     /** Fills in the Templater date tags of the Daily Note template; with no template, a minimal note. */
     fun renderTemplate(template: String?, date: LocalDate, now: LocalDateTime): String {
@@ -43,7 +93,7 @@ object DailyNote {
         val stamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
         return t
             .replace(Regex("<%\\s*moment\\(tp\\.file\\.title,\\s*\"([^\"]*)\"\\)\\.format\\(\"([^\"]*)\"\\)\\s*%>")) {
-                date.format(DateTimeFormatter.ofPattern(momentToJava(it.groupValues[2])))
+                formatMoment(it.groupValues[2], date)
             }
             .replace(Regex("<%\\s*tp\\.file\\.(creation|last_modified)_date\\(\\)\\s*%>"), stamp)
     }

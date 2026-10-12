@@ -58,6 +58,30 @@ class DailyNoteTest {
         assertEquals("Daily/2026-10-12.md", DailyNote.notePath("Daily", "YYYY-MM-DD", date))
     }
 
+    @Test fun `moment day tokens are day of month, not day of year`() {
+        val d = LocalDate.parse("2026-03-05")
+        assertEquals("5-3-2026", DailyNote.formatMoment("D-M-YYYY", d))
+        assertEquals("05/03/26", DailyNote.formatMoment("DD/MM/YY", d))
+        assertEquals("064 64 64th", DailyNote.formatMoment("DDDD DDD DDDo", d))
+        assertEquals("Daily/2026/03/5.md", DailyNote.notePath("Daily", "YYYY/MM/D", d))
+    }
+
+    @Test fun `moment names, ordinals, weeks and literals`() {
+        val d = LocalDate.parse("2026-09-01")
+        assertEquals("Tuesday 1st September 2026", DailyNote.formatMoment("dddd Do MMMM YYYY", d))
+        assertEquals("Tue Tu 2 Sep", DailyNote.formatMoment("ddd dd d MMM", d))
+        assertEquals("2026-W36", DailyNote.formatMoment("GGGG-[W]WW", d))
+        assertEquals("Q3 week 36", DailyNote.formatMoment("[Q]Q [week] w", d))
+        assertEquals("11th 12th 13th 21st 22nd 23rd", listOf(11, 12, 13, 21, 22, 23).joinToString(" ") {
+            DailyNote.formatMoment("Do", LocalDate.of(2026, 1, it))
+        })
+    }
+
+    @Test fun `vault template heading renders`() {
+        val t = DailyNote.renderTemplate("# <% moment(tp.file.title, \"DD-MM-YYYY\").format(\"DD-MM-YYYY dddd\") %>\n", date, now)
+        assertEquals("# 12-10-2026 Monday\n", t)
+    }
+
     @Test fun `template tags are filled in`() {
         val t = rendered
         assertTrue(t.contains("date: 2026-10-12\n"))
