@@ -6,9 +6,12 @@ your sync tool keeps up to date). Five tabs:
 - **Capture**: add a task to `01 - Inbox/⚡ Quick Task.md` (`- [ ] #task ... 📅 date`), or save a link as a
   full article note in `01 - Inbox/ReadItLater Inbox/`. The app is also in the Android Share sheet, so
   sharing from Chrome, YouTube or Reddit saves the page in one tap.
-- **Tasks**: the Quick Task note grouped by due date (Overdue, Today, Tomorrow, This week, Later, No date),
-  or in note order. Tick, reschedule or remove with Undo. Ticking a recurring task (`🔁 every week`, etc.)
-  creates the next occurrence like the Tasks plugin. Done tasks move to `## Archive` with a `✅` date.
+- **Tasks**: open tasks from the whole vault grouped by due date (Overdue, Today, Tomorrow, This week, Later, No date),
+  or in note order: everything in the Quick Task note's `## Active`, plus every `- [ ] ... #task` line in other notes
+  (labelled with the note's name). `99 - Meta`, the templates folder, `ReadItLater Inbox` and dot-folders are skipped,
+  as are code blocks. Tick, reschedule or remove with Undo. Ticking a recurring task (`🔁 every week`, etc.)
+  creates the next occurrence like the Tasks plugin. Done Quick Tasks move to `## Archive` with a `✅` date; tasks in
+  other notes are ticked where they are. Only notes changed since the last look are read again.
 - **Log**: fill in today's daily note in a form: Morning, Evening or All. Built from the `##` sections of your
   Daily Note template; Energy and Overwhelmed are written to frontmatter. **Add section** adds a new `##`
   heading to the template and today's note (short text, bullets, checklist, choice or yes/no; choice and

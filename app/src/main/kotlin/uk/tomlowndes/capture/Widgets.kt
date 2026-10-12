@@ -117,6 +117,7 @@ object Widgets {
 
 private fun cp(c: Color) = ColorProvider(c)
 private val RawKey = ActionParameters.Key<String>("raw")
+private val PathKey = ActionParameters.Key<String>("path")
 
 // ---- Today's tasks ----
 
@@ -167,7 +168,7 @@ private fun TasksContent(ctx: Context, data: WidgetTasks?) {
             data.error != null -> Message(data.error, openTasks)
             data.items.isEmpty() -> Message("Nothing due today", openTasks)
             else -> LazyColumn(GlanceModifier.fillMaxSize()) {
-                items(data.items, itemId = { it.raw.hashCode().toLong() }) { t -> TaskRow(t, today, openTasks) }
+                items(data.items, itemId = { (it.path + it.raw).hashCode().toLong() }) { t -> TaskRow(t, today, openTasks) }
             }
         }
     }
@@ -185,7 +186,7 @@ private fun TaskRow(t: TaskItem, today: LocalDate, open: androidx.glance.action.
     Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         CheckBox(
             checked = false,
-            onCheckedChange = actionRunCallback<TickAction>(actionParametersOf(RawKey to t.raw)),
+            onCheckedChange = actionRunCallback<TickAction>(actionParametersOf(RawKey to t.raw, PathKey to t.path)),
             colors = CheckboxDefaults.colors(checkedColor = cp(Primary), uncheckedColor = cp(Muted))
         )
         Column(GlanceModifier.defaultWeight().clickable(open)) {
@@ -202,11 +203,13 @@ private fun TaskRow(t: TaskItem, today: LocalDate, open: androidx.glance.action.
 class TickAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val raw = parameters[RawKey] ?: return
+        val path = parameters[PathKey] ?: VaultTasks.QUICK_TASK
+        val task = TaskNote.parse(raw)?.copy(path = path) ?: return
         val app = context.applicationContext
-        Widgets.tasks.value?.let { cur -> Widgets.tasks.value = cur.copy(items = cur.items.filterNot { it.raw == raw }) }
+        Widgets.tasks.value?.let { cur -> Widgets.tasks.value = cur.copy(items = cur.items.filterNot { it.raw == raw && it.path == path }) }
         val prefs = AppPrefs(app)
         val vault = prefs.vault
-        if (vault != null) withContext(Dispatchers.IO) { runCatching { VaultWriter(app, vault).completeTask(raw, prefs.recurring) } }
+        if (vault != null) withContext(Dispatchers.IO) { runCatching { VaultWriter(app, vault).completeTask(task, prefs.recurring) } }
         Widgets.refreshTasks(app)
     }
 }

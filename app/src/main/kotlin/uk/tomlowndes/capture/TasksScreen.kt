@@ -92,14 +92,22 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
     val scope = rememberCoroutineScope()
     val tasks = remember { mutableStateListOf<TaskItem>() }
     var loaded by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
     var byDue by remember { mutableStateOf(prefs.sortByDue) }
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
 
+    /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
     fun reload() {
         val uri = vault ?: return
         scope.launch {
+            if (!loaded) {
+                withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listQuickTasks() } }
+                    .onSuccess { tasks.clear(); tasks.addAll(it) }
+            }
+            scanning = true
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTasks() } }
+            scanning = false
             r.onSuccess { tasks.clear(); tasks.addAll(it); loaded = true }
                 .onFailure { snack.showSnackbar("Couldn't read tasks: ${it.message}") }
         }
@@ -109,14 +117,14 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
     fun tick(t: TaskItem) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t.raw, prefs.recurring) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, prefs.recurring) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { c ->
                 val nextDue = c.nextLine?.let { TaskRules.due(it) }
                 val msg = if (nextDue != null) "Done · next: ${dueLabel(nextDue)}" else "Task completed"
                 if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t.raw, c) } }
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, c) } }
                     reload()
                 }
             }
@@ -126,13 +134,13 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
     fun reschedule(t: TaskItem, date: LocalDate?) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).rescheduleTask(t.raw, date) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).rescheduleTask(t, date) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { newRaw ->
                 val msg = if (date == null) "Due date cleared" else "Moved to ${dueLabel(date)}"
                 if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t.raw, null, newRaw) } }
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
                     reload()
                 }
             }
@@ -142,12 +150,12 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
     fun remove(t: TaskItem) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).deleteTask(t.raw) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).deleteTask(t) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess {
+            r.onSuccess { at ->
                 if (snack.showSnackbar("Task removed", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t.raw, null) } }
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, at = at) } }
                     reload()
                 }
             }
@@ -170,7 +178,12 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
                 }
             }
         }
-        Text(if (vault == null) "Pick your vault in Settings" else "Quick Task note · ${tasks.size} open",
+        Text(
+            when {
+                vault == null -> "Pick your vault in Settings"
+                scanning && !loaded -> "Quick Task · ${tasks.size} open · reading the vault…"
+                else -> "Whole vault · ${tasks.size} open" + if (scanning) " · refreshing…" else ""
+            },
             color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp, bottom = 6.dp))
 
         val rows = layout(tasks, byDue)
@@ -218,7 +231,9 @@ private fun TaskCard(t: TaskItem, onTick: () -> Unit, onChip: () -> Unit) {
         Column(Modifier.size(24.dp).clip(CircleShape).border(2.dp, Primary, CircleShape).clickable(onClick = onTick)) {}
         Column(Modifier.weight(1f)) {
             Text(t.text, fontSize = 14.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (t.recurrence != null) Text("🔁 ${t.recurrence}", fontSize = 11.5.sp, color = Muted)
+            val from = if (t.path != VaultTasks.QUICK_TASK) VaultTasks.noteName(t.path) else null
+            val meta = listOfNotNull(t.recurrence?.let { "🔁 $it" }, from?.let { "📄 $it" }).joinToString("  ·  ")
+            if (meta.isNotEmpty()) Text(meta, fontSize = 11.5.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(
             t.due?.let { dayChip(it) } ?: "＋ date", fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
