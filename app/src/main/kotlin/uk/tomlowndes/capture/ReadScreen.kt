@@ -1,6 +1,21 @@
 package uk.tomlowndes.capture
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -24,7 +39,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -114,6 +128,7 @@ fun ReadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, open: Rea
 
     fun archive(ref: ReadRef) {
         val uri = vault ?: return
+        prefs.setScrollPos(ref.file, 0)
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { ReadStore(ctx, uri).archive(ref) } }
             reload()
@@ -124,7 +139,7 @@ fun ReadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, open: Rea
         }
     }
 
-    if (open != null) ArticleView(vault, snack, open, images, scope,
+    if (open != null) ArticleView(vault, prefs, snack, open, images, scope,
         onArchive = { onOpen(null); archive(open) },
         onUnarchive = { onOpen(null); change { unarchive(open) } },
         onBack = { onOpen(null) })
@@ -179,17 +194,48 @@ private fun ReadList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ArticleCard(
     a: SavedArticle, onClick: () -> Unit, onSetRead: (SavedArticle, Boolean) -> Unit,
     onArchive: (SavedArticle) -> Unit, onUnarchive: (SavedArticle) -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
+    val swipe = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        when (v) {
+            SwipeToDismissBoxValue.EndToStart -> { if (a.ref.archived) onUnarchive(a) else onArchive(a); true }
+            SwipeToDismissBoxValue.StartToEnd -> { onSetRead(a, !a.read); false }
+            SwipeToDismissBoxValue.Settled -> false
+        }
+    })
+    SwipeToDismissBox(
+        swipe, enableDismissFromStartToEnd = !a.ref.archived,
+        backgroundContent = {
+            val left = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+            val label = when {
+                left -> if (a.read) "○  Mark unread" else "✓  Mark read"
+                a.ref.archived -> "To inbox  ↩"
+                else -> "Archive  🗄"
+            }
+            Box(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(if (left) Surface2 else TaskTint)
+                    .padding(horizontal = 22.dp),
+                contentAlignment = if (left) Alignment.CenterStart else Alignment.CenterEnd
+            ) { Text(label, fontWeight = FontWeight.SemiBold, color = TextMain) }
+        }
+    ) { CardBody(a, menu, { menu = it }, onClick, onSetRead, onArchive, onUnarchive) }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CardBody(
+    a: SavedArticle, menu: Boolean, setMenu: (Boolean) -> Unit, onClick: () -> Unit, onSetRead: (SavedArticle, Boolean) -> Unit,
+    onArchive: (SavedArticle) -> Unit, onUnarchive: (SavedArticle) -> Unit
+) {
     Box {
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surface1)
-                .combinedClickable(onClick = onClick, onLongClick = { menu = true }).padding(14.dp),
+                .combinedClickable(onClick = onClick, onLongClick = { setMenu(true) }).padding(14.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(Modifier.padding(top = 6.dp).size(8.dp).clip(CircleShape)
@@ -205,13 +251,13 @@ private fun ArticleCard(
                 )
             }
         }
-        DropdownMenu(menu, { menu = false }, modifier = Modifier.background(Surface2)) {
+        DropdownMenu(menu, { setMenu(false) }, modifier = Modifier.background(Surface2)) {
             if (a.ref.archived) {
-                DropdownMenuItem(text = { Text("Move back to inbox") }, onClick = { menu = false; onUnarchive(a) })
+                DropdownMenuItem(text = { Text("Move back to inbox") }, onClick = { setMenu(false); onUnarchive(a) })
             } else {
                 DropdownMenuItem(text = { Text(if (a.read) "Mark unread" else "Mark read") },
-                    onClick = { menu = false; onSetRead(a, !a.read) })
-                DropdownMenuItem(text = { Text("Archive") }, onClick = { menu = false; onArchive(a) })
+                    onClick = { setMenu(false); onSetRead(a, !a.read) })
+                DropdownMenuItem(text = { Text("Archive") }, onClick = { setMenu(false); onArchive(a) })
             }
         }
     }
@@ -221,13 +267,21 @@ private fun ArticleCard(
 
 @Composable
 private fun ArticleView(
-    vault: Uri?, snack: SnackbarHostState, ref: ReadRef, images: Map<String, Uri>, scope: CoroutineScope,
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, ref: ReadRef, images: Map<String, Uri>, scope: CoroutineScope,
     onArchive: () -> Unit, onUnarchive: () -> Unit, onBack: () -> Unit
 ) {
     val ctx = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var doc by remember { mutableStateOf<ArticleDoc?>(null) }
     var read by remember { mutableStateOf(true) }
+    var decided by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
+    var textMenu by remember { mutableStateOf(false) }
+    var size by remember { mutableStateOf(prefs.readerSize) }
+    var serif by remember { mutableStateOf(prefs.readerSerif) }
+    val highlights = remember(ref) { mutableStateListOf<String>() }
+    val scroll = rememberScrollState()
+    val keepPlace = remember { booleanArrayOf(true) }
 
     LaunchedEffect(ref, vault) {
         val uri = vault ?: return@LaunchedEffect
@@ -235,40 +289,111 @@ private fun ArticleView(
         r.onFailure { snack.showSnackbar("Couldn't open article: ${it.message}"); onBack() }
         val d = r.getOrNull() ?: return@LaunchedEffect
         doc = d
-        read = true
-        // Opening an article counts as reading it.
-        if (!d.read) withContext(Dispatchers.IO) { runCatching { ReadStore(ctx, uri).setRead(ref, true) } }
+        read = d.read
+        highlights.clear(); highlights.addAll(d.highlights)
+        // Back to where you got to last time, once the text has been laid out.
+        val y = prefs.scrollPos(ref.file)
+        if (y > 0) {
+            repeat(30) { if (scroll.maxValue < y) withFrameNanos { } }
+            scroll.scrollTo(y)
+        }
+    }
+    DisposableEffect(ref) {
+        onDispose { if (keepPlace[0] && doc != null) prefs.setScrollPos(ref.file, scroll.value) }
     }
 
-    fun toggleRead() {
+    fun store(block: ReadStore.() -> Unit, after: () -> Unit = {}) {
         val uri = vault ?: return
-        val now = !read
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { ReadStore(ctx, uri).setRead(ref, now) } }
-                .onSuccess { read = now; if (!now) onBack() }.onFailure { snack.showSnackbar(it.message ?: "Failed") }
+            withContext(Dispatchers.IO) { runCatching { ReadStore(ctx, uri).block() } }
+                .onSuccess { after() }.onFailure { snack.showSnackbar(it.message ?: "Failed") }
         }
     }
 
+    fun toggleRead() {
+        val now = !read
+        decided = true
+        store({ setRead(ref, now) }) { read = now }
+    }
+
+    /** Finished with it: forget the reading position and leave. */
+    fun finish(then: () -> Unit) { keepPlace[0] = false; prefs.setScrollPos(ref.file, 0); then() }
+
+    val needsAnswer = doc != null && !read && !decided && !ref.archived
+    fun leave() { if (needsAnswer) asking = true else onBack() }
+    BackHandler(enabled = needsAnswer) { asking = true }
+
     fun openLink(url: String) { runCatching { uriHandler.openUri(url) } }
+
+    fun toggleHighlight(k: String) {
+        val adding = k !in highlights
+        store({ toggleHighlight(ref, k) }) {
+            if (adding) highlights.add(k) else highlights.remove(k)
+            scope.launch { snack.showSnackbar(if (adding) "Highlighted" else "Highlight removed") }
+        }
+    }
 
     val d = doc
     val blocks = remember(d) { d?.let { MdBlocks.parse(it.body) }.orEmpty() }
     val words = remember(d) { d?.body?.sumOf { l -> l.split(' ').count { it.isNotBlank() } } ?: 0 }
+    val body = TextStyle(
+        fontSize = size.sp, lineHeight = (size * 1.6f).sp, color = TextMain,
+        fontFamily = if (serif) FontFamily.Serif else FontFamily.Default
+    )
+    val blockKeys = remember(blocks) { blocks.mapNotNull { MdBlocks.highlightKey(it) }.toSet() }
+    val haptics = LocalHapticFeedback.current
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("←", fontSize = 24.sp, color = TextMain) }
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = ::leave) { Text("←", fontSize = 24.sp, color = TextMain) }
             Text(listOfNotNull(ReadStore.host(d?.url), d?.let { minutes(words) + " read" }).joinToString(" · "),
-                fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Box {
+                TextButton(onClick = { textMenu = true }) { Text("Aa", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextMain) }
+                DropdownMenu(textMenu, { textMenu = false }, modifier = Modifier.background(Surface2)) {
+                    Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { size = (size - 1.5f).coerceAtLeast(13f); prefs.readerSize = size }) {
+                            Text("A−", fontSize = 14.sp, color = TextMain)
+                        }
+                        Text("${size.toInt()}", color = Muted, fontSize = 13.sp)
+                        TextButton(onClick = { size = (size + 1.5f).coerceAtMost(27f); prefs.readerSize = size }) {
+                            Text("A+", fontSize = 19.sp, color = TextMain)
+                        }
+                    }
+                    DropdownMenuItem(text = { Text("Sans", fontFamily = FontFamily.Default, color = if (!serif) Primary else TextMain) },
+                        onClick = { serif = false; prefs.readerSerif = false })
+                    DropdownMenuItem(text = { Text("Serif", fontFamily = FontFamily.Serif, color = if (serif) Primary else TextMain) },
+                        onClick = { serif = true; prefs.readerSerif = true })
+                }
+            }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
+        // Reading progress.
+        val progress = if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
+        Box(Modifier.fillMaxWidth().height(2.dp).background(Surface1)) {
+            Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(Primary))
+        }
+        Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 22.dp)) {
             if (d != null) {
-                Text(d.title, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 6.dp))
-                Text("Saved ${savedLabel(d.saved)}" + if (ref.archived) " · archived" else "",
+                Text(d.title, fontSize = (size * 1.55f).sp, lineHeight = (size * 1.9f).sp, fontWeight = FontWeight.Bold,
+                    fontFamily = body.fontFamily, modifier = Modifier.padding(top = 10.dp))
+                Text("Saved ${savedLabel(d.saved)}" + (if (ref.archived) " · archived" else "") + " · long-press a paragraph to highlight",
                     fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    blocks.forEach { MdBlockView(it, images, ::openLink) }
+                    blocks.forEach { b ->
+                        val key = MdBlocks.highlightKey(b)
+                        val onLong: (() -> Unit)? = if (key == null) null else {
+                            { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggleHighlight(key) }
+                        }
+                        MdBlockView(b, images, body, key != null && key in highlights, ::openLink, onLong)
+                    }
+                }
+                val loose = highlights.filter { it !in blockKeys }
+                if (loose.isNotEmpty()) {
+                    Text("Highlights", fontSize = (size * 1.2f).sp, fontWeight = FontWeight.Bold, color = TextMain,
+                        modifier = Modifier.padding(top = 24.dp, bottom = 10.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        loose.forEach { MdBlockView(MdBlock.Quote(it), images, body, true, ::openLink, null) }
+                    }
                 }
                 if (blocks.isEmpty()) Text("Only the link was saved for this one.", color = Muted)
                 Box(Modifier.height(32.dp))
@@ -280,14 +405,30 @@ private fun ArticleView(
             horizontalArrangement = Arrangement.SpaceAround
         ) {
             if (ref.archived) {
-                BarButton("↩", "To inbox", onUnarchive)
+                BarButton("↩", "To inbox") { finish(onUnarchive) }
             } else {
                 BarButton(if (read) "○" else "●", if (read) "Mark unread" else "Mark read", ::toggleRead)
-                BarButton("🗄", "Archive", onArchive)
+                BarButton("🗄", "Archive") { finish(onArchive) }
             }
             d?.url?.let { url -> BarButton("↗", "Original") { openLink(url) } }
         }
     }
+
+    if (asking) AlertDialog(
+        onDismissRequest = { asking = false }, containerColor = Surface1,
+        title = { Text("Finished reading?") },
+        text = { Text(d?.title.orEmpty(), color = Muted, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { asking = false; finish(onArchive) }) { Text("Archive", color = Primary) }
+                TextButton(onClick = {
+                    asking = false
+                    finish { store({ setRead(ref, true) }); onBack() }
+                }) { Text("Mark read", color = Primary, fontWeight = FontWeight.Bold) }
+            }
+        },
+        dismissButton = { TextButton(onClick = { asking = false; onBack() }) { Text("Keep unread", color = Muted) } }
+    )
 }
 
 @Composable
@@ -386,6 +527,14 @@ private object MdBlocks {
             "|\\[\\[([^\\]|]+)(?:\\|([^\\]]+))?]]"       // 7,8 wikilink
     )
 
+    /** The text a highlight stores for this block, or null if the block can't be highlighted. */
+    fun highlightKey(b: MdBlock): String? = when (b) {
+        is MdBlock.Para -> b.text
+        is MdBlock.Item -> b.text
+        is MdBlock.Quote -> b.text
+        else -> null
+    }?.replace('\n', ' ')?.trim()
+
     fun inline(s: String): AnnotatedString = buildAnnotatedString { appendInline(s) }
 
     private fun AnnotatedString.Builder.appendInline(s: String) {
@@ -411,31 +560,48 @@ private object MdBlocks {
     }
 }
 
-private val BodyStyle = TextStyle(fontSize = 16.5.sp, lineHeight = 26.sp, color = TextMain)
+private val HighlightTint = Color(0x33F5C451)
 
+/** Inline markdown text: tap a link to open it, long-press anywhere for [onLongPress]. */
 @Composable
-private fun Rich(text: String, style: TextStyle, onLink: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun Rich(
+    text: String, style: TextStyle, onLink: (String) -> Unit, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null
+) {
     val s = remember(text) { MdBlocks.inline(text) }
-    @Suppress("DEPRECATION")
-    ClickableText(s, modifier, style = style) { off ->
-        s.getStringAnnotations("url", off, off).firstOrNull()?.let { onLink(it.item) }
-    }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    BasicText(
+        s, style = style, onTextLayout = { layout = it },
+        modifier = modifier.pointerInput(s, onLongPress) {
+            detectTapGestures(
+                onLongPress = if (onLongPress == null) null else { _ -> onLongPress() },
+                onTap = { pos ->
+                    val off = layout?.getOffsetForPosition(pos) ?: return@detectTapGestures
+                    s.getStringAnnotations("url", off, off).firstOrNull()?.let { onLink(it.item) }
+                }
+            )
+        }
+    )
 }
 
 @Composable
-private fun MdBlockView(b: MdBlock, images: Map<String, Uri>, onLink: (String) -> Unit) {
+private fun MdBlockView(
+    b: MdBlock, images: Map<String, Uri>, body: TextStyle, highlighted: Boolean,
+    onLink: (String) -> Unit, onLongPress: (() -> Unit)?
+) {
+    val tint = if (highlighted) Modifier.clip(RoundedCornerShape(8.dp)).background(HighlightTint).padding(horizontal = 8.dp, vertical = 4.dp)
+    else Modifier
     when (b) {
-        is MdBlock.Heading -> Rich(b.text, BodyStyle.copy(
-            fontSize = when (b.level) { 1 -> 23.sp; 2 -> 20.sp; 3 -> 18.sp; else -> 16.5.sp },
-            lineHeight = 28.sp, fontWeight = FontWeight.Bold), onLink, Modifier.padding(top = 8.dp))
-        is MdBlock.Para -> Rich(b.text, BodyStyle, onLink)
-        is MdBlock.Item -> Row(Modifier.padding(start = (b.indent * 18).dp)) {
-            Text(b.marker, style = BodyStyle.copy(color = Muted), modifier = Modifier.width(24.dp))
-            Rich(b.text, BodyStyle, onLink, Modifier.weight(1f))
+        is MdBlock.Heading -> Rich(b.text, body.copy(
+            fontSize = body.fontSize * when (b.level) { 1 -> 1.4f; 2 -> 1.22f; 3 -> 1.1f; else -> 1f },
+            lineHeight = body.lineHeight * 1.1f, fontWeight = FontWeight.Bold), onLink, Modifier.padding(top = 8.dp))
+        is MdBlock.Para -> Rich(b.text, body, onLink, tint, onLongPress)
+        is MdBlock.Item -> Row(Modifier.padding(start = (b.indent * 18).dp).then(tint)) {
+            Text(b.marker, style = body.copy(color = Muted), modifier = Modifier.width(24.dp))
+            Rich(b.text, body, onLink, Modifier.weight(1f), onLongPress)
         }
-        is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
+        is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min).then(tint)) {
             Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(Primary))
-            Rich(b.text, BodyStyle.copy(color = Muted, fontStyle = FontStyle.Italic), onLink, Modifier.padding(start = 14.dp))
+            Rich(b.text, body.copy(color = Muted, fontStyle = FontStyle.Italic), onLink, Modifier.padding(start = 14.dp), onLongPress)
         }
         is MdBlock.Code -> Text(
             b.text, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp, color = TextMain, softWrap = false,

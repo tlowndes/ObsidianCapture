@@ -54,6 +54,20 @@ class AppPrefs(ctx: Context) {
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }
 
+    /** Reader text size in sp, and serif (true) or sans body text. */
+    var readerSize: Float
+        get() = p.getFloat("reader_size", 16.5f)
+        set(v) { p.edit().putFloat("reader_size", v).apply() }
+    var readerSerif: Boolean
+        get() = p.getBoolean("reader_serif", false)
+        set(v) { p.edit().putBoolean("reader_serif", v).apply() }
+
+    /** Where you got to in an article (pixels), keyed by file name; 0 clears it. */
+    fun scrollPos(file: String): Int = p.getInt("scroll_$file", 0)
+    fun setScrollPos(file: String, y: Int) {
+        p.edit().apply { if (y <= 0) remove("scroll_$file") else putInt("scroll_$file", y) }.apply()
+    }
+
     fun draft(key: String): String = p.getString("draft_$key", "") ?: ""
     fun setDraft(key: String, text: String) {
         p.edit().apply { if (text.isEmpty()) remove("draft_$key") else putString("draft_$key", text) }.apply()

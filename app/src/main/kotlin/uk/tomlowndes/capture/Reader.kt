@@ -18,7 +18,10 @@ data class SavedArticle(
     val read: Boolean, val saved: Long, val words: Int
 )
 
-data class ArticleDoc(val ref: ReadRef, val title: String, val url: String?, val read: Boolean, val saved: Long, val body: List<String>)
+data class ArticleDoc(
+    val ref: ReadRef, val title: String, val url: String?, val read: Boolean, val saved: Long,
+    val body: List<String>, val highlights: List<String> = emptyList()
+)
 
 /**
  * The Read It Later inbox as a reading list. State lives in each note's frontmatter (`status: unread|read|archived`,
@@ -87,7 +90,13 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
             }
         }
         if (url == null) url = body.firstNotNullOfOrNull { LINK.find(it)?.groupValues?.get(2) }
-        return ArticleDoc(ref, title, url, ref.archived || status == "read" || status == "archived", saved, body)
+        // Highlights live in their own "## Highlights" section; the reader shows them inline instead.
+        val highlights = mutableListOf<String>()
+        Md.sectionRange(body, HIGHLIGHTS)?.let { r ->
+            body.slice(r).map { it.trim() }.filter { it.startsWith(">") }.mapTo(highlights) { it.removePrefix(">").trim() }
+            repeat(r.last - r.first + 2) { body.removeAt(r.first - 1) }
+        }
+        return ArticleDoc(ref, title, url, ref.archived || status == "read" || status == "archived", saved, body, highlights)
     }
 
     private fun snippet(body: List<String>): String {
@@ -108,6 +117,26 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
     }
 
     fun setRead(ref: ReadRef, read: Boolean) = edit(fileOf(ref)) { Md.fmSet(it, "status", if (read) "read" else "unread") }
+
+    /** Adds [text] as a `> ` line under "## Highlights" (created at the end of the note), or removes it if already there. */
+    fun toggleHighlight(ref: ReadRef, text: String) = edit(fileOf(ref)) { lines ->
+        val line = "> " + text.replace("\n", " ").trim()
+        val r = Md.sectionRange(lines, HIGHLIGHTS)
+        if (r == null) {
+            while (lines.isNotEmpty() && lines.last().isBlank()) lines.removeAt(lines.size - 1)
+            lines.addAll(listOf("", "## $HIGHLIGHTS", "", line, ""))
+            return@edit
+        }
+        val at = r.firstOrNull { lines[it].trim() == line }
+        if (at != null) {
+            lines.removeAt(at)
+            if (at < lines.size && lines[at].isBlank() && at > 0 && lines[at - 1].isBlank()) lines.removeAt(at)
+        } else {
+            var end = r.last + 1
+            while (end > r.first && lines[end - 1].isBlank()) end--
+            lines.addAll(end, listOf("", line))
+        }
+    }
 
     /** Marks archived and moves the note into Archive/. Returns where it ended up. */
     fun archive(ref: ReadRef): ReadRef {
@@ -136,6 +165,7 @@ class ReadStore(private val ctx: Context, treeUri: Uri) {
 
     companion object {
         const val ARCHIVE = "Archive"
+        const val HIGHLIGHTS = "Highlights"
         private const val HEAD = 6000
         private val STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
         private val TAG_LINE = Regex("^(\\[\\[[^\\]]+]]\\s*)+$")
