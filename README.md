@@ -39,6 +39,8 @@ two places:
 - Each save is written in one go and read back, so a half-written note is never left for the sync tool to pick up.
 - **Log** only saves the sections you changed in the form. If one of them was also changed on another device since
   the form loaded, it is left alone and you're told; Save again replaces it.
+- If today's note isn't on the phone yet, Log creates it from the template and reminds you to open Obsidian first next
+  time, since Sync may then merge it with the desktop's copy.
 - **Ideas** finds an entry by its heading and text, not its position, and won't edit an entry or summary that was
   changed elsewhere.
 - Tasks are matched by their exact line, so a task changed in Obsidian is never overwritten.

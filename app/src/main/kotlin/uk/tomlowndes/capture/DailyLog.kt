@@ -165,8 +165,11 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
         return read(fs).values.any { !it.isEmpty() }
     }
 
-    /** Fields left alone by [save] because they changed in the note since the form was loaded. */
-    class Saved(val skipped: List<LogField>, val inNote: Map<String, Value>)
+    /**
+     * Fields left alone by [save] because they changed in the note since the form was loaded. [created] is true when
+     * today's note wasn't on the phone yet: if Obsidian Sync later brings the desktop's copy, it will merge the two.
+     */
+    class Saved(val skipped: List<LogField>, val inNote: Map<String, Value>, val created: Boolean)
 
     /**
      * Writes only the fields whose value differs from [loaded] (what the form showed when it was read), so sections
@@ -174,6 +177,7 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
      * reported in [Saved.skipped]; [Saved.inNote] is what the note holds now, to use as the next [loaded].
      */
     fun save(fields: List<LogField>, values: Map<String, Value>, loaded: Map<String, Value>): Saved {
+        val created = fileAt(todayPath(), false) == null
         val note = fileAt(todayPath(), true) ?: error("Cannot create today's note")
         val skipped = mutableListOf<LogField>()
         val template = renderTemplate(LocalDate.now())
@@ -188,7 +192,7 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
                 writeValue(ls, f, v)
             }
         }
-        return Saved(skipped, read(fields))
+        return Saved(skipped, read(fields), created)
     }
 
     /** Equal once blanks and spacing are ignored; a missing value counts as empty. */

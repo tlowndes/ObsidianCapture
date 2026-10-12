@@ -106,7 +106,10 @@ fun LogScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, slot: Stri
             busy = false
             r.onSuccess { saved ->
                 inNote = inNote + saved.inNote
-                if (saved.skipped.isEmpty()) snack.showSnackbar("Saved to $noteName")
+                if (saved.skipped.isEmpty() && saved.created) snack.showSnackbar(
+                    "Saved. $noteName wasn't on the phone yet, so it was created here. Open Obsidian first next time so it can sync."
+                )
+                else if (saved.skipped.isEmpty()) snack.showSnackbar("Saved to $noteName")
                 else snack.showSnackbar(
                     "Not saved: ${saved.skipped.joinToString { it.label }} changed on another device. Save again to replace it."
                 )
