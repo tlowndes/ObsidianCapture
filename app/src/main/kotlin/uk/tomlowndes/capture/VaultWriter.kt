@@ -3,10 +3,7 @@ package uk.tomlowndes.capture
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
-import java.text.SimpleDateFormat
 import java.time.LocalDate
-import java.util.Date
-import java.util.Locale
 
 /** An open task from the "## Active" section; [raw] is the exact line as it appears in the note. */
 data class TaskItem(val raw: String, val text: String, val due: LocalDate?, val recurrence: String? = null)
@@ -42,40 +39,15 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
         Widgets.tasksChanged(ctx)
     }
 
-    private fun MutableList<String>.activeStart() = indexOfFirst { it.trim() == "## Active" }
-    private fun MutableList<String>.archiveStart() = indexOfFirst { it.trim() == "## Archive" }
-
-    /** Inserts [line] at the end of the "## Active" list. */
-    private fun MutableList<String>.insertActive(line: String) {
-        val active = activeStart()
-        val archive = archiveStart()
-        val at = if (active >= 0) {
-            var i = if (archive > active) archive else size
-            while (i > active + 1 && this[i - 1].isBlank()) i--
-            i
-        } else size
-        add(at, line)
-    }
-
     fun addTask(text: String, due: String?) {
         val file = taskFile(true) ?: error("Cannot create task note")
-        edit(file) { it.insertActive("- [ ] #task ${text.trim()}" + (due?.let { " 📅 $it" } ?: "")) }
+        edit(file) { TaskNote.insertActive(it, TaskNote.newTask(text, due)) }
     }
 
     /** Open tasks in the order they appear in the note. */
     fun listTasks(): List<TaskItem> {
         val file = taskFile(false) ?: return emptyList()
-        val lines = readLines(file)
-        val start = lines.activeStart() + 1
-        val archive = lines.archiveStart()
-        val end = if (archive > start) archive else lines.size
-        return lines.subList(start, end).mapNotNull { parse(it) }
-    }
-
-    private fun parse(line: String): TaskItem? {
-        val body = OPEN_TASK.matchEntire(line.trimEnd())?.groupValues?.get(1) ?: return null
-        val text = TaskRules.cleanText(body)
-        return TaskItem(line, text.ifBlank { body.trim() }, TaskRules.due(body), TaskRules.recurrence(body))
+        return TaskNote.list(readLines(file))
     }
 
     /**
@@ -84,52 +56,28 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
      */
     fun completeTask(raw: String, recurring: Boolean = true): Completion {
         val file = taskFile(false) ?: error("Task note not found")
-        val today = LocalDate.now()
-        val next = if (recurring) TaskRules.nextOccurrence(raw, today) else null
-        val ticked = raw.replaceFirst("- [ ]", "- [x]")
-        val done = if (ticked.contains("✅")) ticked else ticked.trimEnd() + " ✅ $today"
-        edit(file) { lines ->
-            val i = lines.indexOf(raw)
-            if (i < 0) error("Task changed in Obsidian, refreshed")
-            lines.removeAt(i)
-            if (next != null) lines.add(i, next)
-            val archive = lines.archiveStart()
-            if (archive >= 0) {
-                var at = archive + 1
-                if (at < lines.size && lines[at].isBlank()) at++
-                lines.add(at, done)
-            } else {
-                lines.addAll(listOf("", "## Archive", "", done))
-            }
-        }
-        return Completion(done, next)
+        val c = TaskNote.completion(raw, LocalDate.now(), recurring)
+        edit(file) { TaskNote.complete(it, raw, c) }
+        return c
     }
 
     /** Changes (or clears, for null) a task's due date in place. Returns the task's new line. */
     fun rescheduleTask(raw: String, date: LocalDate?): String {
         val file = taskFile(false) ?: error("Task note not found")
         val updated = TaskRules.withDue(raw, date)
-        edit(file) { lines ->
-            val i = lines.indexOf(raw)
-            if (i < 0) error("Task changed in Obsidian, refreshed")
-            lines[i] = updated
-        }
+        edit(file) { TaskNote.replace(it, raw, updated) }
         return updated
     }
 
     fun deleteTask(raw: String) {
         val file = taskFile(false) ?: error("Task note not found")
-        edit(file) { if (!it.remove(raw)) error("Task changed in Obsidian, refreshed") }
+        edit(file) { TaskNote.delete(it, raw) }
     }
 
     /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (null) or a reschedule ([replace]). */
     fun restoreTask(raw: String, done: Completion?, replace: String? = null) {
         val file = taskFile(true) ?: return
-        edit(file) { lines ->
-            if (done != null) lines.remove(done.doneLine)
-            val at = (done?.nextLine ?: replace)?.let { lines.indexOf(it) } ?: -1
-            if (at >= 0) lines[at] = raw else lines.insertActive(raw)
-        }
+        edit(file) { TaskNote.restore(it, raw, done, replace) }
     }
 
     /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
@@ -142,8 +90,5 @@ class VaultWriter(private val ctx: Context, treeUri: Uri) {
         const val INBOX = "01 - Inbox"
         const val RIL_DIR = "ReadItLater Inbox"
         const val TASK_FILE = "⚡ Quick Task.md"
-        private val OPEN_TASK = Regex("^\\s*- \\[ \\] (.*)$")
-        private val DUE = Regex("📅\\s*(\\d{4}-\\d{2}-\\d{2})")
-        private val INLINE_FIELD = Regex("\\[\\w+:: [^\\]]*\\]")
     }
 }

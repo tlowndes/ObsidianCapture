@@ -28,26 +28,38 @@ object ReadLater {
     /** Blocking (network + file IO): call from a background dispatcher. Returns true if the full page was saved. */
     fun save(ctx: Context, vault: Uri, url: String, sharedTitle: String?): Boolean {
         val article = runCatching { fetch(url) }.getOrNull()
+        val name = noteName(article, sharedTitle)
+            ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
+        VaultWriter(ctx, vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp()))
+        return article != null
+    }
+
+    /** The whole note: frontmatter the Read tab uses, then the same layout as the read-it-later plugin. */
+    fun note(url: String, sharedTitle: String?, article: Article?, saved: String): String {
         val label = article?.title?.takeIf { it.isNotBlank() } ?: sharedTitle?.takeIf { it.isNotBlank() && it != url } ?: url
-        val note = when {
+        val body = when {
             article == null -> "[[ReadItLater]] [[Article]]\n\n[$label]($url)\n"
             article.video -> "[[ReadItLater]] [[Youtube]]\n\n# [${article.title}]($url)\n\n![]($url)\n"
             else -> "[[ReadItLater]] [[Article]]\n\n# [${article.title}]($url)\n\n${article.markdown}\n"
         }
-        val frontmatter = "---\nstatus: unread\nsaved: ${ReadStore.stamp()}\n---\n\n"
-        val name = article?.title?.let(::safeName)?.takeIf { it.isNotBlank() }
-            ?: sharedTitle?.let(::safeName)?.takeIf { it.isNotBlank() }
-            ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
-        VaultWriter(ctx, vault).addNote(name, frontmatter + note)
-        return article != null
+        return "---\nstatus: unread\nsaved: $saved\n---\n\n" + body
     }
+
+    /** File name for the note, or null if neither the page nor the share gave a usable title. */
+    fun noteName(article: Article?, sharedTitle: String?): String? =
+        article?.title?.let(::safeName)?.takeIf { it.isNotBlank() }
+            ?: sharedTitle?.let(::safeName)?.takeIf { it.isNotBlank() }
 
     private fun safeName(s: String) =
         s.replace(Regex("[\\\\/:*?\"<>|#^\\[\\]]"), "-").replace(WS, " ").trim().take(100).trim()
 
-    private fun fetch(url: String): Article? {
-        val doc = Jsoup.connect(url).userAgent(UA).timeout(15_000).followRedirects(true)
-            .maxBodySize(4_000_000).get()
+    private fun fetch(url: String): Article? =
+        fromPage(Jsoup.connect(url).userAgent(UA).timeout(15_000).followRedirects(true).maxBodySize(4_000_000).get(), url)
+
+    /** Turns a downloaded page into an [Article]; null if there isn't enough readable text. */
+    fun fromHtml(html: String, url: String): Article? = fromPage(Jsoup.parse(html, url), url)
+
+    private fun fromPage(doc: Document, url: String): Article? {
         val title = doc.selectFirst("meta[property=og:title]")?.attr("content")?.takeIf { it.isNotBlank() }
             ?: doc.title()
         val host = runCatching { URI(url).host.orEmpty() }.getOrDefault("")
