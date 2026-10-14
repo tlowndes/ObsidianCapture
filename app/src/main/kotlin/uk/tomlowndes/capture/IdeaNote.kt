@@ -3,16 +3,50 @@ package uk.tomlowndes.capture
 import java.time.LocalDate
 
 /**
- * How an idea note is laid out and edited (frontmatter, `## Summary`, then a newest-first `## Log` of `### ` entries),
- * as plain functions on its lines so they can be tested without a phone. [IdeaStore] does the file side.
+ * How an idea is laid out and edited, as plain functions on lines so they can be tested without a phone.
+ * [IdeaStore] does the file side. The idea note has frontmatter, `## Summary`, and a `## Log` section that links to
+ * a separate `<Title> - Log.md`, which holds the newest-first `### ` entries. Ideas from before the split keep their
+ * entries in the idea note until the next one is added, when they move across.
  */
 object IdeaNote {
     private val IMAGE = Regex("^!\\[\\[(.+?)(?:\\|[^\\]]*)?]]$")
 
     fun safeName(s: String) = s.replace(Regex("[\\\\/:*?\"<>|#^\\[\\]]"), "-").replace(Regex("\\s+"), " ").trim().take(80).trim()
 
+    fun logName(title: String) = "$title - Log"
+
+    private fun logLink(title: String) = "[[${logName(title)}]]"
+
     fun newNote(title: String, summary: String, today: LocalDate) =
-        "---\ntype: idea\nstatus: idea\ncreated: $today\ntags: []\n---\n\n# $title\n\n## Summary\n\n${summary.trim()}\n\n## Log\n\n"
+        "---\ntype: idea\nstatus: idea\ncreated: $today\ntags: []\n---\n\n# $title\n\n## Summary\n\n${summary.trim()}\n\n## Log\n\n${logLink(title)}\n"
+
+    /** The log file, starting with [entries] (lines from [logEntries]) when moving an older idea's log across. */
+    fun newLog(title: String, entries: List<String> = emptyList()) =
+        "---\ntype: idea-log\nidea: \"[[$title]]\"\n---\n\n# ${logName(title)}\n\n## Log\n\n" +
+            (if (entries.isEmpty()) "" else entries.joinToString("\n") + "\n\n")
+
+    /** The `### ` entry lines still in an idea note's Log (ideas from before the split), trailing blanks dropped. */
+    fun logEntries(lines: List<String>): List<String> {
+        val r = Md.sectionRange(lines, "Log") ?: return emptyList()
+        val start = r.firstOrNull { lines[it].startsWith("### ") } ?: return emptyList()
+        return lines.subList(start, r.last + 1).dropLastWhile { it.isBlank() }
+    }
+
+    /**
+     * Swaps the entries in an idea note's Log for a link to the log file, once [moved] has been copied there.
+     * Stops if the entries changed since they were copied, so nothing is lost.
+     */
+    fun moveLogOut(lines: MutableList<String>, title: String, moved: List<String>) {
+        if (logEntries(lines) != moved) error("Log was changed on another device, refreshed")
+        val link = logLink(title)
+        val r = Md.sectionRange(lines, "Log")
+        if (r == null) { lines.addAll(listOf("", "## Log", "", link, "")); return }
+        val start = r.firstOrNull { lines[it].startsWith("### ") }
+        if (start != null) repeat(r.last - start + 1) { lines.removeAt(start) }
+        if (lines.none { it.trim() == link }) {
+            if (start != null) lines.addAll(start, listOf(link, "")) else lines.addAll(r.first, listOf("", link))
+        }
+    }
 
     fun parse(title: String, text: String): IdeaDoc {
         val lines = text.split("\n")
