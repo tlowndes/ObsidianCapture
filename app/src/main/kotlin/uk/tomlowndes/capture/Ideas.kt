@@ -23,7 +23,8 @@ data class IdeaEntry(val heading: String, val text: String, val images: List<Str
 data class IdeaDoc(val title: String, val status: String, val summary: String, val entries: List<IdeaEntry>)
 
 /**
- * Ideas live as `<ideas folder>/<Title>/<Title>.md` (a folder note), with images in the images folder.
+ * Ideas live as `<ideas folder>/<Title>/<Title>.md` (a folder note) with their entries in `<Title> - Log.md` beside it,
+ * and images in the images folder.
  * Every edit is a read-modify-write of just the section it owns, so changes made in Obsidian are kept.
  */
 class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPrefs) {
@@ -40,9 +41,32 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
 
     private fun read(f: DocumentFile) = VaultIo.read(ctx, f)
 
-    private fun noteOf(title: String): DocumentFile =
-        dir(prefs.ideasDir, false)?.findFile(title)?.takeIf { it.isDirectory }?.findFile("$title.md")
-            ?: error("Idea \"$title\" not found")
+    private fun folderOf(title: String): DocumentFile =
+        dir(prefs.ideasDir, false)?.findFile(title)?.takeIf { it.isDirectory } ?: error("Idea \"$title\" not found")
+
+    private fun noteOf(title: String): DocumentFile = folderOf(title).findFile("$title.md") ?: error("Idea \"$title\" not found")
+
+    private fun logOf(title: String): DocumentFile? = folderOf(title).findFile("${IdeaNote.logName(title)}.md")
+
+    /** Where the entries are: the log file, or the idea note for an idea from before the split. */
+    private fun entriesOf(title: String) = logOf(title) ?: noteOf(title)
+
+    /** The log file, made on first use; entries still in the idea note move across and are swapped for a link. */
+    private fun logFile(title: String): DocumentFile {
+        logOf(title)?.let { return it }
+        val note = noteOf(title)
+        val moved = IdeaNote.logEntries(read(note).split("\n"))
+        val log = folderOf(title).createFile("text/markdown", IdeaNote.logName(title)) ?: error("Cannot create log")
+        VaultIo.write(ctx, log, IdeaNote.newLog(title, moved))
+        VaultIo.edit(ctx, note) { IdeaNote.moveLogOut(it, title, moved) }
+        return log
+    }
+
+    /** The idea note's summary and status, with the entries from wherever they live. */
+    private fun docOf(title: String, note: DocumentFile, log: DocumentFile?): IdeaDoc {
+        val doc = IdeaNote.parse(title, read(note))
+        return if (log == null) doc else doc.copy(entries = IdeaNote.parse(title, read(log)).entries)
+    }
 
     private fun edit(title: String, change: (MutableList<String>) -> Unit) = VaultIo.edit(ctx, noteOf(title), change)
 
@@ -53,7 +77,7 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
         return folder.listFiles().filter { it.isDirectory }.mapNotNull { d ->
             val name = d.name ?: return@mapNotNull null
             val note = d.findFile("$name.md") ?: return@mapNotNull null
-            val doc = IdeaNote.parse(name, read(note))
+            val doc = docOf(name, note, d.findFile("${IdeaNote.logName(name)}.md"))
             IdeaSummary(
                 name, doc.summary.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
                 doc.entries.size, doc.entries.sumOf { it.images.size },
@@ -63,7 +87,7 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
         }.sortedByDescending { it.modified }
     }
 
-    fun load(title: String): IdeaDoc = IdeaNote.parse(title, read(noteOf(title)))
+    fun load(title: String): IdeaDoc = docOf(title, noteOf(title), logOf(title))
 
     /** Image file name -> uri for everything in the images folder (one directory listing). */
     fun imageIndex(): Map<String, Uri> =
@@ -79,6 +103,8 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
         val folder = parent.createDirectory(title) ?: error("Cannot create folder")
         val note = folder.createFile("text/markdown", title) ?: error("Cannot create note")
         VaultIo.write(ctx, note, IdeaNote.newNote(title, summary, java.time.LocalDate.now()))
+        val log = folder.createFile("text/markdown", IdeaNote.logName(title)) ?: error("Cannot create log")
+        VaultIo.write(ctx, log, IdeaNote.newLog(title))
         return title
     }
 
@@ -87,14 +113,15 @@ class IdeaStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPr
 
     fun setStatus(title: String, status: String) = edit(title) { Md.fmSet(it, "status", status) }
 
-    /** New entries go at the top of the Log, newest first. */
+    /** New entries go at the top of the log file, newest first. */
     fun addEntry(title: String, text: String, images: List<String>) =
-        edit(title) { IdeaNote.addEntry(it, LocalDateTime.now().format(STAMP), text, images) }
+        VaultIo.edit(ctx, logFile(title)) { IdeaNote.addEntry(it, LocalDateTime.now().format(STAMP), text, images) }
 
     /** [entry] is the entry as shown when editing started. */
-    fun editEntry(title: String, entry: IdeaEntry, text: String) = edit(title) { IdeaNote.editEntry(it, entry, text) }
+    fun editEntry(title: String, entry: IdeaEntry, text: String) =
+        VaultIo.edit(ctx, entriesOf(title)) { IdeaNote.editEntry(it, entry, text) }
 
-    fun deleteEntry(title: String, entry: IdeaEntry) = edit(title) { IdeaNote.deleteEntry(it, entry) }
+    fun deleteEntry(title: String, entry: IdeaEntry) = VaultIo.edit(ctx, entriesOf(title)) { IdeaNote.deleteEntry(it, entry) }
 
     /** Shrinks the picked/captured image to at most 1600 px, saves it as JPEG in the images folder. */
     fun saveImage(src: Uri, baseName: String): Pair<String, Uri> {

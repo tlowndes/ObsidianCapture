@@ -9,10 +9,13 @@ import java.time.LocalDate
 class IdeaNoteTest {
     private fun lines(s: String) = s.split("\n").toMutableList()
     private fun fresh() = lines(IdeaNote.newNote("Garden shed", "  Somewhere for the tools  ", LocalDate.parse("2026-10-12")))
+    private fun log() = lines(IdeaNote.newLog("Garden shed"))
+    private fun legacy() = lines("---\nstatus: idea\n---\n\n# Garden shed\n\n## Summary\n\nTools\n\n## Log\n\n" +
+        "### 2026-10-12 10:00\n\nSecond\n\n![[p.jpg]]\n\n### 2026-10-12 09:00\n\nFirst\n\n## Links\n\nKeep me\n")
 
-    @Test fun `a new idea note has frontmatter, summary and an empty log`() {
+    @Test fun `a new idea note has frontmatter, summary and a link to its log file`() {
         assertEquals(
-            "---\ntype: idea\nstatus: idea\ncreated: 2026-10-12\ntags: []\n---\n\n# Garden shed\n\n## Summary\n\nSomewhere for the tools\n\n## Log\n\n",
+            "---\ntype: idea\nstatus: idea\ncreated: 2026-10-12\ntags: []\n---\n\n# Garden shed\n\n## Summary\n\nSomewhere for the tools\n\n## Log\n\n[[Garden shed - Log]]\n",
             IdeaNote.newNote("Garden shed", "  Somewhere for the tools  ", LocalDate.parse("2026-10-12"))
         )
         val doc = IdeaNote.parse("Garden shed", fresh().joinToString("\n"))
@@ -22,7 +25,7 @@ class IdeaNoteTest {
     }
 
     @Test fun `entries are newest first with their photos`() {
-        val ls = fresh()
+        val ls = log()
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "First thought", emptyList())
         IdeaNote.addEntry(ls, "2026-10-12 10:00", "Second\nline", listOf("shed-1.jpg", "shed-2.jpg"))
         val doc = IdeaNote.parse("Garden shed", ls.joinToString("\n"))
@@ -30,7 +33,6 @@ class IdeaNoteTest {
         assertEquals("Second\nline", doc.entries[0].text)
         assertEquals(listOf("shed-1.jpg", "shed-2.jpg"), doc.entries[0].images)
         assertTrue(ls.contains("![[shed-1.jpg]]"))
-        assertEquals("Somewhere for the tools", doc.summary)
     }
 
     @Test fun `photo embeds with a size still count as photos`() {
@@ -46,7 +48,7 @@ class IdeaNoteTest {
     }
 
     @Test fun `editing an entry keeps its photos and the others`() {
-        val ls = fresh()
+        val ls = log()
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "First", emptyList())
         IdeaNote.addEntry(ls, "2026-10-12 10:00", "Second", listOf("p.jpg"))
         val second = IdeaNote.parse("G", ls.joinToString("\n")).entries[0]
@@ -57,7 +59,7 @@ class IdeaNoteTest {
     }
 
     @Test fun `entries with the same time are told apart by their text`() {
-        val ls = fresh()
+        val ls = log()
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "One", emptyList())
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "Two", emptyList())
         IdeaNote.deleteEntry(ls, IdeaEntry("2026-10-12 09:00", "One", emptyList()))
@@ -65,7 +67,7 @@ class IdeaNoteTest {
     }
 
     @Test fun `deleting removes only that entry`() {
-        val ls = fresh()
+        val ls = log()
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "Keep", emptyList())
         val before = ls.toList()
         IdeaNote.addEntry(ls, "2026-10-12 10:00", "Drop", emptyList())
@@ -74,7 +76,7 @@ class IdeaNoteTest {
     }
 
     @Test fun `an entry changed or removed on another device is not overwritten`() {
-        val ls = fresh()
+        val ls = log()
         IdeaNote.addEntry(ls, "2026-10-12 09:00", "Changed on desktop", emptyList())
         val snapshot = ls.toList()
         assertThrows(IllegalStateException::class.java) {
@@ -116,5 +118,57 @@ class IdeaNoteTest {
         assertEquals("What-if- a -shed-", IdeaNote.safeName("What/if: a #shed?"))
         assertEquals("Spaces squashed", IdeaNote.safeName("  Spaces \n  squashed "))
         assertEquals(80, IdeaNote.safeName("x".repeat(200)).length)
+    }
+
+    @Test fun `a new log file holds entries newest first`() {
+        assertEquals("---\ntype: idea-log\nidea: \"[[Garden shed]]\"\n---\n\n# Garden shed - Log\n\n## Log\n\n", IdeaNote.newLog("Garden shed"))
+        val ls = lines(IdeaNote.newLog("Garden shed"))
+        IdeaNote.addEntry(ls, "2026-10-12 09:00", "First", emptyList())
+        IdeaNote.addEntry(ls, "2026-10-12 10:00", "Second", listOf("p.jpg"))
+        val doc = IdeaNote.parse("Garden shed", ls.joinToString("\n"))
+        assertEquals(listOf("2026-10-12 10:00", "2026-10-12 09:00"), doc.entries.map { it.heading })
+        assertEquals(listOf("p.jpg"), doc.entries[0].images)
+    }
+
+    @Test fun `a new idea note has no entries of its own`() {
+        assertTrue(IdeaNote.logEntries(fresh()).isEmpty())
+        assertTrue(IdeaNote.parse("Garden shed", fresh().joinToString("\n")).entries.isEmpty())
+    }
+
+    @Test fun `an older idea's entries move to the log file and leave a link`() {
+        val note = legacy()
+        val moved = IdeaNote.logEntries(note)
+        val log = lines(IdeaNote.newLog("Garden shed", moved))
+        val before = IdeaNote.parse("Garden shed", note.joinToString("\n")).entries
+        IdeaNote.moveLogOut(note, "Garden shed", moved)
+        assertEquals(before, IdeaNote.parse("Garden shed", log.joinToString("\n")).entries)
+        assertEquals(
+            "---\nstatus: idea\n---\n\n# Garden shed\n\n## Summary\n\nTools\n\n## Log\n\n[[Garden shed - Log]]\n\n## Links\n\nKeep me\n",
+            note.joinToString("\n")
+        )
+        // New entries then go on top of the moved ones.
+        IdeaNote.addEntry(log, "2026-10-13 08:00", "Third", emptyList())
+        assertEquals(listOf("Third", "Second", "First"), IdeaNote.parse("G", log.joinToString("\n")).entries.map { it.text })
+    }
+
+    @Test fun `an idea with an empty log just gets the link`() {
+        val ls = lines("# T\n\n## Summary\n\nHi\n\n## Log\n\n")
+        IdeaNote.moveLogOut(ls, "T", emptyList())
+        assertEquals("# T\n\n## Summary\n\nHi\n\n## Log\n\n[[T - Log]]\n\n", ls.joinToString("\n"))
+        val bare = lines("# T\n")
+        IdeaNote.moveLogOut(bare, "T", emptyList())
+        assertEquals("# T\n\n\n## Log\n\n[[T - Log]]\n", bare.joinToString("\n"))
+        val linked = fresh()
+        IdeaNote.moveLogOut(linked, "Garden shed", emptyList())
+        assertEquals(fresh(), linked)
+    }
+
+    @Test fun `entries changed while moving are not lost`() {
+        val note = legacy()
+        val moved = IdeaNote.logEntries(note)
+        IdeaNote.addEntry(note, "2026-10-12 11:00", "Added on desktop", emptyList())
+        val snapshot = note.toList()
+        assertThrows(IllegalStateException::class.java) { IdeaNote.moveLogOut(note, "Garden shed", moved) }
+        assertEquals(snapshot, note)
     }
 }
