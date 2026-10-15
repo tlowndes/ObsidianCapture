@@ -42,7 +42,6 @@ import java.time.LocalDate
 /** Find a note by name or folder, then add a task (under its "## Tasks") or a line at its end. */
 @Composable
 fun FindPane(state: AppState) {
-    val scope = rememberCoroutineScope()
     var notes by remember { mutableStateOf<List<VaultNote>?>(null) }
     var query by remember { mutableStateOf("") }
     var picked by remember { mutableStateOf<VaultNote?>(null) }

@@ -171,7 +171,7 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
         )
         Chip("Today", !noDate && due == today, small = true) { picked = today; noDate = false }
         Chip("📅 " + (due?.takeIf { it != today }?.let(::dayChip) ?: "Pick date"), !noDate && due != null && due != today, small = true) { picking = true }
-        Chip("No date", noDate || due == null, small = true) { noDate = true; picked = null }
+        Chip("No date", noDate, small = true) { noDate = true; picked = null }
         PrimaryButton("Add", enabled = body.isNotBlank(), hint = "↵") { add() }
     }
     Text("Adds to ⚡ Quick Task · type a date like “fri” or “25 oct”", fontSize = 11.5.sp, color = Muted,

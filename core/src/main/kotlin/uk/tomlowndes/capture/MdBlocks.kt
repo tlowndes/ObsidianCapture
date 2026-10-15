@@ -77,12 +77,12 @@ object MdBlocks {
 
     /** Inline markdown: 1,2 link; 3,4 bold; 5 code; 6 italic; 7,8 wikilink. A match starting with "!" is an image. */
     val INLINE = Regex(
-        "!\[[^\]]*]\([^)]*\)" +                       // inline image (dropped)
-            "|\[([^\]]+)]\(([^)\s]+)[^)]*\)" +         // 1,2 link
-            "|\*\*(.+?)\*\*|__(.+?)__" +              // 3,4 bold
-            "|`([^`]+)`" +                                 // 5 code
-            "|\*([^*\s](?:[^*]*[^*\s])?)\*" +          // 6 italic
-            "|\[\[([^\]|]+)(?:\|([^\]]+))?]]"       // 7,8 wikilink
+        "!\\[[^\\]]*]\\([^)]*\\)" +                    // inline image (dropped)
+            "|\\[([^\\]]+)]\\(([^)\\s]+)[^)]*\\)" +    // 1,2 link
+            "|\\*\\*(.+?)\\*\\*|__(.+?)__" +           // 3,4 bold
+            "|`([^`]+)`" +                             // 5 code
+            "|\\*([^*\\s](?:[^*]*[^*\\s])?)\\*" +      // 6 italic
+            "|\\[\\[([^\\]|]+)(?:\\|([^\\]]+))?]]"     // 7,8 wikilink
     )
 
     /** The text a highlight stores for this block, or null if the block can't be highlighted. */
