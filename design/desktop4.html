@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="desktop.css">
+<style>
+.main{padding:0}
+.list{width:380px;flex:none;border-right:1px solid #221e31;padding:26px 20px;height:100%}
+.detail{flex:1;min-width:0;padding:26px 36px 0;position:relative;height:100%}
+.icard{display:flex;gap:12px;border-radius:14px;padding:10px;margin-bottom:6px}
+.icard.on{background:var(--surface2);outline:1.5px solid var(--primary)}
+.icard h3{font-size:14.5px;font-weight:700;margin-bottom:3px}
+.icard p{font-size:12px;color:var(--muted);line-height:1.35}
+.thumb{width:48px;height:48px;border-radius:10px;flex:none}
+.g1{background:linear-gradient(135deg,#5b3fd6,#2b1d6b)}.g2{background:linear-gradient(135deg,#1f7a6a,#0f3a38)}.g3{background:linear-gradient(135deg,#8a5a2b,#3b2410)}
+.sum{background:var(--surface);border-radius:14px;padding:12px 16px;font-size:14px;line-height:1.5;margin:6px 0 18px}
+.ent{border-left:2px solid var(--outline);margin-left:6px;padding:0 0 18px 18px;position:relative}
+.ent::before{content:"";position:absolute;left:-6px;top:3px;width:10px;height:10px;border-radius:50%;background:var(--primary)}
+.ent .d{font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:5px;display:flex;justify-content:space-between}
+.ent .d span:last-child{color:var(--primary)}
+.ent p{font-size:14px;line-height:1.5}
+.imgs{display:flex;gap:10px;margin-top:10px}.imgs div{width:160px;height:108px;border-radius:12px}
+.comp{position:absolute;left:36px;right:36px;bottom:22px;background:var(--surface);border:1.5px dashed var(--primary);border-radius:16px;padding:12px 14px}
+.comp .in{font-size:14px;color:var(--muted);min-height:40px}
+</style></head><body>
+
+<!-- IDEAS: list and the open idea side by side; drop images straight in -->
+<div class="win" data-tab="ideas">
+  <div class="row" style="height:100%;align-items:stretch">
+    <div class="list">
+      <div class="h1row" style="margin-bottom:12px"><h1 style="font-size:26px">Ideas</h1><div class="chip" style="padding:6px 12px">＋ New</div></div>
+      <div class="search" style="margin-bottom:12px">🔍  Search ideas</div>
+      <div class="icard on"><div class="thumb g1"></div><div><h3>Garage workshop layout</h3><p>Pegboard wall, fold-down bench…</p></div></div>
+      <div class="icard"><div class="thumb g2"></div><div><h3>Home Assistant dashboard</h3><p>Wall tablet in the hall showing heating…</p></div></div>
+      <div class="icard"><div class="thumb g3"></div><div><h3>Camping box v2</h3><p>Stackable crates, one per meal.</p></div></div>
+      <div class="icard"><div class="thumb g1"></div><div><h3>Blog: wardriving setup</h3><p>Pi, GPS puck and a power bank in a tin.</p></div></div>
+      <div class="icard"><div class="thumb g2"></div><div><h3>Reading nook</h3><p>Corner by the window, wall light.</p></div></div>
+    </div>
+    <div class="detail">
+      <div class="h1row"><h1 style="font-size:26px">Garage workshop layout</h1><div class="row gap8"><div class="tag grn" style="font-size:12px;padding:5px 10px">Active ▾</div><div class="chip" style="padding:6px 12px">Open in Obsidian ↗</div></div></div>
+      <div class="sub">03 - Projects/Garage workshop layout · 7 entries · 4 photos</div>
+      <div class="lbl">Summary</div>
+      <div class="sum">Pegboard wall on the left, fold-down bench under the window, dust extractor by the door so the hose reaches everything.</div>
+      <div class="ent"><div class="d"><span>Today 18:40</span><span>Edit</span></div><p>Measured the wall: 2.4 m usable. Two 1.2 m pegboard sheets fit with no cutting.</p>
+        <div class="imgs"><div class="g1"></div><div class="g3"></div></div></div>
+      <div class="ent"><div class="d"><span>Sun 12 Oct</span><span>Edit</span></div><p>The fold-down bench needs to clear the car bonnet when it's down. Check the height.</p></div>
+    </div>
+  </div>
+  <div class="comp" style="left:416px"><div class="in">Add to the log… drop or paste images here</div>
+    <div class="row between"><div class="row gap8"><div class="chip" style="padding:6px 12px">🖼 Add image</div></div><div class="btn" style="padding:8px 20px;font-size:13.5px">Add entry  <span style="opacity:.6">Ctrl ↵</span></div></div></div>
+</div>
+
+<script src="desktop.js"></script>
+</body></html>

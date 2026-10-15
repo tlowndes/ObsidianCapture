@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="desktop.css"></head><body>
+
+<!-- TASKS: two columns of due-date groups, inline add, hover actions -->
+<div class="win" data-tab="tasks">
+  <div class="h1row">
+    <div><h1>Tasks</h1><div class="sub">Whole vault · 11 open · updated just now</div></div>
+    <div class="row gap8"><div class="chip on">By due date</div><div class="chip">Note order</div><div class="search" style="width:240px">🔍  Filter tasks</div></div>
+  </div>
+
+  <div class="row gap12" style="background:var(--surface);border:1.5px solid var(--primary);border-radius:14px;padding:6px 6px 6px 16px;margin-bottom:6px">
+    <div style="flex:1;font-size:14.5px">Book MOT for the car<span style="color:var(--primary)">|</span></div>
+    <div class="chip" style="padding:6px 12px">Today</div><div class="chip on" style="padding:6px 12px">📅 Fri 17 Oct</div><div class="chip" style="padding:6px 12px">No date</div>
+    <div class="btn" style="padding:8px 18px;font-size:13.5px">Add <span style="opacity:.6;font-weight:600">↵</span></div>
+  </div>
+  <div style="font-size:11.5px;color:var(--muted);margin:0 0 6px 4px">Adds to ⚡ Quick Task · type a date like “fri” or “25 oct”</div>
+
+  <div class="grid2">
+    <div>
+      <div class="grp red"><span>Overdue</span><span class="tag red">1</span></div>
+      <div class="t"><div class="o"></div><div class="x">Hoover upstairs</div><div class="due red">Mon 13 Oct</div></div>
+
+      <div class="grp"><span>Today · Wed 15 Oct</span><span class="tag pur">3</span></div>
+      <div class="t sel"><div class="o"></div><div class="x">Update C5 and memory card</div><div class="hv"><span>📅 Move</span><span>🗑</span></div><div class="due">Today</div></div>
+      <div class="t"><div class="o"></div><div class="x">Clean car, take out items not required</div><div class="due">Today</div></div>
+      <div class="t"><div class="o"></div><div class="x">Water plants<small>🔁 every week</small></div><div class="due">Today</div></div>
+
+      <div class="grp"><span>Tomorrow</span><span class="tag pur">1</span></div>
+      <div class="t"><div class="o"></div><div class="x">Order replacement SD cards<span class="from">Camera kit</span></div><div class="due">Thu 16 Oct</div></div>
+    </div>
+    <div>
+      <div class="grp"><span>This week</span><span class="tag pur">2</span></div>
+      <div class="t"><div class="o"></div><div class="x">Sort room out</div><div class="due">Sat 18 Oct</div></div>
+      <div class="t"><div class="o"></div><div class="x">Add dual boot for main PC<span class="from">Home lab</span></div><div class="due">Sun 19 Oct</div></div>
+
+      <div class="grp"><span>Later</span><span class="tag pur">2</span></div>
+      <div class="t"><div class="o"></div><div class="x">Sort EDC bag for car</div><div class="due">24 Oct</div></div>
+      <div class="t"><div class="o"></div><div class="x">Renew domain<small>🔁 every year</small></div><div class="due">2 Nov</div></div>
+
+      <div class="grp"><span>No date</span><span class="tag pur">2</span></div>
+      <div class="t"><div class="o"></div><div class="x">Look at pegboard hooks<span class="from">Garage workshop layout</span></div></div>
+      <div class="t"><div class="o"></div><div class="x">Try the new reader font</div></div>
+    </div>
+  </div>
+
+  <div class="snack"><span>Done · next “Water plants”: <b>22 Oct</b></span><b>Undo  Ctrl Z</b></div>
+</div>
+
+<script src="desktop.js"></script>
+</body></html>
