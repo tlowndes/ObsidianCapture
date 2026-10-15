@@ -11,7 +11,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 5
-        versionName = "1.5"
+        versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
     signingConfigs {
