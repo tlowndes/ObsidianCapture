@@ -33,7 +33,7 @@ android {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation(project(":core"))
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.work:work-runtime-ktx:2.9.0")

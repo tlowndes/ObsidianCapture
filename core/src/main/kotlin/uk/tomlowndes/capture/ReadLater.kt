@@ -1,7 +1,5 @@
 package uk.tomlowndes.capture
 
-import android.content.Context
-import android.net.Uri
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -25,15 +23,20 @@ object ReadLater {
         "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
     private val WS = Regex("\\s+")
 
-    /** Blocking (network + file IO): call from a background dispatcher. Returns true if the full page was saved. */
-    fun save(ctx: Context, vault: Uri, url: String, sharedTitle: String?): Boolean {
-        val article = runCatching { fetch(url) }.getOrNull()
+    /**
+     * Blocking (network + file IO): call from a background dispatcher. Returns true if the full page was saved.
+     * [prefetched] is the page from an earlier [peek], so it isn't downloaded twice.
+     */
+    fun save(vault: Vault, url: String, sharedTitle: String?, prefetched: Article? = null): Boolean {
+        val article = prefetched ?: runCatching { fetch(url) }.getOrNull()
         val name = noteName(article, sharedTitle)
             ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
-        VaultWriter(ctx, vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp()))
-        Widgets.readChanged(ctx)
+        VaultWriter(vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp()))
         return article != null
     }
+
+    /** The page, for a preview before saving; null if it can't be fetched or read. Blocking. */
+    fun peek(url: String): Article? = runCatching { fetch(url) }.getOrNull()
 
     /** The whole note: frontmatter the Read tab uses, then the same layout as the read-it-later plugin. */
     fun note(url: String, sharedTitle: String?, article: Article?, saved: String): String {

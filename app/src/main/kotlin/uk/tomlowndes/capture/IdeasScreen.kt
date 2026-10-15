@@ -76,7 +76,7 @@ fun IdeasScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, open: St
     val images = remember(vault) { mutableStateMapOf<String, Uri>() }
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        val idx = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).imageIndex() }.getOrNull() }
+        val idx = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).imageUris() }.getOrNull() }
         idx?.let { images.putAll(it) }
     }
     if (open != null) IdeaDetail(vault, prefs, snack, open, images) { onOpen(null) }
@@ -259,7 +259,7 @@ private fun IdeaDetail(
                     val store = IdeaStore(ctx, uri, prefs)
                     val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
                     val saved = picked.mapIndexed { i, src ->
-                        store.saveImage(src, "${IdeaStore.safeName(title)}-$stamp-${i + 1}")
+                        store.saveImage(ctx, src, "${IdeaStore.safeName(title)}-$stamp-${i + 1}")
                     }
                     store.addEntry(title, body, saved.map { it.first })
                     saved

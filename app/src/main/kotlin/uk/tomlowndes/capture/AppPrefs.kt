@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 
 /** Typed wrapper over the app's SharedPreferences. Cheap to construct anywhere. */
-class AppPrefs(ctx: Context) {
+class AppPrefs(ctx: Context) : VaultPrefs {
     private val p = ctx.applicationContext.getSharedPreferences("capture", Context.MODE_PRIVATE)
 
     var vault: Uri?
@@ -21,16 +21,16 @@ class AppPrefs(ctx: Context) {
         get() = p.getBoolean("recurring", true)
         set(v) { p.edit().putBoolean("recurring", v).apply() }
 
-    var ideasDir: String
+    override var ideasDir: String
         get() = p.getString("ideas_dir", "03 - Projects")!!
         set(v) { p.edit().putString("ideas_dir", v.trim().trim('/')).apply() }
 
-    var imagesDir: String
+    override var imagesDir: String
         get() = p.getString("images_dir", "99 - Meta/Assets")!!
         set(v) { p.edit().putString("images_dir", v.trim().trim('/')).apply() }
 
     /** Blank = use the folder/format from the vault's own .obsidian/daily-notes.json. */
-    var dailyDir: String
+    override var dailyDir: String
         get() = p.getString("daily_dir", "")!!
         set(v) { p.edit().putString("daily_dir", v.trim().trim('/')).apply() }
 
