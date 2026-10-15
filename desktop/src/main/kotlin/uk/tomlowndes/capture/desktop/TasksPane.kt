@@ -182,7 +182,7 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
 @Composable
 private fun TaskRow(t: TaskItem, onTick: (TaskItem) -> Unit, onMove: (TaskItem, LocalDate?) -> Unit, onRemove: (TaskItem) -> Unit) {
     val today = LocalDate.now()
-    val overdue = t.due != null && t.due!!.isBefore(today)
+    val overdue = t.due?.isBefore(today) == true
     var menu by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     HoverRow(Modifier.fillMaxWidth().padding(bottom = 6.dp)) { hovered ->

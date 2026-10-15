@@ -202,7 +202,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
 
 @Composable
 private fun TaskCard(t: TaskItem, onTick: () -> Unit, onChip: () -> Unit) {
-    val overdue = t.due != null && t.due.isBefore(LocalDate.now())
+    val overdue = t.due?.isBefore(LocalDate.now()) == true
     Row(
         Modifier.fillMaxWidth().padding(bottom = 7.dp).clip(RoundedCornerShape(16.dp)).background(Surface1)
             .padding(start = 13.dp, top = 9.dp, bottom = 9.dp, end = 8.dp),

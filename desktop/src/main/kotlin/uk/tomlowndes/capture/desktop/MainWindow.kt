@@ -61,7 +61,7 @@ fun MainWindow(state: AppState) {
         val today = LocalDate.now()
         state.io("Couldn't read the vault") {
             Triple(
-                state.writer()?.listTasks()?.count { it.due != null && it.due!!.isBefore(today) } ?: 0,
+                state.writer()?.listTasks()?.count { t -> t.due?.isBefore(today) == true } ?: 0,
                 state.ideaStore()?.list()?.size ?: 0,
                 state.readStore()?.inbox()?.let { ReadNote.unread(it).first } ?: 0
             )

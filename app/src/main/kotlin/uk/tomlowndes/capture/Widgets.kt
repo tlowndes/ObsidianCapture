@@ -76,7 +76,7 @@ object Widgets {
 
     /** Overdue and today's tasks, oldest first; undated and future tasks are left out. */
     internal fun dueBy(all: List<TaskItem>, today: LocalDate) =
-        all.filter { it.due != null && !it.due.isAfter(today) }.sortedBy { it.due }
+        all.filter { d -> d.due?.isAfter(today) == false }.sortedBy { it.due }
 
     internal fun tasksTitle(count: Int) = "Today" + (count.takeIf { it > 0 }?.let { " · $it" } ?: "")
 
