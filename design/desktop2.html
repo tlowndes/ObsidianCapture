@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="desktop.css">
+<style>
+body{padding:0;position:relative;overflow:hidden;background:linear-gradient(160deg,#1c2a44 0%,#151826 55%,#0f0d16 100%)}
+/* some other app in the background */
+.other{position:absolute;left:120px;top:60px;width:1160px;height:760px;background:#f4f4f6;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden}
+.other .bar{height:40px;background:#dfe1e5;display:flex;align-items:center;padding:0 14px;gap:10px}
+.other .bar div{background:#fff;border-radius:999px;padding:6px 16px;font-size:12.5px;color:#444;width:520px}
+.other .pg{padding:600px 70px 0;color:#222;font-family:Georgia,serif}
+.other h2{font-size:30px;margin-bottom:14px}.other p{font-size:16px;line-height:1.6;color:#444;margin-bottom:12px}
+.scrim{position:absolute;inset:0;background:rgba(5,4,10,.7)}
+/* the quick capture popup */
+.qc{position:absolute;left:50%;top:180px;transform:translateX(-50%);width:640px;background:#1b1827;border:1px solid var(--outline);
+  border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.7);padding:18px}
+.qc .in{display:flex;align-items:center;gap:12px;background:var(--surface);border:1.5px solid var(--primary);border-radius:14px;padding:13px 16px;font-size:17px}
+.qc .foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:12px;color:var(--muted)}
+.prev{background:var(--surface);border-radius:14px;padding:12px;display:flex;gap:12px;margin-top:12px}
+.prev .th{width:96px;height:64px;border-radius:10px;background:linear-gradient(135deg,#1f7a6a,#0f3a38);flex:none}
+.prev b{display:block;font-size:14px;margin-bottom:3px}.prev span{font-size:12px;color:var(--muted)}
+/* tray menu */
+.menu{position:absolute;right:120px;bottom:58px;width:250px;background:#201c2e;border:1px solid var(--outline);border-radius:12px;padding:6px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.menu div{padding:9px 12px;border-radius:8px;font-size:13px;display:flex;justify-content:space-between}
+.menu div.on{background:var(--surface2)}.menu div span{color:#5e5878;font-size:11.5px}
+.menu hr{border:0;border-top:1px solid var(--outline);margin:5px 6px}
+.lbl2{position:absolute;font-size:13px;color:var(--primary);font-weight:600;letter-spacing:.3px}
+</style></head><body>
+
+<div class="other">
+  <div class="bar"><span style="color:#666">● ● ●</span><div>theverge.com/2026/10/14/home-server-guide</div></div>
+  <div class="pg"><h2>The best way to run a home server in 2026</h2>
+    <p>A small, quiet box under the desk can now do everything a rack of gear did ten years ago, from media to backups to home automation…</p>
+    <p>We tried six mini PCs and two NAS boxes over a month of daily use, measuring power draw, noise and how painful each one was to set up.</p></div>
+</div>
+<div class="scrim"></div>
+
+<div class="lbl2" style="left:480px;top:146px">Win + Shift + Space, from any app</div>
+<div class="qc">
+  <div class="pill" style="margin-bottom:12px;width:220px"><div class="on">✓ Task</div><div>🔗 Link</div></div>
+  <div class="in"><span style="color:var(--task)">✓</span><span style="flex:1">Book MOT for the car fri<span style="color:var(--primary)">|</span></span><span class="due">📅 Fri 17 Oct</span></div>
+  <div class="foot"><span>Saves to ⚡ Quick Task · <b style="color:var(--text)">Tab</b> switches to Link · paste a URL and it switches by itself</span><span><span class="kbd">↵</span> save  <span class="kbd">Esc</span> close</span></div>
+</div>
+
+<!-- same popup in Link mode -->
+<div class="lbl2" style="left:480px;top:446px">Link mode: the page is saved as a full article note</div>
+<div class="qc" style="top:480px">
+  <div class="pill" style="margin-bottom:12px;width:220px"><div>✓ Task</div><div class="on">🔗 Link</div></div>
+  <div class="in"><span style="color:var(--link)">🔗</span><span style="flex:1;color:var(--link)">https://theverge.com/2026/10/14/home-server-guide</span></div>
+  <div class="prev"><div class="th"></div><div><b>The best way to run a home server in 2026</b><span>The Verge · 9 min read · goes to ReadItLater Inbox</span></div></div>
+  <div class="foot"><span>Ctrl V with a link copied fills this in</span><span><span class="kbd">↵</span> save  <span class="kbd">Esc</span> close</span></div>
+</div>
+
+<div class="menu">
+  <div class="on">＋ Quick capture<span>Win Shift Space</span></div>
+  <div>Open Vault Capture</div>
+  <div>Today’s tasks<span>3 + 1 overdue</span></div>
+  <hr>
+  <div>Settings</div>
+  <div>Quit</div>
+</div>
+<div class="taskbar"><span>ENG</span><div class="tray-ic"></div><span>🔊</span><span>📶</span><div class="clock">19:42<br>15/10/2026</div></div>
+
+</body></html>

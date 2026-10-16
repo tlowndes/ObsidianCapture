@@ -1,8 +1,5 @@
 package uk.tomlowndes.capture
 
-import android.content.Context
-import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -49,29 +46,19 @@ sealed interface Value {
  * The template is the source of truth for which sections exist; `99 - Meta/capture-config.json`
  * only remembers the type and time slot of sections added from the app. The note edits themselves are in [DailyNote].
  */
-class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: AppPrefs) {
-    private val root = DocumentFile.fromTreeUri(ctx, treeUri) ?: error("Vault folder unavailable")
-
-    private fun dir(path: String, create: Boolean): DocumentFile? {
-        var cur = root
-        for (part in path.split("/").filter { it.isNotBlank() }) {
-            cur = cur.findFile(part)?.takeIf { it.isDirectory }
-                ?: (if (create) cur.createDirectory(part) else null) ?: return null
-        }
-        return cur
+class DailyLogStore(private val vault: Vault, private val prefs: VaultPrefs) {
+    /** [path] includes the extension. */
+    private fun fileAt(path: String, create: Boolean): String? {
+        val e = vault.entry(path)
+        if (e != null) return path.takeIf { !e.isDir }
+        if (!create) return null
+        val name = nameOf(path)
+        return vault.create(parentOf(path), name.substringBeforeLast('.'), name.substringAfterLast('.', "md"))
     }
 
-    /** [path] includes the `.md` extension. */
-    private fun fileAt(path: String, create: Boolean): DocumentFile? {
-        val parent = path.substringBeforeLast('/', "")
-        val name = path.substringAfterLast('/')
-        val d = dir(parent, create) ?: return null
-        return d.findFile(name) ?: if (create) d.createFile("text/markdown", name.removeSuffix(".md")) else null
-    }
-
-    private fun read(f: DocumentFile) = VaultIo.read(ctx, f)
-    /** Read-modify-write of [f]; redone on the fresh copy if a sync lands in between. */
-    private fun edit(f: DocumentFile, change: (MutableList<String>) -> Unit) = VaultIo.edit(ctx, f) { ls ->
+    private fun read(path: String) = VaultIo.read(vault, path)
+    /** Read-modify-write of [path]; redone on the fresh copy if a sync lands in between. */
+    private fun edit(path: String, change: (MutableList<String>) -> Unit) = VaultIo.edit(vault, path) { ls ->
         ls.replaceAll { it.trimEnd('\r') }
         change(ls)
     }
@@ -94,10 +81,7 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
     /** Name shown in the UI, e.g. 09-10-2026. */
     fun todayName(): String = todayPath().substringAfterLast('/').removeSuffix(".md")
 
-    private fun configFile(create: Boolean): DocumentFile? {
-        val dir = dir("99 - Meta", create) ?: return null
-        return dir.findFile("capture-config.json") ?: if (create) dir.createFile("application/json", "capture-config.json") else null
-    }
+    private fun configFile(create: Boolean): String? = fileAt("99 - Meta/capture-config.json", create)
 
     private fun customSections(): List<JSONObject> {
         val arr = configFile(false)?.let { runCatching { JSONObject(read(it)).optJSONArray("sections") }.getOrNull() } ?: return emptyList()
@@ -169,6 +153,6 @@ class DailyLogStore(private val ctx: Context, treeUri: Uri, private val prefs: A
         val arr = JSONArray().also { a -> existing.forEach { a.put(it) } }
         arr.put(JSONObject().put("id", id).put("title", title).put("kind", kind.name).put("slot", slot.name)
             .put("choices", JSONArray(choices)))
-        VaultIo.write(ctx, configFile(true) ?: error("Cannot write config"), JSONObject().put("sections", arr).toString(2))
+        VaultIo.write(vault, configFile(true) ?: error("Cannot write config"), JSONObject().put("sections", arr).toString(2))
     }
 }

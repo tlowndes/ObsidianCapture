@@ -1,8 +1,6 @@
 package uk.tomlowndes.capture
 
-import android.content.Context
-import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import java.time.LocalDate
 
 /** An open task; [raw] is the exact line as it appears in the note at vault [path]. */
@@ -14,32 +12,27 @@ data class TaskItem(
 /** Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active. */
 data class Completion(val doneLine: String, val nextLine: String?)
 
-/** Reads and writes the Obsidian vault through the Storage Access Framework folder the user picked. */
-class VaultWriter(private val ctx: Context, private val treeUri: Uri) {
-    private val root = DocumentFile.fromTreeUri(ctx, treeUri) ?: error("Vault folder unavailable")
+/**
+ * Tasks and quick notes in the vault. [cacheFile] keeps the vault-wide task scan between runs; [onTasksChanged]
+ * runs after every task edit (Android refreshes its home screen widget there).
+ */
+class VaultWriter(
+    private val vault: Vault, private val cacheFile: File? = null, private val onTasksChanged: () -> Unit = {}
+) {
+    private val taskPath = "$INBOX/$TASK_FILE"
 
-    private fun dir(path: String): DocumentFile {
-        var cur = root
-        for (part in path.split("/")) {
-            cur = cur.findFile(part)?.takeIf { it.isDirectory }
-                ?: cur.createDirectory(part) ?: error("Cannot create $part")
-        }
-        return cur
+    private fun taskFile(create: Boolean): String? = when {
+        vault.entry(taskPath) != null -> taskPath
+        create -> vault.create(INBOX, TASK_FILE.removeSuffix(".md"), "md")
+        else -> null
     }
 
-    private fun taskFile(create: Boolean): DocumentFile? {
-        val inbox = dir(INBOX)
-        return inbox.findFile(TASK_FILE)
-            ?: if (create) inbox.createFile("text/markdown", TASK_FILE.removeSuffix(".md")) else null
-    }
+    private fun readLines(path: String): MutableList<String> = VaultIo.read(vault, path).split("\n").toMutableList()
 
-    private fun readLines(file: DocumentFile): MutableList<String> =
-        VaultIo.read(ctx, file).split("\n").toMutableList()
-
-    /** Edits a note (redone on the fresh copy if a sync lands meanwhile) and lets the home screen widget know. */
-    private fun edit(file: DocumentFile, change: (MutableList<String>) -> Unit) {
-        VaultIo.edit(ctx, file, change)
-        Widgets.tasksChanged(ctx)
+    /** Edits a note (redone on the fresh copy if a sync lands meanwhile) and lets listeners know. */
+    private fun edit(path: String, change: (MutableList<String>) -> Unit) {
+        VaultIo.edit(vault, path, change)
+        onTasksChanged()
     }
 
     fun addTask(text: String, due: String?) {
@@ -54,16 +47,14 @@ class VaultWriter(private val ctx: Context, private val treeUri: Uri) {
     }
 
     /** Quick Task's open tasks first, then `#task` tasks from every other note in the vault. */
-    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(ctx, treeUri)
+    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(vault, cacheFile)
 
     private fun isQuick(t: TaskItem) = t.path == VaultTasks.QUICK_TASK
 
     /** The note [t] lives in. */
-    private fun noteOf(t: TaskItem): DocumentFile {
+    private fun noteOf(t: TaskItem): String {
         if (isQuick(t)) return taskFile(false) ?: error("Task note not found")
-        var cur = root
-        for (part in t.path.split("/")) cur = cur.findFile(part) ?: error("Note moved in Obsidian, refreshed")
-        return cur
+        return t.path.takeIf { vault.entry(it)?.isDir == false } ?: error("Note moved in Obsidian, refreshed")
     }
 
     /**
@@ -101,18 +92,17 @@ class VaultWriter(private val ctx: Context, private val treeUri: Uri) {
     }
 
     /** Every note in the vault except dot-folders, for quick search. */
-    fun allNotes(): List<VaultNote> = VaultScan.notes(ctx, treeUri) { p -> p.split("/").any { it.startsWith(".") } }
+    fun allNotes(): List<VaultNote> = vault.notes { p -> p.split("/").any { it.startsWith(".") } }
 
     /** Adds a `#task` line (with optional [due]) under the note's "## Tasks", or [text] as a plain line at its end. */
     fun addToNote(note: VaultNote, text: String, asTask: Boolean, due: LocalDate?) {
         val line = if (asTask) TaskNote.newTask(text.replace(Regex("\\s*\\n\\s*"), " "), due?.toString()) else text.trim()
-        edit(note.file(ctx)) { if (asTask) NoteSearch.addTask(it, line) else NoteSearch.addLine(it, line) }
+        edit(note.path) { if (asTask) NoteSearch.addTask(it, line) else NoteSearch.addLine(it, line) }
     }
 
-    /** Writes a note named [name] into the Read It Later inbox (the provider adds .md and de-duplicates). */
+    /** Writes a note named [name] (a free name is picked if it's taken) into the Read It Later inbox. */
     fun addNote(name: String, content: String) {
-        val file = dir("$INBOX/$RIL_DIR").createFile("text/markdown", name) ?: error("Cannot create note")
-        VaultIo.write(ctx, file, content)
+        VaultIo.write(vault, vault.create("$INBOX/$RIL_DIR", name, "md"), content)
     }
 
     companion object {

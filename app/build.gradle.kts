@@ -11,7 +11,7 @@ android {
         minSdk = 29
         targetSdk = 34
         versionCode = 5
-        versionName = "1.5"
+        versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
     signingConfigs {
@@ -33,7 +33,7 @@ android {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation(project(":core"))
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.work:work-runtime-ktx:2.9.0")

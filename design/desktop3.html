@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="desktop.css">
+<style>
+.colh{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--outline)}
+.colh span{font-size:12px;font-weight:600;color:var(--muted);margin-left:auto}
+.field{margin-bottom:12px;padding:10px 14px;min-height:40px;font-size:14px;border-radius:12px}
+.bul{padding:9px 14px;font-size:14px;border-radius:12px;margin-bottom:6px}
+.lbl{margin-top:4px}
+.custom{font-size:10px;font-weight:700;background:#2a2250;color:var(--primary);border-radius:7px;padding:2px 7px;margin-left:8px}
+.cbx{width:20px;height:20px;border-radius:6px;border:2px solid var(--primary);flex:none}
+.cbx.done{background:var(--primary)}
+.savebar{position:absolute;left:32px;right:32px;bottom:22px;display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface);border:1px solid var(--outline);border-radius:14px;padding:10px 10px 10px 18px;font-size:13px;color:var(--muted)}
+</style></head><body>
+
+<!-- DAILY LOG: morning and evening side by side, no switching -->
+<div class="win" data-tab="log">
+  <div class="h1row">
+    <div><h1>Daily log</h1><div class="sub">Wednesday 15 October · saves into 15-10-2026</div></div>
+    <div class="row gap8"><div class="chip">Open in Obsidian ↗</div><div class="chip">＋ Add section</div></div>
+  </div>
+
+  <div class="grid2" style="gap:0 40px">
+    <div>
+      <div class="colh">☀ Morning <span>saved 08:12</span></div>
+      <div class="lbl">🎯 Do this first</div>
+      <div class="field">Put the SD cards on the desk and label them</div>
+      <div class="row gap12" style="margin-bottom:12px">
+        <div style="flex:1"><div class="lbl">Energy</div><div class="row gap8"><div class="chip">Low</div><div class="chip on">Medium</div><div class="chip">High</div></div></div>
+        <div><div class="lbl">Overwhelmed?</div><div class="tog" style="margin-top:6px"></div></div>
+      </div>
+      <div class="lbl">If today is hard, the one thing that counts</div>
+      <div class="field">Get the car booked in</div>
+      <div class="lbl">🌤️ Top 3</div>
+      <div class="bul"><b>1</b>Clean car</div>
+      <div class="bul"><b>2</b>Update C5 and memory card</div>
+      <div class="bul empty"><b>3</b>Add another…</div>
+    </div>
+    <div>
+      <div class="colh">🌙 Evening <span>not filled in yet</span></div>
+      <div class="lbl">Went well</div>
+      <div class="bul"><b>•</b>Got the SD cards sorted</div>
+      <div class="bul empty"><b>•</b>Add another…</div>
+      <div class="lbl" style="margin-top:10px">Leave for tomorrow</div>
+      <div class="bul"><b>•</b>Clean car</div>
+      <div class="bul empty"><b>•</b>Add another…</div>
+      <div class="lbl" style="margin-top:10px">First step tomorrow</div>
+      <div class="field act">Take the bins out before work<span style="color:var(--primary)">|</span></div>
+      <div class="lbl">🧘 Gratitude<span class="custom">CUSTOM</span></div>
+      <div class="bul"><div class="cbx done"></div>Sunny walk at lunch</div>
+      <div class="bul empty"><div class="cbx"></div>Three small things…</div>
+    </div>
+  </div>
+
+  <div class="savebar"><span>2 sections changed · only those are written, the rest of the note is left alone</span><div class="btn" style="padding:9px 22px;font-size:13.5px">Save  <span style="opacity:.6">Ctrl S</span></div></div>
+</div>
+
+<script src="desktop.js"></script>
+</body></html>
