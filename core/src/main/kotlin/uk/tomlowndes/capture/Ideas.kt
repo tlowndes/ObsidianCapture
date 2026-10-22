@@ -3,6 +3,7 @@ package uk.tomlowndes.capture
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+/** [modified] is when the idea note or its log file last changed, whichever is later. */
 data class IdeaSummary(
     val title: String, val snippet: String, val entries: Int, val images: Int,
     val firstImage: String?, val status: String, val modified: Long
@@ -59,15 +60,16 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
         val folder = join(prefs.ideasDir, name)
         val files = vault.list(folder).associateBy { it.name }
         val note = files["$name.md"]?.takeIf { !it.isDir } ?: return@mapNotNull null
-        val log = "${IdeaNote.logName(name)}.md".takeIf { it in files }?.let { join(folder, it) }
+        val logEntry = files["${IdeaNote.logName(name)}.md"]
+        val log = logEntry?.let { join(folder, it.name) }
         val doc = docOf(name, join(folder, note.name), log)
         IdeaSummary(
             name, doc.summary.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
             doc.entries.size, doc.entries.sumOf { it.images.size },
             doc.entries.firstOrNull { it.images.isNotEmpty() }?.images?.first(),
-            doc.status, note.modified
+            doc.status, maxOf(note.modified, logEntry?.modified ?: 0L)
         )
-    }.sortedByDescending { it.modified }
+    }.let { sorted(it, byUpdated = true) }
 
     fun load(title: String): IdeaDoc = docOf(title, noteOf(title), logOf(title))
 
@@ -116,5 +118,10 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
     companion object {
         private val STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         fun safeName(s: String) = IdeaNote.safeName(s)
+
+        /** The Ideas list order: last updated first, or by title A–Z. */
+        fun sorted(ideas: List<IdeaSummary>, byUpdated: Boolean): List<IdeaSummary> =
+            if (byUpdated) ideas.sortedByDescending { it.modified }
+            else ideas.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
     }
 }
