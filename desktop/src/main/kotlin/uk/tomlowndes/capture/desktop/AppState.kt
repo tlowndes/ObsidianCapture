@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import uk.tomlowndes.capture.DailyLogStore
 import uk.tomlowndes.capture.FileVault
 import uk.tomlowndes.capture.IdeaStore
 import uk.tomlowndes.capture.ReadStore
@@ -22,7 +21,7 @@ import java.io.File
 import java.net.URI
 import java.net.URLEncoder
 
-enum class Tab { TASKS, LOG, IDEAS, READ, FIND, SETTINGS }
+enum class Tab { TASKS, IDEAS, READ, FIND, SETTINGS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -58,7 +57,6 @@ class AppState(val prefs: DesktopPrefs) {
     fun writer() = vault?.let { VaultWriter(it, File(prefs.cacheDir, "vault-tasks.json")) }
     fun readStore() = vault?.let { ReadStore(it) }
     fun ideaStore() = vault?.let { IdeaStore(it, prefs) }
-    fun logStore() = vault?.let { DailyLogStore(it, prefs) }
 
     /** Runs [work] off the UI thread; shows its failure as a message. Returns null on failure. */
     suspend fun <T> io(failure: String = "Failed", work: () -> T): T? =

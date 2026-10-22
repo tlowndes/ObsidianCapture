@@ -145,8 +145,6 @@ fun ReadStore(ctx: Context, tree: Uri) = ReadStore(SafVault(ctx, tree)) { Widget
 
 fun IdeaStore(ctx: Context, tree: Uri, prefs: AppPrefs) = IdeaStore(SafVault(ctx, tree), prefs)
 
-fun DailyLogStore(ctx: Context, tree: Uri, prefs: AppPrefs) = DailyLogStore(SafVault(ctx, tree), prefs)
-
 fun ReadLater.save(ctx: Context, tree: Uri, url: String, sharedTitle: String?): Boolean =
     save(SafVault(ctx, tree), url, sharedTitle).also { Widgets.readChanged(ctx) }
 

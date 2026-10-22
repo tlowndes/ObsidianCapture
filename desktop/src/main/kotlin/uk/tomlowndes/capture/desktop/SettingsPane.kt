@@ -33,7 +33,6 @@ fun SettingsPane(state: AppState) {
     var recurring by remember { mutableStateOf(p.recurring) }
     var ideas by remember { mutableStateOf(p.ideasDir) }
     var images by remember { mutableStateOf(p.imagesDir) }
-    var daily by remember { mutableStateOf(p.dailyDir) }
     var autostart by remember { mutableStateOf(Autostart.enabled()) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
@@ -59,8 +58,7 @@ fun SettingsPane(state: AppState) {
             Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
             FolderSetting("Ideas", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
             FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
-            FolderSetting("Daily notes", daily, "From Obsidian's daily notes settings") { daily = it; p.dailyDir = it }
-            Sub("The same folders as the phone app. Leave Daily notes empty to use Obsidian's own setting.", Modifier.padding(top = 10.dp))
+            Sub("The same folders as the phone app.", Modifier.padding(top = 10.dp))
         }
     }
 }

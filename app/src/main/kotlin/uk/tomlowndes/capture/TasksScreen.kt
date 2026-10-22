@@ -1,6 +1,11 @@
 package uk.tomlowndes.capture
 
+import android.Manifest
+import android.app.TimePickerDialog
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -167,10 +172,11 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
             color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp, bottom = 6.dp))
 
         val rows = layout(tasks, byDue)
-        if (loaded && rows.isEmpty()) {
-            Text("Nothing to do. Add something from Capture.", color = Muted, modifier = Modifier.padding(top = 24.dp))
-        }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+            item { RemindersSection(prefs) }
+            if (loaded && rows.isEmpty()) item {
+                Text("Nothing to do. Add something from Capture.", color = Muted, modifier = Modifier.padding(top = 24.dp))
+            }
             itemsIndexed(rows) { _, row ->
                 when (row) {
                     is Row2.Header -> Row(
@@ -197,6 +203,52 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }
         )
+    }
+}
+
+private fun hhmm(minutes: Int) = "%02d:%02d".format(minutes / 60, minutes % 60)
+
+@Composable
+private fun TimeChip(minutes: Int, onPick: (Int) -> Unit) {
+    val ctx = LocalContext.current
+    Text(
+        hhmm(minutes), fontWeight = FontWeight.Bold, fontSize = 14.sp,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Surface2).clickable {
+            TimePickerDialog(ctx, { _, h, m -> onPick(h * 60 + m) }, minutes / 60, minutes % 60, true).show()
+        }.padding(horizontal = 12.dp, vertical = 6.dp)
+    )
+}
+
+/** The morning and evening reminder times, at the top of the list. */
+@Composable
+private fun RemindersSection(prefs: AppPrefs) {
+    val ctx = LocalContext.current
+    var morningOn by remember { mutableStateOf(prefs.morningOn) }
+    var eveningOn by remember { mutableStateOf(prefs.eveningOn) }
+    var morning by remember { mutableStateOf(prefs.morningMinute) }
+    var evening by remember { mutableStateOf(prefs.eveningMinute) }
+
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
+    fun apply() {
+        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (morningOn || eveningOn)) {
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else Reminders.scheduleAll(ctx, prefs)
+    }
+
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        GroupLabel("Reminders")
+        SettingRow("☀ Morning") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimeChip(morning) { morning = it; prefs.morningMinute = it; apply() }
+                AppSwitch(morningOn) { morningOn = it; prefs.morningOn = it; apply() }
+            }
+        }
+        SettingRow("🌙 Evening") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimeChip(evening) { evening = it; prefs.eveningMinute = it; apply() }
+                AppSwitch(eveningOn) { eveningOn = it; prefs.eveningOn = it; apply() }
+            }
+        }
     }
 }
 
