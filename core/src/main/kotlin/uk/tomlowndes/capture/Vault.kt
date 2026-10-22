@@ -62,8 +62,6 @@ data class VaultNote(val path: String, val modified: Long)
 interface VaultPrefs {
     val ideasDir: String
     val imagesDir: String
-    /** Blank = use the folder/format from the vault's own .obsidian/daily-notes.json. */
-    val dailyDir: String
 }
 
 internal fun join(dir: String, name: String) = if (dir.isEmpty()) name else "$dir/$name"

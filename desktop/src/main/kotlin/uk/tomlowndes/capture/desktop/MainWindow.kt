@@ -44,7 +44,6 @@ fun MainWindow(state: AppState) {
             if (state.vault == null && state.tab != Tab.SETTINGS) Welcome(state)
             else when (state.tab) {
                 Tab.TASKS -> TasksPane(state)
-                Tab.LOG -> LogPane(state)
                 Tab.IDEAS -> IdeasPane(state)
                 Tab.READ -> ReadPane(state)
                 Tab.FIND -> FindPane(state)
@@ -87,7 +86,6 @@ private fun Sidebar(state: AppState) {
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x22000000)).padding(horizontal = 5.dp, vertical = 1.dp))
         }
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
-        NavItem(state, Tab.LOG, "☀", "Daily log")
         NavItem(state, Tab.IDEAS, "💡", "Ideas") { if (state.ideas > 0) Count(state.ideas) }
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))

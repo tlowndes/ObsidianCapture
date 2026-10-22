@@ -134,11 +134,6 @@ internal fun AppChip(
 }
 
 @Composable
-internal fun SmallLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Primary, modifier = modifier.padding(bottom = 6.dp))
-}
-
-@Composable
 internal fun GroupLabel(text: String, color: Color = Muted) {
     Text(text.uppercase(Locale.UK), fontSize = 12.sp, letterSpacing = 1.2.sp, color = color, fontWeight = FontWeight.SemiBold)
 }

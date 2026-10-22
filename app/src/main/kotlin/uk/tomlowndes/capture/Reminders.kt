@@ -17,13 +17,13 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-/** Morning and evening daily-log reminders, scheduled with WorkManager (survives reboots, may fire a few minutes late). */
+enum class Slot { MORNING, EVENING }
+
+/** Morning and evening reminders, scheduled with WorkManager (survives reboots, may fire a few minutes late). */
 object Reminders {
     const val CHANNEL = "log_reminders"
 
@@ -58,19 +58,19 @@ object Reminders {
     internal fun notify(ctx: Context, slot: Slot) {
         if (!canNotify(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Daily log reminders", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_DEFAULT))
         val morning = slot == Slot.MORNING
         val open = Intent(ctx, MainActivity::class.java)
-            .putExtra("tab", Tab.LOG.name).putExtra("slot", slot.name.lowercase())
+            .putExtra("tab", Tab.TASKS.name)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val snooze = Intent(ctx, SnoozeReceiver::class.java).putExtra("slot", slot.name)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle(if (morning) "☀ Morning log" else "🌙 Evening log")
-            .setContentText(if (morning) "What's your first step, and your top 3?" else "How did today go? A quick wind down.")
+            .setContentTitle(if (morning) "☀ Morning reminder" else "🌙 Evening reminder")
+            .setContentText(if (morning) "Have a look at today's tasks." else "Anything to tick off or move to tomorrow?")
             .setContentIntent(PendingIntent.getActivity(ctx, slot.ordinal, open, flags))
-            .addAction(0, "Open log", PendingIntent.getActivity(ctx, 10 + slot.ordinal, open, flags))
+            .addAction(0, "Open tasks", PendingIntent.getActivity(ctx, 10 + slot.ordinal, open, flags))
             .addAction(0, "Snooze 1h", PendingIntent.getBroadcast(ctx, 20 + slot.ordinal, snooze, flags))
             .setAutoCancel(true)
             .build()
@@ -84,12 +84,7 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val snooze = inputData.getBoolean("snooze", false)
         val prefs = AppPrefs(applicationContext)
         val enabled = if (slot == Slot.MORNING) prefs.morningOn else prefs.eveningOn
-        if (enabled) {
-            val skip = prefs.skipIfFilled && prefs.vault?.let { v ->
-                withContext(Dispatchers.IO) { runCatching { DailyLogStore(applicationContext, v, prefs).isFilled(slot) }.getOrDefault(false) }
-            } == true
-            if (!skip) Reminders.notify(applicationContext, slot)
-        }
+        if (enabled) Reminders.notify(applicationContext, slot)
         if (!snooze) Reminders.scheduleAll(applicationContext, prefs)
         return Result.success()
     }

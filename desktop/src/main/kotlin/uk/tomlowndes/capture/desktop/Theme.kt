@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -171,6 +172,14 @@ fun Kbd(text: String) = Text(
     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(6.dp))
         .padding(horizontal = 5.dp, vertical = 1.dp)
 )
+
+@Composable
+fun Toggle(on: Boolean, onChange: (Boolean) -> Unit) {
+    Box(
+        Modifier.size(46.dp, 26.dp).clip(CircleShape).background(if (on) Primary else Outline).hand().clickable { onChange(!on) }.padding(3.dp),
+        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart
+    ) { Box(Modifier.size(20.dp).clip(CircleShape).background(if (on) Color.White else Muted)) }
+}
 
 /** Segmented switch: Unread | Read | Archived, Task | Link. */
 @Composable

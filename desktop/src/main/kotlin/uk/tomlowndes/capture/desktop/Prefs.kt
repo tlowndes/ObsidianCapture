@@ -33,10 +33,6 @@ class DesktopPrefs : VaultPrefs {
         get() = str("images_dir", "99 - Meta/Assets")
         set(v) = put("images_dir", v.trim().trim('/'))
 
-    override var dailyDir: String
-        get() = str("daily_dir", "")
-        set(v) = put("daily_dir", v.trim().trim('/'))
-
     /** The quick capture shortcut, one of [Hotkey.CHOICES]. */
     var hotkey: String
         get() = str("hotkey", Hotkey.CHOICES.first().label)

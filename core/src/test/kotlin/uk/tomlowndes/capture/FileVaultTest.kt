@@ -15,7 +15,6 @@ class FileVaultTest {
     private val prefs = object : VaultPrefs {
         override val ideasDir = "03 - Projects"
         override val imagesDir = "99 - Meta/Assets"
-        override val dailyDir = ""
     }
 
     private fun vault() = FileVault(tmp.root)

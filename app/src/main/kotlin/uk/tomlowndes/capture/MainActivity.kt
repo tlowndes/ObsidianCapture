@@ -49,13 +49,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class Tab(val label: String, val icon: String) {
-    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), LOG("Log", "☀"), IDEAS("Ideas", "💡"), READ("Read", "📖")
+    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), IDEAS("Ideas", "💡"), READ("Read", "📖")
 }
 
 class MainActivity : ComponentActivity() {
     private val prefs by lazy { AppPrefs(this) }
 
-    /** Set by notification and widget taps (a tab plus which log slot or article) and read by [App]. */
+    /** Set by notification and widget taps (a tab, plus the article for Read) and read by [App]. */
     private var openRequest by mutableStateOf<Pair<Tab, String?>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -122,7 +122,6 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val ctx = LocalContext.current
     var vault by remember { mutableStateOf(prefs.vault) }
     var tab by remember { mutableStateOf(request?.first ?: Tab.CAPTURE) }
-    var logSlot by remember { mutableStateOf(request?.second) }
     var settings by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
@@ -140,7 +139,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 
     LaunchedEffect(request) {
         request?.let {
-            tab = it.first; logSlot = it.second; settings = false; search = false; openIdea = null
+            tab = it.first; settings = false; search = false; openIdea = null
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -178,7 +177,6 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
-                tab == Tab.LOG -> LogScreen(vault, prefs, snack, logSlot)
                 tab == Tab.IDEAS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
             }

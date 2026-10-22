@@ -29,11 +29,7 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("images_dir", "99 - Meta/Assets")!!
         set(v) { p.edit().putString("images_dir", v.trim().trim('/')).apply() }
 
-    /** Blank = use the folder/format from the vault's own .obsidian/daily-notes.json. */
-    override var dailyDir: String
-        get() = p.getString("daily_dir", "")!!
-        set(v) { p.edit().putString("daily_dir", v.trim().trim('/')).apply() }
-
+    /** The morning and evening reminders on the Tasks tab. */
     var morningOn: Boolean
         get() = p.getBoolean("morning_on", true)
         set(v) { p.edit().putBoolean("morning_on", v).apply() }
@@ -46,9 +42,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var eveningMinute: Int
         get() = p.getInt("evening_min", 21 * 60)
         set(v) { p.edit().putInt("evening_min", v).apply() }
-    var skipIfFilled: Boolean
-        get() = p.getBoolean("skip_filled", true)
-        set(v) { p.edit().putBoolean("skip_filled", v).apply() }
 
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
