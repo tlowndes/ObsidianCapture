@@ -16,6 +16,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("sort_by_due", true)
         set(v) { p.edit().putBoolean("sort_by_due", v).apply() }
 
+    /** Ideas tab: last updated first (true) or by title A–Z (false). */
+    var ideasByUpdated: Boolean
+        get() = p.getBoolean("ideas_by_updated", true)
+        set(v) { p.edit().putBoolean("ideas_by_updated", v).apply() }
+
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
         get() = p.getBoolean("recurring", true)

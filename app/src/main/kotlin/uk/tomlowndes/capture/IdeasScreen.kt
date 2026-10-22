@@ -94,6 +94,8 @@ private fun IdeaList(
     var ideas by remember { mutableStateOf<List<IdeaSummary>?>(null) }
     var query by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var byUpdated by remember { mutableStateOf(prefs.ideasByUpdated) }
+    var menu by remember { mutableStateOf(false) }
 
     fun reload() {
         val uri = vault ?: return
@@ -104,14 +106,23 @@ private fun IdeaList(
     }
     LaunchedEffect(vault) { reload() }
 
-    val shown = ideas.orEmpty().filter {
+    val shown = IdeaStore.sorted(ideas.orEmpty(), byUpdated).filter {
         query.isBlank() || it.title.contains(query, true) || it.snippet.contains(query, true)
     }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Column(Modifier.padding(top = 8.dp)) {
-                ScreenTitle("Ideas", "${prefs.ideasDir} · ${ideas?.size ?: 0} ideas")
+                ScreenTitle("Ideas", "${prefs.ideasDir} · ${ideas?.size ?: 0} ideas") {
+                    Column {
+                        AppChip(true, { menu = true }, { Text(if (byUpdated) "Last updated ▾" else "A–Z ▾") },
+                            shape = RoundedCornerShape(12.dp))
+                        DropdownMenu(menu, { menu = false }, modifier = Modifier.background(Surface2)) {
+                            DropdownMenuItem(text = { Text("Last updated") }, onClick = { byUpdated = true; prefs.ideasByUpdated = true; menu = false })
+                            DropdownMenuItem(text = { Text("A–Z") }, onClick = { byUpdated = false; prefs.ideasByUpdated = false; menu = false })
+                        }
+                    }
+                }
             }
             OutlinedTextField(
                 query, { query = it }, placeholder = { Text("🔍  Search ideas") }, singleLine = true,

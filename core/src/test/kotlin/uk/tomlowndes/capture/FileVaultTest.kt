@@ -76,4 +76,17 @@ class FileVaultTest {
         assertEquals("wall.jpg", name)
         assertTrue(store.imageIndex()["wall.jpg"] == handle)
     }
+
+    @Test fun `ideas sort by last update, counting the log, or A to Z`() {
+        val store = IdeaStore(vault(), prefs)
+        listOf("banjo", "Apple", "Cherry").forEach { store.create(it, "") }
+        file("03 - Projects/banjo/banjo.md").setLastModified(1_000_000)
+        file("03 - Projects/Apple/Apple.md").setLastModified(2_000_000)
+        file("03 - Projects/Cherry/Cherry.md").setLastModified(3_000_000)
+        listOf("banjo", "Apple", "Cherry").forEach { file("03 - Projects/$it/$it - Log.md").setLastModified(0) }
+        file("03 - Projects/banjo/banjo - Log.md").setLastModified(4_000_000)
+        val ideas = store.list()
+        assertEquals(listOf("banjo", "Cherry", "Apple"), ideas.map { it.title })
+        assertEquals(listOf("Apple", "banjo", "Cherry"), IdeaStore.sorted(ideas, byUpdated = false).map { it.title })
+    }
 }

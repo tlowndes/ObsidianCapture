@@ -82,10 +82,11 @@ fun IdeasPane(state: AppState) {
     var open by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var byUpdated by remember { mutableStateOf(state.prefs.ideasByUpdated) }
     val images = remember(state.vault) { mutableStateMapOf<String, Any>() }
 
     fun reload() = scope.launch {
-        val list = state.io("Couldn't read ideas") { state.ideaStore()!!.list() } ?: return@launch
+        val list = state.io("Couldn't read ideas") { IdeaStore.sorted(state.ideaStore()!!.list(), byUpdated) } ?: return@launch
         ideas = list
         if (open == null || list.none { it.title == open }) open = list.firstOrNull()?.title
     }
@@ -100,7 +101,12 @@ fun IdeasPane(state: AppState) {
                 Box(Modifier.weight(1f)) { H1("Ideas", 26) }
                 Chip("＋ New", small = true) { creating = true }
             }
-            Field(query, { query = it }, Modifier.fillMaxWidth().padding(bottom = 12.dp), "🔍  Search ideas", shape = RoundedCornerShape(999.dp))
+            Field(query, { query = it }, Modifier.fillMaxWidth().padding(bottom = 10.dp), "🔍  Search ideas", shape = RoundedCornerShape(999.dp))
+            Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                fun sortBy(updated: Boolean) { byUpdated = updated; state.prefs.ideasByUpdated = updated; ideas = ideas?.let { IdeaStore.sorted(it, updated) } }
+                Chip("Last updated", byUpdated, small = true) { sortBy(true) }
+                Chip("A–Z", !byUpdated, small = true) { sortBy(false) }
+            }
             val shown = ideas.orEmpty().filter { query.isBlank() || it.title.contains(query.trim(), true) || it.snippet.contains(query.trim(), true) }
             if (ideas != null && shown.isEmpty()) Sub(if (query.isBlank()) "No ideas yet." else "No ideas match.")
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {

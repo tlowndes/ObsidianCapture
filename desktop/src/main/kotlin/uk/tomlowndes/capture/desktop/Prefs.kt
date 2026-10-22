@@ -20,6 +20,11 @@ class DesktopPrefs : VaultPrefs {
         get() = p.getBoolean("sort_by_due", true)
         set(v) { p.putBoolean("sort_by_due", v); p.flush() }
 
+    /** Ideas tab: last updated first (true) or by title A–Z (false). */
+    var ideasByUpdated: Boolean
+        get() = p.getBoolean("ideas_by_updated", true)
+        set(v) { p.putBoolean("ideas_by_updated", v); p.flush() }
+
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
         get() = p.getBoolean("recurring", true)
