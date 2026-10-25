@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -108,6 +109,15 @@ private fun IdeaList(
     }
     LaunchedEffect(vault) { reload() }
 
+    /** Runs one change on the vault, then refreshes the list. */
+    fun saveTo(change: (IdeaStore) -> Unit) {
+        val uri = vault ?: return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { change(IdeaStore(ctx, uri, prefs)) } }
+            r.onSuccess { reload() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+        }
+    }
+
     val shown = IdeaStore.sorted(ideas.orEmpty(), byUpdated).filter {
         query.isBlank() || it.title.contains(query, true) || it.snippet.contains(query, true)
     }
@@ -140,7 +150,13 @@ private fun IdeaList(
                     val list = shown.filter { ProjectGroup.of(it) == group }
                     if (list.isNotEmpty()) {
                         item(key = group.name) { GroupLabel("${group.label} · ${list.size}") }
-                        items(list, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                        items(list, key = { it.title }) { idea ->
+                            IdeaCard(
+                                idea, images,
+                                onStatus = { s -> saveTo { it.setStatus(idea.title, s) } },
+                                onArea = { a -> saveTo { it.setArea(idea.title, a) } }
+                            ) { onOpen(idea.title) }
+                        }
                     }
                 }
             }
@@ -166,7 +182,7 @@ private fun IdeaList(
 }
 
 @Composable
-private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () -> Unit) {
+private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onStatus: (String) -> Unit, onArea: (String) -> Unit, onClick: () -> Unit) {
     val thumb = idea.firstImage?.let { images[it] }
     val modified = Instant.ofEpochMilli(idea.modified).atZone(ZoneId.systemDefault()).toLocalDate()
     Row(
@@ -181,9 +197,11 @@ private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () ->
         }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(if (idea.area == "work") WorkEdge else PersonalEdge))
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (idea.area == "work") WorkEdge else PersonalEdge)
+                    .clickable { onArea(if (idea.area == "work") "personal" else "work") })
                 Text(idea.title, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 6.dp).weight(1f, fill = false))
+                StatusPill(idea.status, onStatus)
                 idea.type?.let { ProjectTag(it) }
                 if (idea.shelved && idea.couldContinue) ProjectTag("could continue")
             }
@@ -491,11 +509,43 @@ private enum class ProjectGroup(val label: String) {
     ACTIVE("Active"), PAUSED("Paused"), IDEAS("Ideas"), DONE("Done");
 
     companion object {
+        /** The statuses the app can set, as written in the note. */
+        val STATUSES = listOf("active", "paused", "idea", "done")
+
+        fun color(status: String): Color = when (status.lowercase()) {
+            "paused" -> Color(0xFFD9A85C)
+            "idea" -> Color(0xFF9FB0E6)
+            "done", "shelved" -> Color(0xFF9B9A93)
+            else -> Color(0xFF3FA37F)
+        }
+
         fun of(idea: IdeaSummary): ProjectGroup = when (idea.status.lowercase()) {
             "done", "shelved" -> DONE
             "paused" -> PAUSED
             "idea" -> IDEAS
             else -> ACTIVE
+        }
+    }
+}
+
+/** Tap to change the project's status. The colour comes from [ProjectGroup.color]. */
+@Composable
+private fun StatusPill(status: String, onStatus: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val color = ProjectGroup.color(status)
+    Box {
+        Text(
+            status.replaceFirstChar { it.uppercase() }, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color,
+            modifier = Modifier.padding(start = 6.dp).clip(CircleShape).border(1.dp, color, CircleShape)
+                .clickable { open = true }.padding(horizontal = 8.dp, vertical = 2.dp)
+        )
+        DropdownMenu(open, { open = false }, modifier = Modifier.background(Surface2)) {
+            ProjectGroup.STATUSES.forEach { s ->
+                DropdownMenuItem(
+                    text = { Text(s.replaceFirstChar { it.uppercase() }, color = ProjectGroup.color(s)) },
+                    onClick = { open = false; onStatus(s) }
+                )
+            }
         }
     }
 }
