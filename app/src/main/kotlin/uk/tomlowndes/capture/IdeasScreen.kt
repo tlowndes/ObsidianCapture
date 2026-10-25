@@ -135,11 +135,13 @@ private fun IdeaList(
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp)) {
-                items(shown.filter { !it.shelved }, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
-                val shelved = shown.filter { it.shelved }
-                if (shelved.isNotEmpty()) {
-                    item(key = "shelved") { GroupLabel("Shelved · ${shelved.size}") }
-                    items(shelved, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                // Active first, then Paused, Ideas and Done. Empty groups are left out.
+                listOf(ProjectGroup.ACTIVE, ProjectGroup.PAUSED, ProjectGroup.IDEAS, ProjectGroup.DONE).forEach { group ->
+                    val list = shown.filter { ProjectGroup.of(it) == group }
+                    if (list.isNotEmpty()) {
+                        item(key = group.name) { GroupLabel("${group.label} · ${list.size}") }
+                        items(list, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                    }
                 }
             }
         }
@@ -186,6 +188,7 @@ private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () ->
                 if (idea.shelved && idea.couldContinue) ProjectTag("could continue")
             }
             if (idea.snippet.isNotBlank()) Text(idea.snippet, fontSize = 12.5.sp, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            idea.next?.let { Text("☐ $it", fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)) }
             Text(
                 buildString {
                     append("${idea.entries} entries")
@@ -481,4 +484,18 @@ private fun TextEditDialog(
             }
         }
     )
+}
+
+/** The sections on the Projects tab, from the note's status. */
+private enum class ProjectGroup(val label: String) {
+    ACTIVE("Active"), PAUSED("Paused"), IDEAS("Ideas"), DONE("Done");
+
+    companion object {
+        fun of(idea: IdeaSummary): ProjectGroup = when (idea.status.lowercase()) {
+            "done", "shelved" -> DONE
+            "paused" -> PAUSED
+            "idea" -> IDEAS
+            else -> ACTIVE
+        }
+    }
 }
