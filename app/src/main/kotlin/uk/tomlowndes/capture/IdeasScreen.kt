@@ -294,7 +294,7 @@ private fun IdeaDetail(
                     store.load(title) to (store.notePart(title, "Changelog") to store.notePart(title, "Decisions"))
                 }
             }
-            r.onSuccess { doc = it.first; notes = it.second }
+            r.onSuccess { doc = it.first; notes = it.second }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
             // The repo line needs a token on the phone and a github.com link in the note.
             val token = SecretStore(ctx).githubToken
             val repo = GitHubRepo.repoOf(withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).noteText(title) }.getOrDefault("") })
@@ -303,7 +303,7 @@ private fun IdeaDetail(
             if (token != null && repo != null) {
                 withContext(Dispatchers.IO) { runCatching { GitHubRepo.fetch(repo.first, repo.second, token) } }
                     .onSuccess { github = it }.onFailure { githubError = true }
-            }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
+            }
         }
     }
     LaunchedEffect(title, vault) { reload() }
