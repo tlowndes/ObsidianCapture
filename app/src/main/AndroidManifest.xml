@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -28,6 +30,9 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <service android:name=".FocusService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Focus countdown timer the user starts" />
+        </service>
         <!-- Add-task / save-link sheet opened from the capture widget -->
         <activity android:name=".QuickCaptureActivity" android:exported="false"
             android:theme="@style/Theme.VaultCapture.Sheet" android:taskAffinity="" android:excludeFromRecents="true"

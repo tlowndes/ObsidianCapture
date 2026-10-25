@@ -80,13 +80,16 @@ private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
     val project: IdeaSummary? = null,
     val unread: Int = 0,
-    val layout: DeckLayout = DeckLayout()
+    val layout: DeckLayout = DeckLayout(),
+    val stuck: List<StuckItem> = emptyList(),
+    val focusMin: Int = 0
 )
 
 @Composable
 fun DeckScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState,
-    onOpenTab: (Tab) -> Unit, onOpenSearch: () -> Unit, onOpenSettings: () -> Unit
+    onOpenTab: (Tab) -> Unit, onOpenSub: (Sub) -> Unit, onStartFocus: (TaskItem, Int) -> Unit,
+    onOpenSearch: () -> Unit, onOpenSettings: () -> Unit
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -103,7 +106,9 @@ fun DeckScreen(
                 tasks = runCatching { VaultWriter(ctx, uri).listTasks() }.getOrDefault(emptyList()),
                 project = runCatching { IdeaStore(ctx, uri, prefs).list().firstOrNull { it.status == "active" } }.getOrNull(),
                 unread = runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first }.getOrDefault(0),
-                layout = runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout())
+                layout = runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()),
+                stuck = runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
+                focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0)
             )
         }
     }
@@ -131,14 +136,18 @@ fun DeckScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         DeckHeader(energy, onOpenSearch = onOpenSearch, onRefresh = { refresh++ }, onOpenSettings = onOpenSettings)
         EnergyChip(energy) { energy = it; prefs.energy = it }
-        Pills(Deck.dueCount(data.tasks, LocalDate.now())) { onOpenTab(Tab.TASKS) }
+        Pills(Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin, onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) })
 
         data.layout.visible(low).forEach { card ->
             when (card) {
-                HomeCard.NEXT_STEP -> NextStepCard(next, onLater = { t -> later = later + t.raw; prefs.laterToday = later })
+                HomeCard.NEXT_STEP -> NextStepCard(
+                    next, onStart = onStartFocus, onStuck = { onOpenSub(Sub.STUCK) },
+                    onLater = { t -> later = later + t.raw; prefs.laterToday = later }
+                )
                 HomeCard.PROJECTS -> data.project?.let { ProjectCard(it) { onOpenTab(Tab.PROJECTS) } }
                 HomeCard.TOP_TASKS -> if (top.isNotEmpty()) TopTasksCard(top, low, ::tick) { onOpenTab(Tab.TASKS) }
-                HomeCard.STUCK -> RowCard("Stuck? Pick one.", "Open ›", accent = true) {}
+                HomeCard.STUCK -> if (low && data.stuck.isNotEmpty()) StuckCard(data.stuck.take(3), onOpen = { onOpenSub(Sub.STUCK) }) { onStartFocus(TaskItem("", "${it.emoji} ${it.name}", null, null, ""), it.minutes) }
+                    else RowCard("Stuck? Pick one.", "Open ›", accent = true) { onOpenSub(Sub.STUCK) }
                 HomeCard.READ_LATER -> RowCard("Read it later", "${data.unread} ›") { onOpenTab(Tab.READ) }
                 // Weather, Today and Jobs arrive with their own steps.
                 HomeCard.BILLS -> TaskViews.billsDue(data.tasks, LocalDate.now()).takeIf { it.isNotEmpty() }?.let { bills ->
@@ -202,11 +211,26 @@ private fun EnergyChip(selected: Energy, onSelect: (Energy) -> Unit) {
     }
 }
 
-/** Focus today and Habits join this row with their own steps. */
+/** Habits joins this row with its own step. */
 @Composable
-private fun Pills(due: Int, onTasks: () -> Unit) {
+private fun Pills(due: Int, focusMin: Int, onTasks: () -> Unit, onFocus: () -> Unit) {
     Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Pill("Tasks due $due", Amber, onTasks)
+        Pill("Focus today ${focusMin}m", Green, onFocus)
+    }
+}
+
+@Composable
+private fun StuckCard(items: List<StuckItem>, onOpen: () -> Unit, onStart: (StuckItem) -> Unit) {
+    DeckCard {
+        CardHead("Stuck? Pick one.", "All ›", onOpen)
+        items.forEach { i ->
+            HorizontalDivider(color = Outline)
+            Row(Modifier.fillMaxWidth().clickable { onStart(i) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Text("${i.emoji} ${i.name}", fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+                Text("${i.minutes} min", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            }
+        }
     }
 }
 
@@ -250,13 +274,13 @@ private fun duePhrase(d: LocalDate, today: LocalDate = LocalDate.now()) = when {
 }
 
 @Composable
-private fun NextStepCard(t: TaskItem?, onLater: (TaskItem) -> Unit) {
+private fun NextStepCard(t: TaskItem?, onStart: (TaskItem, Int) -> Unit, onStuck: () -> Unit, onLater: (TaskItem) -> Unit) {
     DeckCard(border = NextBorder, bg = NextBg) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Text("NEXT STEP", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Primary)
             if (t == null) {
                 Text("✓ All clear", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-                DeckButton("Stuck? Pick one.", primary = true, modifier = Modifier.fillMaxWidth()) {}
+                DeckButton("Stuck? Pick one.", primary = true, modifier = Modifier.fillMaxWidth(), onClick = onStuck)
                 return@Column
             }
             Text(t.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
@@ -264,8 +288,7 @@ private fun NextStepCard(t: TaskItem?, onLater: (TaskItem) -> Unit) {
             val meta = listOfNotNull(firstTag(t), t.due?.let { duePhrase(it) }, mins?.let { "about $it min" }).joinToString(" · ")
             Text(meta, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Start opens Focus once that screen lands.
-                DeckButton("Start ${mins ?: SHORT_MIN} min", primary = true, modifier = Modifier.weight(1f)) {}
+                DeckButton("Start ${mins ?: SHORT_MIN} min", primary = true, modifier = Modifier.weight(1f)) { onStart(t, mins ?: SHORT_MIN) }
                 DeckButton("Later", primary = false, modifier = Modifier.weight(1f)) { onLater(t) }
             }
         }

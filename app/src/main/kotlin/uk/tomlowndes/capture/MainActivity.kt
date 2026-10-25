@@ -48,6 +48,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Screens opened from Flight Deck that sit over the tabs. */
+enum class Sub { FOCUS, STUCK }
+
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), PROJECTS("Projects", "💡")
 }
@@ -94,6 +97,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readOpenRequest(i: Intent?) {
+        if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -137,6 +141,11 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var settings by remember { mutableStateOf(false) }
     var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
+    var sub by remember { mutableStateOf(if (request?.second == "focus") Sub.FOCUS else null) }
+    fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
+        Focus.start(ctx, task, raw, path, minutes)
+        sub = Sub.FOCUS
+    }
     var openIdea by remember { mutableStateOf<String?>(null) }
     var openArticle by remember { mutableStateOf<ReadRef?>(null) }
     val snack = remember { SnackbarHostState() }
@@ -153,6 +162,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     LaunchedEffect(request) {
         request?.let {
             tab = it.first; settings = false; cards = false; search = false; openIdea = null
+            sub = if (it.second == "focus") Sub.FOCUS else null
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -169,8 +179,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = cards || settings || search || openIdea != null || openArticle != null) {
+    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null) {
         when {
+            sub != null -> sub = null
             cards -> cards = false
             settings -> settings = false
             search -> search = false
@@ -183,16 +194,21 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
-        bottomBar = { if (!hideNav) NavBar(if (settings || search) null else tab) { tab = it; settings = false; cards = false; search = false } }
+        bottomBar = { if (!hideNav) NavBar(if (settings || search || sub != null) null else tab) { tab = it; settings = false; cards = false; search = false; sub = null } }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
+                sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.STUCK -> StuckScreen(vault, snack, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }
                 settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true })
                 search -> SearchScreen(vault, snack) { search = false }
-                tab == Tab.DECK -> DeckScreen(vault, prefs, snack, onOpenTab = { tab = it }, onOpenSearch = { search = true }) { settings = true }
+                tab == Tab.DECK -> DeckScreen(
+                    vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
+                    onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
+                ) { settings = true }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
-                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack) { _, _ -> } // Focus lands in its own step
+                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack) { t, m -> startFocus(t.text, t.raw, t.path, m) }
                 tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
             }
