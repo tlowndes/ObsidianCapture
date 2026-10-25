@@ -48,6 +48,43 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("evening_min", 21 * 60)
         set(v) { p.edit().putInt("evening_min", v).apply() }
 
+    /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
+    var energy: Energy
+        get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())
+            Energy.values().firstOrNull { it.name == p.getString("energy", null) } ?: Energy.MED
+        else Energy.MED
+        set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
+
+    /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
+    var laterToday: Set<String>
+        get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("later", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
+
+    /** Brain dumps waiting to be sorted or saved; raw text is kept until Save. */
+    var captureQueue: List<QueuedDump>
+        get() = Sorting.queueFromJson(p.getString("capture_queue", null))
+        set(v) { p.edit().putString("capture_queue", Sorting.queueToJson(v)).apply() }
+
+    /** Task due alerts (off until switched on) and the Sunday weekly review. */
+    var dueOn: Boolean
+        get() = p.getBoolean("due_on", false)
+        set(v) { p.edit().putBoolean("due_on", v).apply() }
+    var dueMinute: Int
+        get() = p.getInt("due_min", 9 * 60)
+        set(v) { p.edit().putInt("due_min", v).apply() }
+    var weeklyOn: Boolean
+        get() = p.getBoolean("weekly_on", true)
+        set(v) { p.edit().putBoolean("weekly_on", v).apply() }
+    var weeklyMinute: Int
+        get() = p.getInt("weekly_min", 19 * 60)
+        set(v) { p.edit().putInt("weekly_min", v).apply() }
+
+    /** Capture's switch: 0 Task, 1 Read later, 2 Brain dump. Opens on the last one used. */
+    var captureMode: Int
+        get() = p.getInt("capture_mode", 0)
+        set(v) { p.edit().putInt("capture_mode", v).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }

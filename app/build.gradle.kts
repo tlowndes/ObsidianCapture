@@ -26,13 +26,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        // anthropic-java is built with a newer Kotlin than this project's 1.9 compiler.
+        freeCompilerArgs += "-Xskip-metadata-version-check"
+    }
+    packaging { resources { excludes += setOf("META-INF/*.kotlin_module", "META-INF/versions/**", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*") } }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 }
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("com.anthropic:anthropic-java:2.34.0")
     implementation(project(":core"))
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")

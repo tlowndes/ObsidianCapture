@@ -180,7 +180,7 @@ private fun TasksPanel(ctx: Context, data: WidgetTasks?, modifier: GlanceModifie
         Spacer(GlanceModifier.height(8.dp))
         when {
             data == null -> Message("Loading…", openTasks)
-            !data.hasVault -> Message("Open Vault Capture to pick your vault", openTasks)
+            !data.hasVault -> Message("Open Flight Deck to pick your vault", openTasks)
             data.error != null -> Message(data.error, openTasks)
             data.items.isEmpty() -> Message("Nothing due today", openTasks)
             else -> LazyColumn(GlanceModifier.fillMaxSize()) {
@@ -209,7 +209,7 @@ private fun TaskRow(t: TaskItem, today: LocalDate, open: androidx.glance.action.
             Text(t.text, maxLines = 2, style = TextStyle(color = cp(TextMain), fontSize = 14.sp))
             val due = t.due
             if (due != null && due.isBefore(today)) {
-                Text("Overdue · ${dueLabel(due)}", style = TextStyle(color = cp(Warn), fontSize = 11.sp))
+                Text("Overdue · ${dueLabel(due)}", style = TextStyle(color = cp(Warn), fontSize = 12.sp))
             }
         }
     }
@@ -277,13 +277,13 @@ private fun ReadPanel(ctx: Context, data: WidgetRead?, modifier: GlanceModifier)
         Spacer(GlanceModifier.height(6.dp))
         when {
             data == null -> Message("Loading…", openList)
-            !data.hasVault -> Message("Open Vault Capture to pick your vault", openList)
+            !data.hasVault -> Message("Open Flight Deck to pick your vault", openList)
             data.error != null -> Message(data.error, openList)
             next == null -> Message("All caught up", openList)
             else -> Column(GlanceModifier.fillMaxSize().clickable(openNext)) {
-                Text("Next up", style = TextStyle(color = cp(Muted), fontSize = 11.sp))
+                Text("Next up", style = TextStyle(color = cp(Muted), fontSize = 12.sp))
                 Text(next.title, maxLines = 3, style = TextStyle(color = cp(TextMain), fontSize = 14.sp, fontWeight = FontWeight.Medium))
-                ReadStore.host(next.url)?.let { Text(it, maxLines = 1, style = TextStyle(color = cp(Muted), fontSize = 11.sp)) }
+                ReadStore.host(next.url)?.let { Text(it, maxLines = 1, style = TextStyle(color = cp(Muted), fontSize = 12.sp)) }
             }
         }
     }
@@ -359,6 +359,29 @@ private fun CaptureContent(ctx: Context) {
             CaptureButton("🔗 Later", Surface2, TextMain, Widgets.quickCapture(ctx, true), GlanceModifier.defaultWeight())
         }
     }
+}
+
+// ---- Flight Deck: one tile that opens the Capture box ----
+
+class DeckCaptureWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        provideContent {
+            Box(
+                GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(6.dp)
+                    .clickable(actionStartActivity(Widgets.openTab(context, Tab.CAPTURE))),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("＋", style = TextStyle(color = cp(Primary), fontSize = 26.sp, fontWeight = FontWeight.Bold))
+                    Text("Capture", style = TextStyle(color = cp(TextMain), fontSize = 12.sp))
+                }
+            }
+        }
+    }
+}
+
+class DeckCaptureWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = DeckCaptureWidget()
 }
 
 @Composable

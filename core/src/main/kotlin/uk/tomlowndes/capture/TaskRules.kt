@@ -9,9 +9,9 @@ object TaskRules {
     val DUE = Regex("📅\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val SCHEDULED = Regex("⏳\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val START = Regex("🛫\\s*(\\d{4}-\\d{2}-\\d{2})")
-    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🔺|⏫|🔼|🔽|⏬|\\[|$))")
+    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))")
     private val NOISE = Regex(
-        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🔺|⏫|🔼|🔽|⏬|\\[|$))|[🔺⏫🔼🔽⏬]|\\[\\w+:: [^\\]]*\\]|#task"
+        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))|⏱\\s*\\d+\\s*m(?:in)?\\b|[🔺⏫🔼🔽⏬]|\\[\\w+:: [^\\]]*\\]|#task"
     )
 
     fun due(line: String): LocalDate? =
@@ -66,6 +66,23 @@ object TaskRules {
             out = out.replace(START) { "🛫 ${LocalDate.parse(it.groupValues[1]).plusDays(shift)}" }
         }
         return out
+    }
+
+    private val ESTIMATE = Regex("\\s*⏱\\s*\\d+\\s*m(?:in)?\\b")
+
+    /** [line] with its time estimate set to [minutes] (`⏱ 30m`, added before any date) or removed for null. */
+    fun withMinutes(line: String, minutes: Int?): String {
+        val bare = line.replace(ESTIMATE, "")
+        if (minutes == null) return bare
+        val at = Regex("\\s(📅|⏳|🛫|🔁)").find(bare)?.range?.first ?: bare.trimEnd().length
+        return bare.substring(0, at).trimEnd() + " ⏱ ${minutes}m" + bare.substring(at)
+    }
+
+    /** "15m", "1h", "1h 30m". */
+    fun minutesLabel(m: Int) = when {
+        m < 60 -> "${m}m"
+        m % 60 == 0 -> "${m / 60}h"
+        else -> "${m / 60}h ${m % 60}m"
     }
 
     /** [line] with its due date set to [date] (added, changed or, for null, removed). */

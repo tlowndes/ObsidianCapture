@@ -48,8 +48,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Screens opened from Flight Deck that sit over the tabs. */
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS }
+
 enum class Tab(val label: String, val icon: String) {
-    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), IDEAS("Ideas", "💡"), READ("Read", "📖")
+    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), PROJECTS("Projects", "💡")
 }
 
 class MainActivity : ComponentActivity() {
@@ -61,10 +64,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND) {
-            handleShare(intent)
-            return
-        }
-        readOpenRequest(intent)
+            if (!toCapture(intent)) { handleShare(intent); return }
+        } else readOpenRequest(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -78,10 +79,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        readOpenRequest(intent)
+        if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /**
+     * Shared text that isn't just a link (a Gemini reply, a note) lands in the Capture box ready for Sort it.
+     * Returns false for a link, which still goes to Read It Later.
+     */
+    private fun toCapture(i: Intent): Boolean {
+        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
+        val url = Regex("https?://\\S+").find(text)?.value
+        if (text.isEmpty() || (url != null && text.replace(url, "").trim().length < 60)) return false
+        val draft = prefs.draft("capture").trim()
+        prefs.setDraft("capture", if (draft.isEmpty()) text else "$draft\n$text")
+        prefs.captureMode = 2
+        openRequest = Tab.CAPTURE to null
+        return true
     }
 
     private fun readOpenRequest(i: Intent?) {
+        if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
+        if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -105,7 +123,7 @@ class MainActivity : ComponentActivity() {
         val vault = prefs.vault
         lifecycleScope.launch {
             val msg = when {
-                vault == null -> "Open Vault Capture once and pick your vault first"
+                vault == null -> "Open Flight Deck once and pick your vault first"
                 url.isBlank() -> "Nothing to save"
                 else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
                     .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
@@ -117,13 +135,25 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun subFor(slot: String?) = when (slot) {
+    "focus" -> Sub.FOCUS
+    "weekly" -> Sub.WEEKLY
+    else -> null
+}
+
 @Composable
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
     var vault by remember { mutableStateOf(prefs.vault) }
-    var tab by remember { mutableStateOf(request?.first ?: Tab.CAPTURE) }
+    var tab by remember { mutableStateOf(request?.first ?: Tab.DECK) }
     var settings by remember { mutableStateOf(false) }
+    var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
+    var sub by remember { mutableStateOf(subFor(request?.second)) }
+    fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
+        Focus.start(ctx, task, raw, path, minutes)
+        sub = Sub.FOCUS
+    }
     var openIdea by remember { mutableStateOf<String?>(null) }
     var openArticle by remember { mutableStateOf<ReadRef?>(null) }
     val snack = remember { SnackbarHostState() }
@@ -131,7 +161,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
         Reminders.scheduleAll(ctx, prefs)
-        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn) && !prefs.askedNotif) {
+        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn || prefs.weeklyOn) && !prefs.askedNotif) {
             prefs.askedNotif = true
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -139,7 +169,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 
     LaunchedEffect(request) {
         request?.let {
-            tab = it.first; settings = false; search = false; openIdea = null
+            tab = it.first; settings = false; cards = false; search = false; openIdea = null
+            sub = subFor(it.second)
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -156,8 +187,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = settings || search || openIdea != null || openArticle != null) {
+    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null) {
         when {
+            sub != null -> sub = null
+            cards -> cards = false
             settings -> settings = false
             search -> search = false
             openArticle != null -> openArticle = null
@@ -165,19 +198,29 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    val hideNav = (tab == Tab.IDEAS && openIdea != null) || (tab == Tab.READ && openArticle != null)
+    val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null)
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
-        bottomBar = { if (!hideNav) NavBar(if (settings || search) null else tab) { tab = it; settings = false; search = false } }
+        bottomBar = { if (!hideNav) NavBar(if (settings || search || sub != null) null else tab) { tab = it; settings = false; cards = false; search = false; sub = null } }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
-                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) })
+                sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
+                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
+                sub == Sub.JOBS -> JobsScreen(vault, snack) { sub = null }
+                sub == Sub.STUCK -> StuckScreen(vault, snack, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
+                cards -> CardsScreen(vault, snack) { cards = false }
+                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY })
                 search -> SearchScreen(vault, snack) { search = false }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true }) { settings = true }
-                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
-                tab == Tab.IDEAS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
+                tab == Tab.DECK -> DeckScreen(
+                    vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
+                    onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
+                ) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
+                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack) { t, m -> startFocus(t.text, t.raw, t.path, m) }
+                tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
             }
         }
@@ -186,7 +229,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 
 @Composable
 private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Color(0xFF191623))) {
+    Column(Modifier.fillMaxWidth().background(NavBg)) {
         HorizontalDivider(color = Outline)
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(66.dp),
@@ -195,10 +238,10 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
             Tab.values().forEach { t ->
                 val on = t == selected
                 Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) Surface2 else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
+                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
-                    Text(t.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
+                    Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
                 }
             }
         }

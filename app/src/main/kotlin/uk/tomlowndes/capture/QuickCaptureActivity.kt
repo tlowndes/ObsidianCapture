@@ -67,7 +67,7 @@ class QuickCaptureActivity : ComponentActivity() {
 
     private fun save(link: Boolean, value: String, due: LocalDate?) {
         val vault = AppPrefs(this).vault
-        if (vault == null) { done("Open Vault Capture once and pick your vault first"); return }
+        if (vault == null) { done("Open Flight Deck once and pick your vault first"); return }
         busy = true
         lifecycleScope.launch {
             val msg = withContext(Dispatchers.IO) {

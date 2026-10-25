@@ -17,22 +17,36 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import java.time.DayOfWeek
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-enum class Slot { MORNING, EVENING }
+/** Morning briefing, evening wrap-up, task due alerts, and the Sunday weekly review. */
+enum class Slot { MORNING, EVENING, DUE, WEEKLY }
 
-/** Morning and evening reminders, scheduled with WorkManager (survives reboots, may fire a few minutes late). */
+/** Reminders, scheduled with WorkManager (survives reboots, may fire a few minutes late). */
 object Reminders {
     const val CHANNEL = "log_reminders"
 
     private fun name(slot: Slot) = "remind_${slot.name.lowercase()}"
 
-    fun scheduleAll(ctx: Context, prefs: AppPrefs) {
-        schedule(ctx, Slot.MORNING, prefs.morningOn, prefs.morningMinute)
-        schedule(ctx, Slot.EVENING, prefs.eveningOn, prefs.eveningMinute)
+    fun on(prefs: AppPrefs, slot: Slot) = when (slot) {
+        Slot.MORNING -> prefs.morningOn
+        Slot.EVENING -> prefs.eveningOn
+        Slot.DUE -> prefs.dueOn
+        Slot.WEEKLY -> prefs.weeklyOn
     }
+
+    private fun minute(prefs: AppPrefs, slot: Slot) = when (slot) {
+        Slot.MORNING -> prefs.morningMinute
+        Slot.EVENING -> prefs.eveningMinute
+        Slot.DUE -> prefs.dueMinute
+        Slot.WEEKLY -> prefs.weeklyMinute
+    }
+
+    fun scheduleAll(ctx: Context, prefs: AppPrefs) = Slot.values().forEach { schedule(ctx, it, on(prefs, it), minute(prefs, it)) }
 
     private fun schedule(ctx: Context, slot: Slot, on: Boolean, minuteOfDay: Int) {
         val wm = WorkManager.getInstance(ctx)
@@ -40,6 +54,7 @@ object Reminders {
         val now = LocalDateTime.now()
         var at = now.toLocalDate().atTime(LocalTime.of(minuteOfDay / 60, minuteOfDay % 60))
         if (!at.isAfter(now.plusMinutes(1))) at = at.plusDays(1)
+        if (slot == Slot.WEEKLY) while (at.dayOfWeek != DayOfWeek.SUNDAY) at = at.plusDays(1)
         enqueue(ctx, slot, Duration.between(now, at), snooze = false)
     }
 
@@ -55,22 +70,33 @@ object Reminders {
     fun canNotify(ctx: Context) =
         Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    internal fun notify(ctx: Context, slot: Slot) {
+    /** [dueToday] is only used for the due alert; it's skipped when nothing is due. */
+    internal fun notify(ctx: Context, slot: Slot, dueToday: Int = 0) {
         if (!canNotify(ctx)) return
+        if (slot == Slot.DUE && dueToday == 0) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_DEFAULT))
-        val morning = slot == Slot.MORNING
+        val target = when (slot) {
+            Slot.MORNING -> Tab.DECK.name
+            Slot.EVENING, Slot.DUE -> Tab.TASKS.name
+            Slot.WEEKLY -> "WEEKLY"
+        }
         val open = Intent(ctx, MainActivity::class.java)
-            .putExtra("tab", Tab.TASKS.name)
+            .putExtra("tab", target)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val snooze = Intent(ctx, SnoozeReceiver::class.java).putExtra("slot", slot.name)
+        val (title, text) = when (slot) {
+            Slot.MORNING -> "☀ Flight Deck" to "Today's plan is ready."
+            Slot.EVENING -> "🌙 Evening wrap-up" to "Tick off or move the rest."
+            Slot.DUE -> "Tasks due today" to "$dueToday due"
+            Slot.WEEKLY -> "Weekly review" to "Done, carried over, next week."
+        }
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle(if (morning) "☀ Morning reminder" else "🌙 Evening reminder")
-            .setContentText(if (morning) "Have a look at today's tasks." else "Anything to tick off or move to tomorrow?")
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(PendingIntent.getActivity(ctx, slot.ordinal, open, flags))
-            .addAction(0, "Open tasks", PendingIntent.getActivity(ctx, 10 + slot.ordinal, open, flags))
             .addAction(0, "Snooze 1h", PendingIntent.getBroadcast(ctx, 20 + slot.ordinal, snooze, flags))
             .setAutoCancel(true)
             .build()
@@ -83,8 +109,12 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val slot = runCatching { Slot.valueOf(inputData.getString("slot") ?: "") }.getOrNull() ?: return Result.success()
         val snooze = inputData.getBoolean("snooze", false)
         val prefs = AppPrefs(applicationContext)
-        val enabled = if (slot == Slot.MORNING) prefs.morningOn else prefs.eveningOn
-        if (enabled) Reminders.notify(applicationContext, slot)
+        if (Reminders.on(prefs, slot)) {
+            val due = if (slot == Slot.DUE) prefs.vault?.let { v ->
+                runCatching { Deck.dueCount(VaultWriter(applicationContext, v).listTasks(), LocalDate.now()) }.getOrDefault(0)
+            } ?: 0 else 0
+            Reminders.notify(applicationContext, slot, due)
+        }
         if (!snooze) Reminders.scheduleAll(applicationContext, prefs)
         return Result.success()
     }

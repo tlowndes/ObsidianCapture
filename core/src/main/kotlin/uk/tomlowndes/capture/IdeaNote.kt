@@ -51,7 +51,27 @@ object IdeaNote {
     fun parse(title: String, text: String): IdeaDoc {
         val lines = text.split("\n")
         val entries = entryRanges(lines).map { entryAt(lines, it) }
-        return IdeaDoc(title, Md.fmGet(lines, "status") ?: "idea", summaryOf(lines), entries)
+        return IdeaDoc(
+            title, Md.fmGet(lines, "status") ?: "idea", summaryOf(lines), entries,
+            typeOf(lines), Md.fmGet(lines, "area")?.trim()?.lowercase()?.ifEmpty { null },
+            Md.fmBody(lines).firstNotNullOfOrNull { TaskNote.parse(it)?.text },
+            Md.fmGet(lines, "could_continue")?.trim()?.lowercase() == "true"
+        )
+    }
+
+    /** Project types Flight Deck shows as a tag. */
+    val TYPES = listOf("claude", "concept", "idea")
+
+    /**
+     * The project's type: `type` when it's one of [TYPES], otherwise "claude" for notes tagged claude (how the
+     * vault marked them before), otherwise null. Nothing in the note is rewritten.
+     */
+    fun typeOf(lines: List<String>): String? {
+        val type = Md.fmGet(lines, "type")?.trim()?.lowercase()
+        if (type in TYPES) return type
+        val fm = if (lines.firstOrNull()?.trim() == "---") lines.drop(1).takeWhile { it.trim() != "---" } else emptyList()
+        val tagged = fm.any { Regex("^\\s*-\\s*#?claude\\s*$").matches(it) || Regex("^tags:.*\\bclaude\\b").containsMatchIn(it) }
+        return if (tagged) "claude" else null
     }
 
     fun summaryOf(lines: List<String>) =

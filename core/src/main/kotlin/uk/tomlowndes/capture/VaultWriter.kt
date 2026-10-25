@@ -74,6 +74,18 @@ class VaultWriter(
         return updated
     }
 
+    /** Marks the task cancelled (`- [-] … ❌ date`) where it is; the line is kept. */
+    fun cancelTask(t: TaskItem, today: LocalDate = LocalDate.now()) {
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, WeeklyReview.cancelled(t.raw, today)) }
+    }
+
+    /** Sets (or clears) the task's `⏱` estimate in place. Returns the new line. */
+    fun setEstimate(t: TaskItem, minutes: Int?): String {
+        val updated = TaskRules.withMinutes(t.raw, minutes)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
     /** Removes the task. Returns the line it was on, for [restoreTask]. */
     fun deleteTask(t: TaskItem): Int {
         var at = -1
@@ -103,6 +115,11 @@ class VaultWriter(
     /** Writes a note named [name] (a free name is picked if it's taken) into the Read It Later inbox. */
     fun addNote(name: String, content: String) {
         VaultIo.write(vault, vault.create("$INBOX/$RIL_DIR", name, "md"), content)
+    }
+
+    /** Writes a note named [name] (a free name is picked if it's taken) into the inbox. */
+    fun addInboxNote(name: String, content: String) {
+        VaultIo.write(vault, vault.create(INBOX, name, "md"), content)
     }
 
     companion object {
