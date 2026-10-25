@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
         if (text.isEmpty() || (url != null && text.replace(url, "").trim().length < 60)) return false
         val draft = prefs.draft("capture").trim()
         prefs.setDraft("capture", if (draft.isEmpty()) text else "$draft\n$text")
+        prefs.captureMode = 2
         openRequest = Tab.CAPTURE to null
         return true
     }

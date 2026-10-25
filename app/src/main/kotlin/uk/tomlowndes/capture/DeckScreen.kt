@@ -81,7 +81,7 @@ internal fun greeting(now: LocalTime = LocalTime.now()) = when {
 }
 
 /** What Flight Deck reads from the vault in one go. */
-private data class DeckData(
+internal data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
     val project: IdeaSummary? = null,
     val unread: Int = 0,
@@ -104,7 +104,8 @@ fun DeckScreen(
     var refresh by remember { mutableIntStateOf(0) }
     var energy by remember { mutableStateOf(prefs.energy) }
     var later by remember { mutableStateOf(prefs.laterToday) }
-    var data by remember { mutableStateOf(DeckData()) }
+    // Show the last Deck straight away, then refresh from the vault.
+    var data by remember { mutableStateOf(DeckCache.load(ctx) ?: DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
     var vaultOk by remember { mutableStateOf(true) }
     LaunchedEffect(vault, refresh) {
@@ -140,7 +141,7 @@ fun DeckScreen(
                 habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull(),
                 calendars = runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrNull(),
                 jobs = runCatching { Jobs.list(SafVault(ctx, uri)) }.getOrDefault(emptyList())
-            )
+            ).also { DeckCache.save(ctx, it) }
         }
     }
 

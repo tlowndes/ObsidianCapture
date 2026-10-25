@@ -80,6 +80,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("weekly_min", 19 * 60)
         set(v) { p.edit().putInt("weekly_min", v).apply() }
 
+    /** Capture's switch: 0 Task, 1 Read later, 2 Brain dump. Opens on the last one used. */
+    var captureMode: Int
+        get() = p.getInt("capture_mode", 0)
+        set(v) { p.edit().putInt("capture_mode", v).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }

@@ -44,6 +44,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,6 +86,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
     var checking by remember { mutableStateOf<QueuedDump?>(null) }
     var recording by remember { mutableStateOf(false) }
     var partial by remember { mutableStateOf("") }
+    var mode by remember { mutableIntStateOf(prefs.captureMode) }
 
     fun setQueue(q: List<QueuedDump>) { queue = q; prefs.captureQueue = q }
     fun setText(t: String) { text = t; prefs.setDraft("capture", t) }
@@ -194,57 +198,61 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
             Text("⚠ Offline · Queue ${queue.size}", color = Amber, fontSize = 13.sp, modifier = Modifier.padding(bottom = 10.dp))
         }
 
-        Box {
-            OutlinedTextField(
-                value = text, onValueChange = { setText(it) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-                placeholder = { Text("Type or tap the mic") }, minLines = 5,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                colors = fieldColors()
+        PillSwitch(listOf("Task", "Read later", "Brain dump"), mode) { mode = it; prefs.captureMode = it }
+        Box(Modifier.height(14.dp))
+        if (mode < 2) QuickAdd(vault, link = mode == 1, snack = snack) else {
+            Box {
+                OutlinedTextField(
+                    value = text, onValueChange = { setText(it) },
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                    placeholder = { Text("Type or tap the mic") }, minLines = 5,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    colors = fieldColors()
+                )
+                Box(
+                    Modifier.align(Alignment.BottomEnd).padding(10.dp).size(44.dp).clip(CircleShape)
+                        .background(if (recording) Warn else Primary).clickable { mic() },
+                    contentAlignment = Alignment.Center
+                ) { Text(if (recording) "■" else "●", color = OnPrimary, fontSize = 16.sp) }
+            }
+            if (recording) {
+                Text("RECORDING", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Warn,
+                    modifier = Modifier.padding(top = 10.dp))
+                if (partial.isNotBlank()) Text(partial, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
+            }
+
+            Text(
+                if (sorting) "Sorting…" else "Sort it", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                color = OnPrimary,
+                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
+                    .background(if (text.isBlank() || sorting) Primary.copy(alpha = 0.4f) else Primary)
+                    .clickable(enabled = text.isNotBlank() && !sorting) { sortIt() }.padding(vertical = 14.dp)
             )
-            Box(
-                Modifier.align(Alignment.BottomEnd).padding(10.dp).size(44.dp).clip(CircleShape)
-                    .background(if (recording) Warn else Primary).clickable { mic() },
-                contentAlignment = Alignment.Center
-            ) { Text(if (recording) "■" else "●", color = OnPrimary, fontSize = 16.sp) }
-        }
-        if (recording) {
-            Text("RECORDING", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Warn,
-                modifier = Modifier.padding(top = 10.dp))
-            if (partial.isNotBlank()) Text(partial, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
-        }
+            if (offline && queue.any { it.sorted == null }) {
+                Text("Sorting on the next signal · Saved in the queue", fontSize = 12.sp, color = Muted, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
 
-        Text(
-            if (sorting) "Sorting…" else "Sort it", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-            color = OnPrimary,
-            modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
-                .background(if (text.isBlank() || sorting) Primary.copy(alpha = 0.4f) else Primary)
-                .clickable(enabled = text.isNotBlank() && !sorting) { sortIt() }.padding(vertical = 14.dp)
-        )
-        if (offline && queue.any { it.sorted == null }) {
-            Text("Sorting on the next signal · Saved in the queue", fontSize = 12.sp, color = Muted, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        }
-
-        if (queue.isNotEmpty()) {
-            Box(Modifier.height(16.dp))
-            GroupLabel("Queue")
-            ListCard(Modifier.padding(top = 6.dp)) {
-                queue.forEachIndexed { i, d ->
-                    if (i > 0) HorizontalDivider(color = Outline)
-                    Row(
-                        Modifier.fillMaxWidth().clickable(enabled = d.sorted != null) { checking = d }.padding(horizontal = 16.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(d.text, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text(if (d.sorted != null) "check ›" else "queued", fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                            color = if (d.sorted != null) Primary else Muted)
+            if (queue.isNotEmpty()) {
+                Box(Modifier.height(16.dp))
+                GroupLabel("Queue")
+                ListCard(Modifier.padding(top = 6.dp)) {
+                    queue.forEachIndexed { i, d ->
+                        if (i > 0) HorizontalDivider(color = Outline)
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = d.sorted != null) { checking = d }.padding(horizontal = 16.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(d.text, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(if (d.sorted != null) "check ›" else "queued", fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                                color = if (d.sorted != null) Primary else Muted)
+                        }
                     }
                 }
-            }
-            if (queue.any { it.sorted == null } && !sorting) {
-                Text("Sort now", color = Primary, fontSize = 13.sp, modifier = Modifier.clickable { scope.launch { sortQueued(openFirst = false) } }.padding(vertical = 6.dp))
+                if (queue.any { it.sorted == null } && !sorting) {
+                    Text("Sort now", color = Primary, fontSize = 13.sp, modifier = Modifier.clickable { scope.launch { sortQueued(openFirst = false) } }.padding(vertical = 6.dp))
+                }
             }
         }
         Box(Modifier.height(16.dp))
@@ -324,4 +332,91 @@ private fun SortedRow(work: Boolean, text: String, tag: String?, trailing: Strin
         }
         Text("✕", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onRemove).padding(start = 10.dp))
     }
+}
+
+private data class Added(val isLink: Boolean, val text: String, val sub: String)
+
+/** Task and Read later, as Capture had them before Flight Deck: one field, due chips for tasks, Just added. */
+@Composable
+private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val history = remember { mutableStateListOf<Added>() }
+    var text by remember(link) { mutableStateOf("") }
+    var due by remember { mutableStateOf<LocalDate?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+
+    fun submit() {
+        val value = text.trim()
+        val uri = vault
+        if (value.isEmpty() || busy) return
+        if (uri == null) { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
+        busy = true
+        val wasDue = due
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (link) {
+                        val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
+                        ReadLater.save(ctx, uri, url, null)
+                    } else { VaultWriter(ctx, uri).addTask(value, wasDue?.toString()); true }
+                }
+            }
+            busy = false
+            r.onSuccess { full ->
+                history.add(0, Added(link, value,
+                    if (link) (if (full) "Read later · full page" else "Read later · link only")
+                    else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "")))
+                text = ""; due = null
+                snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
+            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+        }
+    }
+
+    OutlinedTextField(
+        value = text, onValueChange = { text = it },
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        placeholder = { Text(if (link) "Paste a link" else "What needs doing?") },
+        minLines = if (link) 1 else 2,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+        keyboardOptions = if (link) KeyboardOptions(keyboardType = KeyboardType.Uri) else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        colors = fieldColors()
+    )
+    if (!link) {
+        val today = LocalDate.now()
+        val custom = due != null && due != today && due != today.plusDays(1)
+        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppChip(due == today, { due = if (due == today) null else today }, { Text("Today") })
+            AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) }, { Text("Tomorrow") })
+            AppChip(custom, { picking = true }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
+        }
+    }
+    Text(
+        if (link) "Save link" else "Add task", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
+        modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
+            .background(if (text.isBlank() || busy) Primary.copy(alpha = 0.4f) else Primary)
+            .clickable(enabled = text.isNotBlank() && !busy) { submit() }.padding(vertical = 14.dp)
+    )
+    if (history.isNotEmpty()) {
+        Box(Modifier.height(16.dp))
+        GroupLabel("Just added")
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            history.take(5).forEach { e ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (e.isLink) LinkTint else TaskTint), contentAlignment = Alignment.Center) {
+                        Text(if (e.isLink) "🔗" else "✓")
+                    }
+                    Column {
+                        Text(e.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+                        Text(e.sub, fontSize = 12.sp, color = Muted)
+                    }
+                }
+            }
+        }
+    }
+    if (picking) PickDateDialog(due, onPick = { due = it; picking = false }, onDismiss = { picking = false })
 }
