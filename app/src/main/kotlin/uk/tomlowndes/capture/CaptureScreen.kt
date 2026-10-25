@@ -23,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -66,7 +65,7 @@ private fun HistoryItem(e: Entry) {
 }
 
 @Composable
-fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSearch: () -> Unit) {
+fun CaptureScreen(vault: Uri?, snack: SnackbarHostState) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val history = remember { mutableStateListOf<Entry>() }
@@ -119,7 +118,6 @@ fun CaptureScreen(vault: Uri?, snack: SnackbarHostState, onOpenSearch: () -> Uni
                         Text("Capture", fontSize = 34.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                TextButton(onClick = onOpenSearch) { Text("🔍", color = Muted, fontSize = 20.sp) }
             }
             Spacer(Modifier.height(2.dp))
 

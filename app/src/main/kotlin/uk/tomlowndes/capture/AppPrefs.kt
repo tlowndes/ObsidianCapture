@@ -48,6 +48,13 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("evening_min", 21 * 60)
         set(v) { p.edit().putInt("evening_min", v).apply() }
 
+    /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
+    var energy: Energy
+        get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())
+            Energy.values().firstOrNull { it.name == p.getString("energy", null) } ?: Energy.MED
+        else Energy.MED
+        set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }

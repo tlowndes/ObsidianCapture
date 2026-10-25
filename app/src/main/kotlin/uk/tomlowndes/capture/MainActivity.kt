@@ -175,8 +175,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             when {
                 settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) })
                 search -> SearchScreen(vault, snack) { search = false }
-                tab == Tab.DECK -> DeckScreen(vault, prefs, snack) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true })
+                tab == Tab.DECK -> DeckScreen(vault, prefs, snack, onOpenSearch = { search = true }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, snack)
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
                 tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
