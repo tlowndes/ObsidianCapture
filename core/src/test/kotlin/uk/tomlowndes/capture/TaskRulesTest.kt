@@ -76,3 +76,17 @@ class TaskRulesTest {
         assertEquals("- [ ] #task Call mum ⏫", TaskRules.withDue("- [ ] #task Call mum 📅 2026-10-20 ⏫", null))
     }
 }
+
+class EstimateTest {
+    @org.junit.Test fun `estimates are set before the date, replaced and removed`() {
+        val line = "- [ ] #task Setup WOL 📅 2026-10-25"
+        val set = TaskRules.withMinutes(line, 60)
+        org.junit.Assert.assertEquals("- [ ] #task Setup WOL ⏱ 60m 📅 2026-10-25", set)
+        org.junit.Assert.assertEquals("- [ ] #task Setup WOL ⏱ 15m 📅 2026-10-25", TaskRules.withMinutes(set, 15))
+        org.junit.Assert.assertEquals(line, TaskRules.withMinutes(set, null))
+        org.junit.Assert.assertEquals("- [ ] #task Bins ⏱ 5m", TaskRules.withMinutes("- [ ] #task Bins", 5))
+        org.junit.Assert.assertEquals(60, Deck.minutes(TaskNote.parse(set)!!))
+        org.junit.Assert.assertEquals("Setup WOL", TaskNote.parse(set)!!.text)
+        org.junit.Assert.assertEquals("1h 30m", TaskRules.minutesLabel(90))
+    }
+}

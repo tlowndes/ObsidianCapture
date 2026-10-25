@@ -61,6 +61,9 @@ internal fun TaskLine(
                         append(" $tag")
                     }
                 }
+                Deck.minutes(t)?.let { m ->
+                    withStyle(SpanStyle(color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) { append(" ${TaskRules.minutesLabel(m)}") }
+                }
             },
             fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             color = if (faded) Muted else TextMain,
@@ -94,11 +97,14 @@ internal fun DuePill(d: LocalDate, onClick: (() -> Unit)? = null) {
     )
 }
 
+/** Time chips offered for a task's estimate. */
+internal val ESTIMATES = listOf(5, 15, 30, 60, 120)
+
 /** "▶ 15m" on today's tasks: starts a Focus session. */
 @Composable
 internal fun StartPill(minutes: Int, onClick: () -> Unit) {
     Text(
-        "▶ ${minutes}m", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary,
+        "▶ ${TaskRules.minutesLabel(minutes)}", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary,
         modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable(onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 3.dp)
     )

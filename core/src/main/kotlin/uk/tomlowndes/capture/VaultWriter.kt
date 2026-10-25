@@ -79,6 +79,13 @@ class VaultWriter(
         edit(noteOf(t)) { TaskNote.replace(it, t.raw, WeeklyReview.cancelled(t.raw, today)) }
     }
 
+    /** Sets (or clears) the task's `⏱` estimate in place. Returns the new line. */
+    fun setEstimate(t: TaskItem, minutes: Int?): String {
+        val updated = TaskRules.withMinutes(t.raw, minutes)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
     /** Removes the task. Returns the line it was on, for [restoreTask]. */
     fun deleteTask(t: TaskItem): Int {
         var at = -1

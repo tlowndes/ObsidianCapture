@@ -24,7 +24,7 @@ object CalendarSync {
             val ev = o.getJSONArray("events")
             CalendarCache(o.getString("id"), o.getBoolean("ok"), o.getLong("syncedAt"), (0 until ev.length()).map { j ->
                 val e = ev.getJSONObject(j)
-                CalEvent(o.getString("id"), e.getString("title"), LocalDateTime.parse(e.getString("start")), LocalDateTime.parse(e.getString("end")), e.getBoolean("allDay"))
+                CalEvent(o.getString("id"), e.getString("title"), LocalDateTime.parse(e.getString("start")), LocalDateTime.parse(e.getString("end")), e.getBoolean("allDay"), e.optString("location").ifEmpty { null })
             })
         }
     }.getOrDefault(emptyList())
@@ -32,7 +32,7 @@ object CalendarSync {
     private fun store(ctx: Context, list: List<CalendarCache>) {
         val a = JSONArray(list.map { c ->
             JSONObject().put("id", c.id).put("ok", c.ok).put("syncedAt", c.syncedAt).put("events", JSONArray(c.events.map { e ->
-                JSONObject().put("title", e.title).put("start", e.start.toString()).put("end", e.end.toString()).put("allDay", e.allDay)
+                JSONObject().put("title", e.title).put("start", e.start.toString()).put("end", e.end.toString()).put("allDay", e.allDay).put("location", e.location ?: "")
             }))
         })
         p(ctx).edit().putString("cache", a.toString()).apply()

@@ -16,7 +16,10 @@ import java.time.temporal.ChronoUnit
 data class CalendarSource(val id: String, val name: String, val url: String, val colour: String, val enabled: Boolean = true)
 
 /** One event occurrence in local time. All-day events run from midnight to midnight. */
-data class CalEvent(val calendarId: String, val title: String, val start: LocalDateTime, val end: LocalDateTime, val allDay: Boolean) {
+data class CalEvent(
+    val calendarId: String, val title: String, val start: LocalDateTime, val end: LocalDateTime, val allDay: Boolean,
+    val location: String? = null
+) {
     fun isNow(now: LocalDateTime) = !allDay && !now.isBefore(start) && now.isBefore(end)
     fun on(d: LocalDate) = start.isBefore(d.plusDays(1).atStartOfDay()) && (end.isAfter(d.atStartOfDay()) || start.toLocalDate() == d)
 }
@@ -78,13 +81,14 @@ object Ics {
             ?: if (allDay) start.plusDays(1) else start.plusHours(1)
         val length = ChronoUnit.MINUTES.between(start, end)
         val title = unescape(prop(props, "SUMMARY")?.second ?: "")
+        val location = prop(props, "LOCATION")?.second?.let { unescape(it) }?.takeIf { it.isNotBlank() }
         val exdates = props.filter { it.first.substringBefore(';').equals("EXDATE", true) }
             .flatMap { (k, v) -> v.split(',').mapNotNull { time(k, it, zone)?.first } }.toSet()
         val windowStart = from.atStartOfDay()
         val windowEnd = to.plusDays(1).atStartOfDay()
         fun hit(s: LocalDateTime) = s !in exdates && s.isBefore(windowEnd) && s.plusMinutes(length).isAfter(windowStart)
         val starts = prop(props, "RRULE")?.let { occurrences(start, it.second, windowEnd, zone) } ?: listOf(start)
-        return starts.filter(::hit).map { CalEvent(cal, title, it, it.plusMinutes(length), allDay) }
+        return starts.filter(::hit).map { CalEvent(cal, title, it, it.plusMinutes(length), allDay, location) }
     }
 
     /** Start times from a recurrence rule, up to [until]. Handles FREQ, INTERVAL, COUNT, UNTIL and BYDAY (weekly). */

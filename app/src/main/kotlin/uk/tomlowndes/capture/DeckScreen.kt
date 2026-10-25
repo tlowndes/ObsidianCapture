@@ -113,6 +113,12 @@ fun DeckScreen(
     }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var weather by remember { mutableStateOf<WeatherSummary?>(null) }
+    var travel by remember { mutableStateOf<TravelLine?>(null) }
+    LaunchedEffect(cal, refresh, data.calendars) {
+        val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
+        val events = cal.filter { it.id in on }.flatMap { it.events }
+        travel = withContext(Dispatchers.IO) { runCatching { TravelFetch.line(ctx, events) }.getOrNull() }
+    }
     var canLocate by remember { mutableStateOf(WeatherFetch.allowed(ctx)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { canLocate = it }
     LaunchedEffect(refresh, canLocate) {
@@ -199,7 +205,7 @@ fun DeckScreen(
                 HomeCard.TODAY -> data.calendars?.let { sources -> TodayCard(sources, cal, onConnect = onOpenSettings) }
                 HomeCard.WEATHER -> {
                     val w = weather
-                    if (w != null) WeatherCard(w)
+                    if (w != null) WeatherCard(w, travel)
                     else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
                 }
                 HomeCard.JOBS -> {
@@ -314,12 +320,23 @@ private fun TodayCard(sources: List<CalendarSource>, cache: List<CalendarCache>,
 }
 
 @Composable
-private fun WeatherCard(w: WeatherSummary) {
+private fun WeatherCard(w: WeatherSummary, travel: TravelLine?) {
     DeckCard(border = WeatherBorder, bg = WeatherBg) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)) {
-            Text("WEATHER & TRAVEL", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
+            Text(if (travel != null) "WEATHER & TRAVEL" else "WEATHER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
             Text("${w.high}° / ${w.low}° · ${w.headline}", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
             Text(w.detail, fontSize = 13.sp, color = Muted, lineHeight = 19.sp)
+            if (travel != null) {
+                HorizontalDivider(color = WeatherBorder, modifier = Modifier.padding(top = 12.dp, bottom = 10.dp))
+                val hm = DateTimeFormatter.ofPattern("HH:mm")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("🚗 ${travel.minutes} min", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary)
+                    Column {
+                        Text("${travel.event.title} · ${travel.event.start.format(hm)}", fontSize = 13.5.sp)
+                        Text("Leave by ${travel.leaveBy.format(hm)} · ${travel.event.location}", fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
     }
 }

@@ -18,7 +18,7 @@ object WeatherFetch {
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     /** Last known rough location from any provider, remembered so the card works when there's no fix. */
-    private fun location(ctx: Context): Pair<Double, Double>? {
+    internal fun location(ctx: Context): Pair<Double, Double>? {
         if (allowed(ctx)) {
             val lm = ctx.getSystemService(LocationManager::class.java)
             val best = runCatching {

@@ -177,7 +177,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
                             if (i > 0) HorizontalDivider(color = Outline)
                             TaskLine(t, edge = true, onTick = { tick(t) }) {
                                 if (g == TaskGroup.TODAY) {
-                                    StartPill(TaskViews.SHORT_MIN) { onStartFocus(t, TaskViews.SHORT_MIN) }
+                                    (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
                                 } else {
                                     t.due?.let { DuePill(it) { editing = t } }
                                         ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { editing = t })
@@ -194,6 +194,15 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
         RescheduleDialog(
             t,
             onDate = { d -> editing = null; reschedule(t, d) },
+            onMinutes = { m ->
+                editing = null
+                val uri = vault
+                if (uri != null) scope.launch {
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).setEstimate(t, m) } }
+                        .onFailure { snack.showSnackbar("Failed: ${it.message}") }
+                    reload()
+                }
+            },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }
         )
@@ -201,7 +210,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
 }
 
 @Composable
-private fun RescheduleDialog(t: TaskItem, onDate: (LocalDate?) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+private fun RescheduleDialog(t: TaskItem, onDate: (LocalDate?) -> Unit, onMinutes: (Int?) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     if (picking) {
@@ -224,6 +233,13 @@ private fun RescheduleDialog(t: TaskItem, onDate: (LocalDate?) -> Unit, onRemove
                     AppChip(false, { picking = true }, { Text("Pick date…") }, shape = RoundedCornerShape(12.dp))
                 }
                 if (t.due != null) TextButton(onClick = { onDate(null) }) { Text("Clear due date", color = Primary) }
+                Text("Time", color = Muted, fontSize = 12.sp)
+                val current = Deck.minutes(t)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ESTIMATES.forEach { m ->
+                        AppChip(current == m, { onMinutes(if (current == m) null else m) }, { Text(TaskRules.minutesLabel(m)) }, shape = RoundedCornerShape(12.dp))
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onRemove) { Text("Remove task", color = Warn) } },

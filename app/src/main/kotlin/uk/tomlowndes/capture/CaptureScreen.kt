@@ -344,6 +344,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     val history = remember { mutableStateListOf<Added>() }
     var text by remember(link) { mutableStateOf("") }
     var due by remember { mutableStateOf<LocalDate?>(null) }
+    var minutes by remember { mutableStateOf<Int?>(null) }
     var picking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
@@ -354,21 +355,22 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         if (uri == null) { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
         busy = true
         val wasDue = due
+        val wasMin = minutes
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     if (link) {
                         val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
                         ReadLater.save(ctx, uri, url, null)
-                    } else { VaultWriter(ctx, uri).addTask(value, wasDue?.toString()); true }
+                    } else { VaultWriter(ctx, uri).addTask(value + (wasMin?.let { " ⏱ ${it}m" } ?: ""), wasDue?.toString()); true }
                 }
             }
             busy = false
             r.onSuccess { full ->
                 history.add(0, Added(link, value,
                     if (link) (if (full) "Read later · full page" else "Read later · link only")
-                    else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "")))
-                text = ""; due = null
+                    else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "")))
+                text = ""; due = null; minutes = null
                 snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
             }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
@@ -390,6 +392,9 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
             AppChip(due == today, { due = if (due == today) null else today }, { Text("Today") })
             AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) }, { Text("Tomorrow") })
             AppChip(custom, { picking = true }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
+        }
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
         }
     }
     Text(

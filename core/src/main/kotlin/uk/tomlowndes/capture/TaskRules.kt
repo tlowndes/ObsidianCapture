@@ -68,6 +68,23 @@ object TaskRules {
         return out
     }
 
+    private val ESTIMATE = Regex("\\s*⏱\\s*\\d+\\s*m(?:in)?\\b")
+
+    /** [line] with its time estimate set to [minutes] (`⏱ 30m`, added before any date) or removed for null. */
+    fun withMinutes(line: String, minutes: Int?): String {
+        val bare = line.replace(ESTIMATE, "")
+        if (minutes == null) return bare
+        val at = Regex("\\s(📅|⏳|🛫|🔁)").find(bare)?.range?.first ?: bare.trimEnd().length
+        return bare.substring(0, at).trimEnd() + " ⏱ ${minutes}m" + bare.substring(at)
+    }
+
+    /** "15m", "1h", "1h 30m". */
+    fun minutesLabel(m: Int) = when {
+        m < 60 -> "${m}m"
+        m % 60 == 0 -> "${m / 60}h"
+        else -> "${m / 60}h ${m % 60}m"
+    }
+
     /** [line] with its due date set to [date] (added, changed or, for null, removed). */
     fun withDue(line: String, date: LocalDate?): String = when {
         date == null -> line.replace(Regex("\\s*📅\\s*\\d{4}-\\d{2}-\\d{2}"), "").trimEnd()
