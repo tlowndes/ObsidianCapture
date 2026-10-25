@@ -40,7 +40,7 @@ private fun TimeChip(minutes: Int, onPick: (Int) -> Unit) {
     )
 }
 
-/** Settings › Reminders: morning and evening times. Moved here from the Tasks tab. */
+/** Settings › Reminders: morning briefing, evening wrap-up, task due alerts and the weekly review. */
 @Composable
 internal fun RemindersSection(prefs: AppPrefs) {
     val ctx = LocalContext.current
@@ -48,10 +48,14 @@ internal fun RemindersSection(prefs: AppPrefs) {
     var eveningOn by remember { mutableStateOf(prefs.eveningOn) }
     var morning by remember { mutableStateOf(prefs.morningMinute) }
     var evening by remember { mutableStateOf(prefs.eveningMinute) }
+    var dueOn by remember { mutableStateOf(prefs.dueOn) }
+    var due by remember { mutableStateOf(prefs.dueMinute) }
+    var weeklyOn by remember { mutableStateOf(prefs.weeklyOn) }
+    var weekly by remember { mutableStateOf(prefs.weeklyMinute) }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     fun apply() {
-        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (morningOn || eveningOn)) {
+        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (morningOn || eveningOn || dueOn || weeklyOn)) {
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else Reminders.scheduleAll(ctx, prefs)
     }
@@ -68,6 +72,18 @@ internal fun RemindersSection(prefs: AppPrefs) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TimeChip(evening) { evening = it; prefs.eveningMinute = it; apply() }
                 AppSwitch(eveningOn) { eveningOn = it; prefs.eveningOn = it; apply() }
+            }
+        }
+        SettingRow("Task due alerts") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimeChip(due) { due = it; prefs.dueMinute = it; apply() }
+                AppSwitch(dueOn) { dueOn = it; prefs.dueOn = it; apply() }
+            }
+        }
+        SettingRow("Weekly review", "Sunday") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimeChip(weekly) { weekly = it; prefs.weeklyMinute = it; apply() }
+                AppSwitch(weeklyOn) { weeklyOn = it; prefs.weeklyOn = it; apply() }
             }
         }
     }

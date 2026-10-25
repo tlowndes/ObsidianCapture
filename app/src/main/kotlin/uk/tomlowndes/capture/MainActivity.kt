@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), PROJECTS("Projects", "💡")
@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
 
     private fun readOpenRequest(i: Intent?) {
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
+        if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -133,6 +134,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun subFor(slot: String?) = when (slot) {
+    "focus" -> Sub.FOCUS
+    "weekly" -> Sub.WEEKLY
+    else -> null
+}
+
 @Composable
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
@@ -141,7 +148,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var settings by remember { mutableStateOf(false) }
     var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
-    var sub by remember { mutableStateOf(if (request?.second == "focus") Sub.FOCUS else null) }
+    var sub by remember { mutableStateOf(subFor(request?.second)) }
     fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
         Focus.start(ctx, task, raw, path, minutes)
         sub = Sub.FOCUS
@@ -153,7 +160,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
         Reminders.scheduleAll(ctx, prefs)
-        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn) && !prefs.askedNotif) {
+        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn || prefs.weeklyOn) && !prefs.askedNotif) {
             prefs.askedNotif = true
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -162,7 +169,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     LaunchedEffect(request) {
         request?.let {
             tab = it.first; settings = false; cards = false; search = false; openIdea = null
-            sub = if (it.second == "focus") Sub.FOCUS else null
+            sub = subFor(it.second)
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -200,9 +207,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             when {
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
+                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
                 sub == Sub.STUCK -> StuckScreen(vault, snack, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }
-                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS })
+                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
                     vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },

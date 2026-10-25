@@ -66,6 +66,20 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = Sorting.queueFromJson(p.getString("capture_queue", null))
         set(v) { p.edit().putString("capture_queue", Sorting.queueToJson(v)).apply() }
 
+    /** Task due alerts (off until switched on) and the Sunday weekly review. */
+    var dueOn: Boolean
+        get() = p.getBoolean("due_on", false)
+        set(v) { p.edit().putBoolean("due_on", v).apply() }
+    var dueMinute: Int
+        get() = p.getInt("due_min", 9 * 60)
+        set(v) { p.edit().putInt("due_min", v).apply() }
+    var weeklyOn: Boolean
+        get() = p.getBoolean("weekly_on", true)
+        set(v) { p.edit().putBoolean("weekly_on", v).apply() }
+    var weeklyMinute: Int
+        get() = p.getInt("weekly_min", 19 * 60)
+        set(v) { p.edit().putInt("weekly_min", v).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }
