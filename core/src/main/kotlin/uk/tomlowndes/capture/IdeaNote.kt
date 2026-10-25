@@ -51,7 +51,11 @@ object IdeaNote {
     fun parse(title: String, text: String): IdeaDoc {
         val lines = text.split("\n")
         val entries = entryRanges(lines).map { entryAt(lines, it) }
-        return IdeaDoc(title, Md.fmGet(lines, "status") ?: "idea", summaryOf(lines), entries)
+        return IdeaDoc(
+            title, Md.fmGet(lines, "status") ?: "idea", summaryOf(lines), entries,
+            Md.fmGet(lines, "type"), Md.fmGet(lines, "area"),
+            Md.fmBody(lines).firstNotNullOfOrNull { TaskNote.parse(it)?.text }
+        )
     }
 
     fun summaryOf(lines: List<String>) =

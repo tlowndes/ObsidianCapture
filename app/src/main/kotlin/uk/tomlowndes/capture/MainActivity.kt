@@ -123,6 +123,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var vault by remember { mutableStateOf(prefs.vault) }
     var tab by remember { mutableStateOf(request?.first ?: Tab.DECK) }
     var settings by remember { mutableStateOf(false) }
+    var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
     var openArticle by remember { mutableStateOf<ReadRef?>(null) }
@@ -139,7 +140,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 
     LaunchedEffect(request) {
         request?.let {
-            tab = it.first; settings = false; search = false; openIdea = null
+            tab = it.first; settings = false; cards = false; search = false; openIdea = null
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -156,8 +157,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = settings || search || openIdea != null || openArticle != null) {
+    BackHandler(enabled = cards || settings || search || openIdea != null || openArticle != null) {
         when {
+            cards -> cards = false
             settings -> settings = false
             search -> search = false
             openArticle != null -> openArticle = null
@@ -169,13 +171,14 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
-        bottomBar = { if (!hideNav) NavBar(if (settings || search) null else tab) { tab = it; settings = false; search = false } }
+        bottomBar = { if (!hideNav) NavBar(if (settings || search) null else tab) { tab = it; settings = false; cards = false; search = false } }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
-                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) })
+                cards -> CardsScreen(vault, snack) { cards = false }
+                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true })
                 search -> SearchScreen(vault, snack) { search = false }
-                tab == Tab.DECK -> DeckScreen(vault, prefs, snack, onOpenSearch = { search = true }) { settings = true }
+                tab == Tab.DECK -> DeckScreen(vault, prefs, snack, onOpenTab = { tab = it }, onOpenSearch = { search = true }) { settings = true }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, snack)
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
                 tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }

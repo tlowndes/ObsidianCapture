@@ -15,6 +15,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,8 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun SettingRow(title: String, sub: String? = null, trailing: @Composable () -> Unit) {
@@ -58,14 +62,28 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 @Composable
-fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit) {
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpenCards: () -> Unit) {
+    val ctx = LocalContext.current
     var recurring by remember { mutableStateOf(prefs.recurring) }
+    var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrNull() }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
         ScreenTitle("Settings")
 
+        GroupLabel("Flight Deck")
+        SettingRow("Cards on home") {
+            TextButton(onClick = onOpenCards) {
+                Text(cardsOn?.let { "${it.onCount} of ${HomeCard.values().size} ›" } ?: "›", color = Muted)
+            }
+        }
+
+        Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Tasks")
-        SettingRow("Recurring tasks", "Ticking one creates the next occurrence") {
+        SettingRow("Recurring tasks") {
             AppSwitch(recurring) { recurring = it; prefs.recurring = it }
         }
 

@@ -9,9 +9,9 @@ object TaskRules {
     val DUE = Regex("📅\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val SCHEDULED = Regex("⏳\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val START = Regex("🛫\\s*(\\d{4}-\\d{2}-\\d{2})")
-    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🔺|⏫|🔼|🔽|⏬|\\[|$))")
+    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))")
     private val NOISE = Regex(
-        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🔺|⏫|🔼|🔽|⏬|\\[|$))|[🔺⏫🔼🔽⏬]|\\[\\w+:: [^\\]]*\\]|#task"
+        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))|⏱\\s*\\d+\\s*m(?:in)?\\b|[🔺⏫🔼🔽⏬]|\\[\\w+:: [^\\]]*\\]|#task"
     )
 
     fun due(line: String): LocalDate? =

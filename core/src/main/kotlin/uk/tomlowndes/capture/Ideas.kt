@@ -6,13 +6,18 @@ import java.time.format.DateTimeFormatter
 /** [modified] is when the idea note or its log file last changed, whichever is later. */
 data class IdeaSummary(
     val title: String, val snippet: String, val entries: Int, val images: Int,
-    val firstImage: String?, val status: String, val modified: Long
+    val firstImage: String?, val status: String, val modified: Long,
+    val type: String? = null, val area: String? = null, val next: String? = null
 )
 
 /** One dated entry in an idea's Log. [heading] is the text after `### `. */
 data class IdeaEntry(val heading: String, val text: String, val images: List<String>)
 
-data class IdeaDoc(val title: String, val status: String, val summary: String, val entries: List<IdeaEntry>)
+/** [type], [area] come from frontmatter; [next] is the first open checkbox in the note. */
+data class IdeaDoc(
+    val title: String, val status: String, val summary: String, val entries: List<IdeaEntry>,
+    val type: String? = null, val area: String? = null, val next: String? = null
+)
 
 /**
  * Ideas live as `<ideas folder>/<Title>/<Title>.md` (a folder note) with their entries in `<Title> - Log.md` beside it,
@@ -67,7 +72,8 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
             name, doc.summary.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
             doc.entries.size, doc.entries.sumOf { it.images.size },
             doc.entries.firstOrNull { it.images.isNotEmpty() }?.images?.first(),
-            doc.status, maxOf(note.modified, logEntry?.modified ?: 0L)
+            doc.status, maxOf(note.modified, logEntry?.modified ?: 0L),
+            doc.type, doc.area, doc.next
         )
     }.let { sorted(it, byUpdated = true) }
 

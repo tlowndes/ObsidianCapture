@@ -55,6 +55,12 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         else Energy.MED
         set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
 
+    /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
+    var laterToday: Set<String>
+        get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("later", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }
