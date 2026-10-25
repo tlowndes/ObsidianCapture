@@ -1,13 +1,6 @@
 package uk.tomlowndes.capture
 
-import android.Manifest
-import android.app.TimePickerDialog
 import android.net.Uri
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,15 +9,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -40,10 +37,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,36 +48,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-private sealed interface Row2 {
-    data class Header(val bucket: Bucket, val count: Int, val title: String) : Row2
-    data class Task(val item: TaskItem) : Row2
-}
-
-private fun layout(tasks: List<TaskItem>, byDue: Boolean): List<Row2> {
-    if (!byDue) return tasks.map { Row2.Task(it) }
-    val today = LocalDate.now()
-    val out = mutableListOf<Row2>()
-    TaskGroups.groups(tasks, today).forEach { (b, items) ->
-        val title = if (b == Bucket.TODAY) "Today · " + today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)) else b.title
-        out.add(Row2.Header(b, items.size, title))
-        items.forEach { out.add(Row2.Task(it)) }
-    }
-    return out
-}
-
+/** Tasks tab: every open `#task` in the vault, filtered by tag, side or length, grouped by when it's due. */
 @Composable
-fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
+fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartFocus: (TaskItem, Int) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val tasks = remember { mutableStateListOf<TaskItem>() }
     var loaded by remember { mutableStateOf(false) }
-    var scanning by remember { mutableStateOf(false) }
-    var byDue by remember { mutableStateOf(prefs.sortByDue) }
-    var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
+    var tag by remember { mutableStateOf<String?>(null) }
+    var filter by remember { mutableStateOf<TaskFilter?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var laterOpen by remember { mutableStateOf(false) }
 
     /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
     fun reload() {
@@ -90,9 +71,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
                 withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listQuickTasks() } }
                     .onSuccess { tasks.clear(); tasks.addAll(it) }
             }
-            scanning = true
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTasks() } }
-            scanning = false
             r.onSuccess { tasks.clear(); tasks.addAll(it); loaded = true }
                 .onFailure { snack.showSnackbar("Couldn't read tasks: ${it.message}") }
         }
@@ -147,50 +126,65 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Tasks", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { reload() }) { Text("↻", color = Muted, fontSize = 20.sp) }
-                Column {
-                    AppChip(true, { menu = true }, { Text(if (byDue) "By due date ▾" else "Note order ▾") },
-                        shape = RoundedCornerShape(12.dp))
-                    DropdownMenu(menu, { menu = false }, modifier = Modifier.background(Surface2)) {
-                        DropdownMenuItem(text = { Text("By due date") }, onClick = { byDue = true; prefs.sortByDue = true; menu = false })
-                        DropdownMenuItem(text = { Text("Note order") }, onClick = { byDue = false; prefs.sortByDue = false; menu = false })
-                    }
-                }
+    val today = LocalDate.now()
+    val shown = tasks.filter { TaskViews.matches(it, tag, filter, query) }
+    val groups = TaskViews.groups(shown, today)
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Tasks", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+            IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
             }
         }
         Text(
-            when {
-                vault == null -> "Pick your vault in Settings"
-                scanning && !loaded -> "Quick Task · ${tasks.size} open · reading the vault…"
-                else -> "Whole vault · ${tasks.size} open" + if (scanning) " · refreshing…" else ""
-            },
-            color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp, bottom = 6.dp))
+            "Vault-wide #task · ${tasks.size} open", color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+        )
+        if (searching) OutlinedTextField(
+            query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+        )
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppChip(tag == null, { tag = null }, { Text("All") })
+            TaskViews.topTags(tasks).forEach { t -> AppChip(tag == t, { tag = if (tag == t) null else t }, { Text(t) }) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(TaskFilter.WORK to "Work", TaskFilter.PERSONAL to "Personal", TaskFilter.SHORT to "≤ ${TaskViews.SHORT_MIN} min")
+                .forEach { (f, label) -> AppChip(filter == f, { filter = if (filter == f) null else f }, { Text(label) }) }
+        }
 
-        val rows = layout(tasks, byDue)
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-            item { RemindersSection(prefs) }
-            if (loaded && rows.isEmpty()) item {
-                Text("Nothing to do. Add something from Capture.", color = Muted, modifier = Modifier.padding(top = 24.dp))
-            }
-            itemsIndexed(rows) { _, row ->
-                when (row) {
-                    is Row2.Header -> Row(
-                        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        GroupLabel(row.title, if (row.bucket == Bucket.OVERDUE) Warn else Muted)
-                        Text("${row.count}", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = if (row.bucket == Bucket.OVERDUE) Warn else Primary,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                                .background(if (row.bucket == Bucket.OVERDUE) OverdueTint else TagTint)
-                                .padding(horizontal = 8.dp, vertical = 2.dp))
+        LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
+            groups.forEach { (g, items) ->
+                if (g == TaskGroup.LATER && !laterOpen) {
+                    item(key = "later") {
+                        Text(
+                            "Later · ${items.size} ›", textAlign = TextAlign.Center, color = Muted, fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().clickable { laterOpen = true }.padding(vertical = 12.dp)
+                        )
                     }
-                    is Row2.Task -> TaskCard(row.item, { tick(row.item) }, { editing = row.item })
+                    return@forEach
+                }
+                item(key = "h-$g") {
+                    GroupLabel("${g.title} · ${items.size}", if (g == TaskGroup.OVERDUE) Warn else Muted)
+                }
+                item(key = "c-$g") {
+                    ListCard(Modifier.padding(top = 6.dp)) {
+                        items.forEachIndexed { i, t ->
+                            if (i > 0) HorizontalDivider(color = Outline)
+                            TaskLine(t, edge = true, onTick = { tick(t) }) {
+                                if (g == TaskGroup.TODAY) {
+                                    StartPill(TaskViews.SHORT_MIN) { onStartFocus(t, TaskViews.SHORT_MIN) }
+                                } else {
+                                    t.due?.let { DuePill(it) { editing = t } }
+                                        ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { editing = t })
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -202,77 +196,6 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
             onDate = { d -> editing = null; reschedule(t, d) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }
-        )
-    }
-}
-
-private fun hhmm(minutes: Int) = "%02d:%02d".format(minutes / 60, minutes % 60)
-
-@Composable
-private fun TimeChip(minutes: Int, onPick: (Int) -> Unit) {
-    val ctx = LocalContext.current
-    Text(
-        hhmm(minutes), fontWeight = FontWeight.Bold, fontSize = 14.sp,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Surface2).clickable {
-            TimePickerDialog(ctx, { _, h, m -> onPick(h * 60 + m) }, minutes / 60, minutes % 60, true).show()
-        }.padding(horizontal = 12.dp, vertical = 6.dp)
-    )
-}
-
-/** The morning and evening reminder times, at the top of the list. */
-@Composable
-private fun RemindersSection(prefs: AppPrefs) {
-    val ctx = LocalContext.current
-    var morningOn by remember { mutableStateOf(prefs.morningOn) }
-    var eveningOn by remember { mutableStateOf(prefs.eveningOn) }
-    var morning by remember { mutableStateOf(prefs.morningMinute) }
-    var evening by remember { mutableStateOf(prefs.eveningMinute) }
-
-    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
-    fun apply() {
-        if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (morningOn || eveningOn)) {
-            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else Reminders.scheduleAll(ctx, prefs)
-    }
-
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        GroupLabel("Reminders")
-        SettingRow("☀ Morning") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimeChip(morning) { morning = it; prefs.morningMinute = it; apply() }
-                AppSwitch(morningOn) { morningOn = it; prefs.morningOn = it; apply() }
-            }
-        }
-        SettingRow("🌙 Evening") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimeChip(evening) { evening = it; prefs.eveningMinute = it; apply() }
-                AppSwitch(eveningOn) { eveningOn = it; prefs.eveningOn = it; apply() }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TaskCard(t: TaskItem, onTick: () -> Unit, onChip: () -> Unit) {
-    val overdue = t.due?.isBefore(LocalDate.now()) == true
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = 7.dp).clip(RoundedCornerShape(16.dp)).background(Surface1)
-            .padding(start = 13.dp, top = 9.dp, bottom = 9.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Column(Modifier.size(24.dp).clip(CircleShape).border(2.dp, Primary, CircleShape).clickable(onClick = onTick)) {}
-        Column(Modifier.weight(1f)) {
-            Text(t.text, fontSize = 14.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val from = if (t.path != VaultTasks.QUICK_TASK) VaultTasks.noteName(t.path) else null
-            val meta = listOfNotNull(t.recurrence?.let { "🔁 $it" }, from?.let { "📄 $it" }).joinToString("  ·  ")
-            if (meta.isNotEmpty()) Text(meta, fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Text(
-            t.due?.let { dayChip(it) } ?: "＋ date", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            color = if (overdue) Warn else if (t.due == null) Muted else TextMain,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                .background(if (overdue) OverdueTint else Surface2)
-                .clickable(onClick = onChip).padding(horizontal = 9.dp, vertical = 6.dp)
         )
     }
 }

@@ -1,0 +1,76 @@
+package uk.tomlowndes.capture
+
+import java.math.BigDecimal
+import java.time.LocalDate
+
+/** A `#bill` task: `- [ ] Council tax £128 #bill 📅 2026-10-26`. */
+data class Bill(val task: TaskItem, val name: String, val amount: BigDecimal?)
+
+/** The groups the Flight Deck Tasks tab shows, in order. Later also holds undated tasks. */
+enum class TaskGroup(val title: String) { OVERDUE("Overdue"), TODAY("Today"), WEEK("This week"), LATER("Later") }
+
+/** Filters on the Tasks tab, beyond tags. */
+enum class TaskFilter { WORK, PERSONAL, SHORT }
+
+object TaskViews {
+    private val TAG = Regex("(?:^|\\s)(#(?!task\\b)[\\w/-]+)")
+    private val AMOUNT = Regex("£\\s*(\\d+(?:[.,]\\d{1,2})?)")
+    /** Tags that put a task on the work side (amber edge); everything else is personal. */
+    val WORK_TAGS = setOf("#work", "#jobs")
+    const val SHORT_MIN = 15
+
+    fun tags(t: TaskItem): List<String> = TAG.findAll(t.raw).map { it.groupValues[1].lowercase() }.distinct().toList()
+
+    fun isWork(t: TaskItem) = tags(t).any { it in WORK_TAGS }
+
+    /** Task text without its tags, for showing next to a tag chip. */
+    fun plainText(t: TaskItem) = t.text.replace(TAG, "").replace(Regex("\\s+"), " ").trim().ifBlank { t.text }
+
+    /** Tags used across [tasks], most used first, for the filter chips. */
+    fun topTags(tasks: List<TaskItem>, max: Int = 6): List<String> =
+        tasks.flatMap { tags(it) }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .take(max).map { it.key }
+
+    fun matches(t: TaskItem, tag: String?, filter: TaskFilter?, query: String = ""): Boolean {
+        if (tag != null && tag !in tags(t)) return false
+        when (filter) {
+            TaskFilter.WORK -> if (!isWork(t)) return false
+            TaskFilter.PERSONAL -> if (isWork(t)) return false
+            TaskFilter.SHORT -> if ((Deck.minutes(t) ?: Int.MAX_VALUE) > SHORT_MIN) return false
+            null -> {}
+        }
+        return query.isBlank() || t.text.contains(query.trim(), ignoreCase = true)
+    }
+
+    fun groupOf(d: LocalDate?, today: LocalDate): TaskGroup = when (TaskGroups.bucketOf(d, today)) {
+        Bucket.OVERDUE -> TaskGroup.OVERDUE
+        Bucket.TODAY -> TaskGroup.TODAY
+        Bucket.TOMORROW, Bucket.WEEK -> TaskGroup.WEEK
+        Bucket.LATER, Bucket.NONE -> TaskGroup.LATER
+    }
+
+    /** Non-empty groups in order, each by due date with undated tasks last. */
+    fun groups(tasks: List<TaskItem>, today: LocalDate): List<Pair<TaskGroup, List<TaskItem>>> =
+        TaskGroup.values().mapNotNull { g ->
+            tasks.filter { groupOf(it.due, today) == g }.sortedBy { it.due ?: LocalDate.MAX }
+                .takeIf { it.isNotEmpty() }?.let { g to it }
+        }
+
+    fun bill(t: TaskItem): Bill {
+        val amount = AMOUNT.find(t.raw)?.groupValues?.get(1)?.replace(',', '.')?.let { runCatching { BigDecimal(it) }.getOrNull() }
+        val name = plainText(t).replace(AMOUNT, "").replace(Regex("\\s+"), " ").trim()
+        return Bill(t, name.ifBlank { t.text }, amount)
+    }
+
+    /** Bills due in the next 7 days (today and the 6 after), overdue ones first. */
+    fun billsDue(tasks: List<TaskItem>, today: LocalDate): List<Bill> =
+        tasks.filter { Deck.isBill(it) && it.due != null && it.due.isBefore(today.plusDays(7)) }
+            .sortedBy { it.due }
+            .map { bill(it) }
+
+    fun total(bills: List<Bill>): BigDecimal = bills.mapNotNull { it.amount }.fold(BigDecimal.ZERO, BigDecimal::add)
+
+    /** "£163" or "£12.50". */
+    fun money(v: BigDecimal): String = "£" + v.stripTrailingZeros().let { if (it.scale() <= 0) it.toPlainString() else v.setScale(2).toPlainString() }
+}

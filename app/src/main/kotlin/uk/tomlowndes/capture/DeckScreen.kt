@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -62,7 +64,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private const val OWNER = "Tom"
-private const val SHORT_MIN = 15
+private const val SHORT_MIN = TaskViews.SHORT_MIN
 
 /** Energy chip on Flight Deck. Low brings Stuck? to the top and short tasks; High shows 3 top tasks. */
 enum class Energy(val label: String) { LOW("Low"), MED("Med"), HIGH("High") }
@@ -92,6 +94,8 @@ fun DeckScreen(
     var energy by remember { mutableStateOf(prefs.energy) }
     var later by remember { mutableStateOf(prefs.laterToday) }
     var data by remember { mutableStateOf(DeckData()) }
+    var paying by remember { mutableStateOf(emptySet<String>()) }
+    var paying by remember { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
@@ -137,8 +141,11 @@ fun DeckScreen(
                 HomeCard.TOP_TASKS -> if (top.isNotEmpty()) TopTasksCard(top, low, ::tick) { onOpenTab(Tab.TASKS) }
                 HomeCard.STUCK -> RowCard("Stuck? Pick one.", "Open ›", accent = true) {}
                 HomeCard.READ_LATER -> RowCard("Read it later", "${data.unread} ›") { onOpenTab(Tab.READ) }
-                // Weather, Today, Bills and Jobs arrive with their own steps.
-                HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS, HomeCard.JOBS -> {}
+                // Weather, Today and Jobs arrive with their own steps.
+                HomeCard.BILLS -> TaskViews.billsDue(data.tasks, LocalDate.now()).takeIf { it.isNotEmpty() }?.let { bills ->
+                    BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
+                }
+                HomeCard.WEATHER, HomeCard.TODAY, HomeCard.JOBS -> {}
             }
         }
         Box(Modifier.height(12.dp))
@@ -217,15 +224,8 @@ private fun Pill(text: String, dot: Color, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DeckCard(
-    border: Color = Outline, bg: Color = Surface1, modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    Column(
-        modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(18.dp)).background(bg)
-            .border(1.dp, border, RoundedCornerShape(18.dp))
-    ) { content() }
-}
+private fun DeckCard(border: Color = Outline, bg: Color = Surface1, modifier: Modifier = Modifier, content: @Composable () -> Unit) =
+    ListCard(modifier, border, bg, content)
 
 @Composable
 private fun CardHead(title: String, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
@@ -241,9 +241,7 @@ private fun CardHead(title: String, trailing: String? = null, onTrailing: (() ->
     }
 }
 
-private val TAG = Regex("(?:^|\\s)(#(?!task\\b)[\\w/-]+)")
-
-private fun firstTag(t: TaskItem) = TAG.find(t.raw)?.groupValues?.get(1)
+private fun firstTag(t: TaskItem) = TaskViews.tags(t).firstOrNull()
 
 private fun duePhrase(d: LocalDate, today: LocalDate = LocalDate.now()) = when {
     d.isBefore(today) -> "overdue"
@@ -325,27 +323,30 @@ private fun TopTasksCard(tasks: List<TaskItem>, low: Boolean, onTick: (TaskItem)
         CardHead("Top tasks", if (low) "under $SHORT_MIN min ›" else "All tasks ›", onAll)
         tasks.forEach { t ->
             HorizontalDivider(color = Outline)
-            val overdue = t.due?.isBefore(LocalDate.now()) == true
+            TaskLine(t, edge = false, onTick = { onTick(t) }) { t.due?.let { DuePill(it) } }
+        }
+    }
+}
+
+@Composable
+private fun BillsCard(bills: List<Bill>, paying: Set<String>, onPaid: (Bill) -> Unit) {
+    val open = bills.filter { it.task.raw !in paying }
+    DeckCard {
+        CardHead("Bills", "next 7 days · ${TaskViews.money(TaskViews.total(open))}")
+        bills.forEach { b ->
+            val paid = b.task.raw in paying
+            HorizontalDivider(color = Outline)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Box(Modifier.size(17.dp).clip(RoundedCornerShape(6.dp)).border(1.5.dp, Muted, RoundedCornerShape(6.dp)).clickable { onTick(t) })
+                TickBox(done = paid, onClick = { if (!paid) onPaid(b) })
                 Text(
-                    buildAnnotatedString {
-                        append(t.text.replace(TAG, "").trim())
-                        firstTag(t)?.let { withStyle(SpanStyle(color = Purple, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) { append(" $it") } }
-                    },
-                    fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                    b.name, fontSize = 13.5.sp, color = if (paid) Muted else TextMain, modifier = Modifier.weight(1f),
+                    textDecoration = if (paid) TextDecoration.LineThrough else null
                 )
-                t.due?.let {
-                    Text(
-                        it.format(DateTimeFormatter.ofPattern("EEE d", Locale.UK)), fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                        color = if (overdue) Warn else Muted,
-                        modifier = Modifier.clip(CircleShape).border(1.dp, if (overdue) OverdueLine else Outline, CircleShape)
-                            .padding(horizontal = 7.dp, vertical = 2.dp)
-                    )
-                }
+                b.amount?.let { Text(TaskViews.money(it), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (paid) Muted else TextMain) }
+                b.task.due?.let { DuePill(it) }
             }
         }
     }

@@ -61,7 +61,7 @@ object Reminders {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_DEFAULT))
         val morning = slot == Slot.MORNING
         val open = Intent(ctx, MainActivity::class.java)
-            .putExtra("tab", Tab.TASKS.name)
+            .putExtra("tab", (if (morning) Tab.DECK else Tab.TASKS).name)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val snooze = Intent(ctx, SnoozeReceiver::class.java).putExtra("slot", slot.name)

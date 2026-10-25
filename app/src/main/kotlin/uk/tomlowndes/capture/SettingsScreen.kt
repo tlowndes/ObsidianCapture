@@ -82,6 +82,9 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         }
 
         Text("", Modifier.padding(top = 8.dp))
+        RemindersSection(prefs)
+
+        Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Tasks")
         SettingRow("Recurring tasks") {
             AppSwitch(recurring) { recurring = it; prefs.recurring = it }
