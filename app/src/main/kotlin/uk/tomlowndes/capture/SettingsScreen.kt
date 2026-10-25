@@ -66,7 +66,7 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 @Composable
 fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit) {
     val ctx = LocalContext.current
-    var recurring by remember { mutableStateOf(prefs.recurring) }
+    var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
     val secrets = remember { SecretStore(ctx) }
     var masked by remember { mutableStateOf(secrets.maskedKey()) }
@@ -100,6 +100,12 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
         ScreenTitle("Settings")
 
+        RemindersSection(prefs)
+
+        Text("", Modifier.padding(top = 8.dp))
+        CalendarSection(vault)
+
+        Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Flight Deck")
         SettingRow("Cards on home") {
             TextButton(onClick = onOpenCards) {
@@ -110,12 +116,6 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
 
         Text("", Modifier.padding(top = 8.dp))
-        RemindersSection(prefs)
-
-        Text("", Modifier.padding(top = 8.dp))
-        CalendarSection(vault)
-
-        Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Brain dump AI")
         SettingRow("Claude API key", masked ?: "Not set") {
             TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
@@ -123,17 +123,18 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
 
         Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Tasks")
-        SettingRow("Recurring tasks") {
-            AppSwitch(recurring) { recurring = it; prefs.recurring = it }
-        }
-
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Vault locations")
-        SettingRow("Vault", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
+        GroupLabel("Vault")
+        SettingRow("Vault folder", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
             TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
         }
-        PathField("Projects folder", prefs.ideasDir) { prefs.ideasDir = it }
-        PathField("Images folder", prefs.imagesDir) { prefs.imagesDir = it }
+        SettingRow("Notes used") { TextButton(onClick = { notesOpen = !notesOpen }) { Text(if (notesOpen) "⌄" else "›", color = Muted) } }
+        if (notesOpen) {
+            PathField("Projects folder", prefs.ideasDir) { prefs.ideasDir = it }
+            PathField("Images folder", prefs.imagesDir) { prefs.imagesDir = it }
+            listOf(VaultTasks.QUICK_TASK, Jobs.DIR, FlightNotes.STUCK, FlightNotes.FOCUS_LOG, Habits.PATH, DeckConfig.PATH).forEach {
+                Text(it, fontSize = 12.sp, color = Muted, modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+        Text("", Modifier.padding(bottom = 16.dp))
     }
 }

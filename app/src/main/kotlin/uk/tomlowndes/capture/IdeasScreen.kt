@@ -29,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -133,7 +134,12 @@ private fun IdeaList(
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp)) {
-                items(shown) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                items(shown.filter { !it.shelved }, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                val shelved = shown.filter { it.shelved }
+                if (shelved.isNotEmpty()) {
+                    item(key = "shelved") { GroupLabel("Shelved · ${shelved.size}") }
+                    items(shelved, key = { it.title }) { idea -> IdeaCard(idea, images) { onOpen(idea.title) } }
+                }
             }
         }
         Text(
@@ -171,19 +177,39 @@ private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () ->
             else Text(idea.title.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
         Column(Modifier.weight(1f)) {
-            Text(idea.title, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (idea.area == "work") WorkEdge else PersonalEdge))
+                Text(idea.title, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 6.dp).weight(1f, fill = false))
+                idea.type?.let { ProjectTag(it) }
+                if (idea.shelved && idea.couldContinue) ProjectTag("could continue")
+            }
             if (idea.snippet.isNotBlank()) Text(idea.snippet, fontSize = 12.5.sp, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
                 buildString {
                     append("${idea.entries} entries")
                     if (idea.images > 0) append(" · 🖼 ${idea.images}")
                     append(" · ").append(dayChip(modified))
-                    if (idea.status != "idea") append(" · ${idea.status}")
+                    if (idea.status !in setOf("idea", "active")) append(" · ${idea.status}")
                 },
                 fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 5.dp)
             )
         }
     }
+}
+
+@Composable
+private fun ProjectTag(text: String) {
+    val (bg, fg) = when (text) {
+        "claude" -> TagTint to Purple
+        "concept" -> TaskTint to Green
+        "idea" -> AmberTint to Amber
+        else -> Surface2 to Muted
+    }
+    Text(
+        text, fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = fg, maxLines = 1,
+        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(7.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp)
+    )
 }
 
 @Composable
@@ -298,8 +324,21 @@ private fun IdeaDetail(
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     )
                     DropdownMenu(statusMenu, { statusMenu = false }, modifier = Modifier.background(Surface2)) {
-                        listOf("idea", "active", "done").forEach { s ->
+                        listOf("active", "shelved", "idea").forEach { s ->
                             DropdownMenuItem(text = { Text(s) }, onClick = { statusMenu = false; run { setStatus(title, s) } })
+                        }
+                        HorizontalDivider(color = Outline)
+                        listOf("work", "personal").forEach { a ->
+                            DropdownMenuItem(text = { Text((if (d?.area == a) "● " else "") + a) }, onClick = { statusMenu = false; run { setArea(title, a) } })
+                        }
+                        HorizontalDivider(color = Outline)
+                        IdeaNote.TYPES.forEach { t ->
+                            DropdownMenuItem(text = { Text((if (d?.type == t) "● " else "") + t) }, onClick = { statusMenu = false; run { setType(title, t) } })
+                        }
+                        if (d?.status == "shelved") {
+                            HorizontalDivider(color = Outline)
+                            DropdownMenuItem(text = { Text((if (d?.couldContinue == true) "● " else "") + "could continue") },
+                                onClick = { statusMenu = false; run { setCouldContinue(title, d?.couldContinue != true) } })
                         }
                     }
                 }

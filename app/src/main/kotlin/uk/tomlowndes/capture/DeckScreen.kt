@@ -106,6 +106,10 @@ fun DeckScreen(
     var later by remember { mutableStateOf(prefs.laterToday) }
     var data by remember { mutableStateOf(DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
+    var vaultOk by remember { mutableStateOf(true) }
+    LaunchedEffect(vault, refresh) {
+        vaultOk = vault != null && withContext(Dispatchers.IO) { runCatching { SafVault(ctx, vault).list("") }.isSuccess }
+    }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var weather by remember { mutableStateOf<WeatherSummary?>(null) }
     var canLocate by remember { mutableStateOf(WeatherFetch.allowed(ctx)) }
@@ -163,6 +167,13 @@ fun DeckScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         DeckHeader(energy, onOpenSearch = onOpenSearch, onRefresh = { refresh++ }, onOpenSettings = onOpenSettings)
         EnergyChip(energy) { energy = it; prefs.energy = it }
+        if (!vaultOk) {
+            Text(
+                "⚠ Vault not found · Pick folder ›", color = Amber, fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(14.dp)).background(AmberTint)
+                    .clickable(onClick = onOpenSettings).padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.let { h -> h.habits.count { it in h.day(LocalDate.now()).done } to h.habits.size },

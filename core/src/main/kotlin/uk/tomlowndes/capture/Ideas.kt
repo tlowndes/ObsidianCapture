@@ -7,8 +7,10 @@ import java.time.format.DateTimeFormatter
 data class IdeaSummary(
     val title: String, val snippet: String, val entries: Int, val images: Int,
     val firstImage: String?, val status: String, val modified: Long,
-    val type: String? = null, val area: String? = null, val next: String? = null
-)
+    val type: String? = null, val area: String? = null, val next: String? = null, val couldContinue: Boolean = false
+) {
+    val shelved get() = status.lowercase() in setOf("shelved", "done")
+}
 
 /** One dated entry in an idea's Log. [heading] is the text after `### `. */
 data class IdeaEntry(val heading: String, val text: String, val images: List<String>)
@@ -16,7 +18,7 @@ data class IdeaEntry(val heading: String, val text: String, val images: List<Str
 /** [type], [area] come from frontmatter; [next] is the first open checkbox in the note. */
 data class IdeaDoc(
     val title: String, val status: String, val summary: String, val entries: List<IdeaEntry>,
-    val type: String? = null, val area: String? = null, val next: String? = null
+    val type: String? = null, val area: String? = null, val next: String? = null, val couldContinue: Boolean = false
 )
 
 /**
@@ -73,7 +75,7 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
             doc.entries.size, doc.entries.sumOf { it.images.size },
             doc.entries.firstOrNull { it.images.isNotEmpty() }?.images?.first(),
             doc.status, maxOf(note.modified, logEntry?.modified ?: 0L),
-            doc.type, doc.area, doc.next
+            doc.type, doc.area, doc.next, doc.couldContinue
         )
     }.let { sorted(it, byUpdated = true) }
 
@@ -102,6 +104,10 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
     fun setStatus(title: String, status: String) = edit(title) { Md.fmSet(it, "status", status) }
 
     fun setType(title: String, type: String) = edit(title) { Md.fmSet(it, "type", type) }
+
+    fun setArea(title: String, area: String) = edit(title) { Md.fmSet(it, "area", area) }
+
+    fun setCouldContinue(title: String, on: Boolean) = edit(title) { Md.fmSet(it, "could_continue", on.toString()) }
 
     /** New entries go at the top of the log file, newest first. */
     fun addEntry(title: String, text: String, images: List<String>) =
