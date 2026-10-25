@@ -95,7 +95,6 @@ fun DeckScreen(
     var later by remember { mutableStateOf(prefs.laterToday) }
     var data by remember { mutableStateOf(DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
-    var paying by remember { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
