@@ -61,7 +61,6 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
     var filter by remember { mutableStateOf<TaskFilter?>(null) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var laterOpen by remember { mutableStateOf(false) }
 
     /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
     fun reload() {
@@ -159,15 +158,6 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
 
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
             groups.forEach { (g, items) ->
-                if (g == TaskGroup.LATER && !laterOpen) {
-                    item(key = "later") {
-                        Text(
-                            "Later · ${items.size} ›", textAlign = TextAlign.Center, color = Muted, fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth().clickable { laterOpen = true }.padding(vertical = 12.dp)
-                        )
-                    }
-                    return@forEach
-                }
                 item(key = "h-$g") {
                     GroupLabel("${g.title} · ${items.size}", if (g == TaskGroup.OVERDUE) Warn else Muted)
                 }

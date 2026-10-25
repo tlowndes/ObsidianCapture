@@ -92,7 +92,8 @@ private fun IdeaList(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var ideas by remember { mutableStateOf<List<IdeaSummary>?>(null) }
+    // Show the last list straight away, then refresh from the vault.
+    var ideas by remember { mutableStateOf(ProjectsCache.load(ctx)) }
     var query by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     var byUpdated by remember { mutableStateOf(prefs.ideasByUpdated) }
@@ -102,7 +103,7 @@ private fun IdeaList(
         val uri = vault ?: return
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).list() } }
-            r.onSuccess { ideas = it }.onFailure { snack.showSnackbar("Couldn't read projects: ${it.message}") }
+            r.onSuccess { ideas = it; ProjectsCache.save(ctx, it) }.onFailure { snack.showSnackbar("Couldn't read projects: ${it.message}") }
         }
     }
     LaunchedEffect(vault) { reload() }
