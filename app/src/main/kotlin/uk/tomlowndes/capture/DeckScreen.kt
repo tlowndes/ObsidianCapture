@@ -57,6 +57,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -84,7 +85,8 @@ private data class DeckData(
     val layout: DeckLayout = DeckLayout(),
     val stuck: List<StuckItem> = emptyList(),
     val focusMin: Int = 0,
-    val habits: HabitsNote? = null
+    val habits: HabitsNote? = null,
+    val calendars: List<CalendarSource>? = null
 )
 
 @Composable
@@ -100,6 +102,16 @@ fun DeckScreen(
     var later by remember { mutableStateOf(prefs.laterToday) }
     var data by remember { mutableStateOf(DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
+    var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
+
+    // Proton: sync on start, then every 30 min while Flight Deck is open.
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        while (true) {
+            cal = withContext(Dispatchers.IO) { runCatching { CalendarSync.sync(ctx, uri) }.getOrDefault(cal) }
+            delay(CalendarSync.EVERY_MS)
+        }
+    }
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
@@ -111,7 +123,8 @@ fun DeckScreen(
                 layout = runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()),
                 stuck = runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
                 focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
-                habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull()
+                habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull(),
+                calendars = runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrNull()
             )
         }
     }
@@ -160,7 +173,8 @@ fun DeckScreen(
                 HomeCard.BILLS -> TaskViews.billsDue(data.tasks, LocalDate.now()).takeIf { it.isNotEmpty() }?.let { bills ->
                     BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
                 }
-                HomeCard.WEATHER, HomeCard.TODAY, HomeCard.JOBS -> {}
+                HomeCard.TODAY -> data.calendars?.let { sources -> TodayCard(sources, cal, onConnect = onOpenSettings) }
+                HomeCard.WEATHER, HomeCard.JOBS -> {}
             }
         }
         Box(Modifier.height(12.dp))
@@ -224,6 +238,47 @@ private fun Pills(due: Int, focusMin: Int, habits: Pair<Int, Int>?, onTasks: () 
         Pill("Tasks due $due", Amber, onTasks)
         Pill("Focus today ${focusMin}m", Green, onFocus)
         habits?.let { (done, total) -> Pill("Habits $done/$total", Purple, onHabits) }
+    }
+}
+
+/** Today (Proton): today's events, the current one highlighted. Hidden when there are none. */
+@Composable
+private fun TodayCard(sources: List<CalendarSource>, cache: List<CalendarCache>, onConnect: () -> Unit) {
+    if (sources.isEmpty()) { RowCard("📅 Calendar", "Connect ›", onClick = onConnect); return }
+    val on = sources.filter { it.enabled }.map { it.id }.toSet()
+    val mine = cache.filter { it.id in on }
+    val today = LocalDate.now()
+    val now = java.time.LocalDateTime.now()
+    val events = mine.flatMap { it.events }.filter { it.on(today) }.sortedWith(compareBy({ !it.allDay }, { it.start }))
+    val broken = mine.any { !it.ok }
+    if (events.isEmpty() && !broken) return
+    val synced = mine.maxOfOrNull { it.syncedAt } ?: 0L
+    DeckCard {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 7.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Today", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            if (broken) Text("Reconnect ›", fontSize = 12.sp, color = Amber, modifier = Modifier.clickable(onClick = onConnect))
+            else Text("Proton", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
+        }
+        val colours = sources.associate { it.id to hexColour(it.colour) }
+        events.forEach { e ->
+            HorizontalDivider(color = Outline)
+            val current = e.isNow(now)
+            Row(
+                Modifier.fillMaxWidth().background(if (current && !broken) PrimaryTint else Color.Transparent).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(colours[e.calendarId] ?: Primary))
+                Text(
+                    if (e.allDay) "all day" else "${e.start.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))}–${e.end.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))}",
+                    fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (current && !broken) Primary else Muted
+                )
+                Text(e.title, fontSize = 13.5.sp, color = if (broken) Muted else TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (broken && synced > 0) Text(clockOf(synced), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            }
+        }
     }
 }
 

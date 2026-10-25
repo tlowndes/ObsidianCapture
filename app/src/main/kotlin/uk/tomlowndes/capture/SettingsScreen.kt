@@ -112,6 +112,9 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         RemindersSection(prefs)
 
         Text("", Modifier.padding(top = 8.dp))
+        CalendarSection(vault)
+
+        Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Brain dump AI")
         SettingRow("Claude API key", masked ?: "Not set") {
             TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
