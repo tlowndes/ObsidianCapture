@@ -105,6 +105,11 @@ class VaultWriter(
         VaultIo.write(vault, vault.create("$INBOX/$RIL_DIR", name, "md"), content)
     }
 
+    /** Writes a note named [name] (a free name is picked if it's taken) into the inbox. */
+    fun addInboxNote(name: String, content: String) {
+        VaultIo.write(vault, vault.create(INBOX, name, "md"), content)
+    }
+
     companion object {
         const val INBOX = "01 - Inbox"
         const val RIL_DIR = "ReadItLater Inbox"

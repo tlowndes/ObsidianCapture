@@ -101,6 +101,8 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
 
     fun setStatus(title: String, status: String) = edit(title) { Md.fmSet(it, "status", status) }
 
+    fun setType(title: String, type: String) = edit(title) { Md.fmSet(it, "type", type) }
+
     /** New entries go at the top of the log file, newest first. */
     fun addEntry(title: String, text: String, images: List<String>) =
         VaultIo.edit(vault, logFile(title)) { IdeaNote.addEntry(it, LocalDateTime.now().format(STAMP), text, images) }

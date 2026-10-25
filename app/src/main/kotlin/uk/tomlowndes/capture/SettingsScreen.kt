@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,30 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     val ctx = LocalContext.current
     var recurring by remember { mutableStateOf(prefs.recurring) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
+    val secrets = remember { SecretStore(ctx) }
+    var masked by remember { mutableStateOf(secrets.maskedKey()) }
+    var editingKey by remember { mutableStateOf(false) }
+    if (editingKey) {
+        var draft by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingKey = false }, containerColor = Surface1,
+            title = { Text("Claude API key") },
+            text = {
+                OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
+                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("sk-ant-…") })
+            },
+            confirmButton = {
+                TextButton(onClick = { secrets.claudeKey = draft; masked = secrets.maskedKey(); editingKey = false }, enabled = draft.isNotBlank()) {
+                    Text("Save", color = Primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (masked != null) { secrets.claudeKey = null; masked = null }; editingKey = false }) {
+                    Text(if (masked != null) "Remove" else "Cancel", color = Muted)
+                }
+            }
+        )
+    }
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
         cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrNull() }
@@ -83,6 +109,13 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
 
         Text("", Modifier.padding(top = 8.dp))
         RemindersSection(prefs)
+
+        Text("", Modifier.padding(top = 8.dp))
+        GroupLabel("Brain dump AI")
+        SettingRow("Claude API key", masked ?: "Not set") {
+            TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
+        }
+        SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Tasks")

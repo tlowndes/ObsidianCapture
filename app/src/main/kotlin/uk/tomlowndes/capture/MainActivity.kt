@@ -61,10 +61,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND) {
-            handleShare(intent)
-            return
-        }
-        readOpenRequest(intent)
+            if (!toCapture(intent)) { handleShare(intent); return }
+        } else readOpenRequest(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -78,7 +76,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        readOpenRequest(intent)
+        if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /**
+     * Shared text that isn't just a link (a Gemini reply, a note) lands in the Capture box ready for Sort it.
+     * Returns false for a link, which still goes to Read It Later.
+     */
+    private fun toCapture(i: Intent): Boolean {
+        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
+        val url = Regex("https?://\\S+").find(text)?.value
+        if (text.isEmpty() || (url != null && text.replace(url, "").trim().length < 60)) return false
+        val draft = prefs.draft("capture").trim()
+        prefs.setDraft("capture", if (draft.isEmpty()) text else "$draft\n$text")
+        openRequest = Tab.CAPTURE to null
+        return true
     }
 
     private fun readOpenRequest(i: Intent?) {
@@ -179,7 +191,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(vault, prefs, snack, onOpenTab = { tab = it }, onOpenSearch = { search = true }) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, snack)
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack) { _, _ -> } // Focus lands in its own step
                 tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }

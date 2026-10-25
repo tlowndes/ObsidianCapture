@@ -61,6 +61,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
             p.getStringSet("later", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
 
+    /** Brain dumps waiting to be sorted or saved; raw text is kept until Save. */
+    var captureQueue: List<QueuedDump>
+        get() = Sorting.queueFromJson(p.getString("capture_queue", null))
+        set(v) { p.edit().putString("capture_queue", Sorting.queueToJson(v)).apply() }
+
     var askedNotif: Boolean
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }
