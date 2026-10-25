@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,7 +83,8 @@ private data class DeckData(
     val unread: Int = 0,
     val layout: DeckLayout = DeckLayout(),
     val stuck: List<StuckItem> = emptyList(),
-    val focusMin: Int = 0
+    val focusMin: Int = 0,
+    val habits: HabitsNote? = null
 )
 
 @Composable
@@ -108,7 +110,8 @@ fun DeckScreen(
                 unread = runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first }.getOrDefault(0),
                 layout = runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()),
                 stuck = runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
-                focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0)
+                focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
+                habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull()
             )
         }
     }
@@ -136,7 +139,11 @@ fun DeckScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         DeckHeader(energy, onOpenSearch = onOpenSearch, onRefresh = { refresh++ }, onOpenSettings = onOpenSettings)
         EnergyChip(energy) { energy = it; prefs.energy = it }
-        Pills(Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin, onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) })
+        Pills(
+            Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
+            data.habits?.let { h -> h.habits.count { it in h.day(LocalDate.now()).done } to h.habits.size },
+            onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) }, onHabits = { onOpenSub(Sub.HABITS) }
+        )
 
         data.layout.visible(low).forEach { card ->
             when (card) {
@@ -211,12 +218,12 @@ private fun EnergyChip(selected: Energy, onSelect: (Energy) -> Unit) {
     }
 }
 
-/** Habits joins this row with its own step. */
 @Composable
-private fun Pills(due: Int, focusMin: Int, onTasks: () -> Unit, onFocus: () -> Unit) {
-    Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Pills(due: Int, focusMin: Int, habits: Pair<Int, Int>?, onTasks: () -> Unit, onFocus: () -> Unit, onHabits: () -> Unit) {
+    Row(Modifier.padding(bottom = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Pill("Tasks due $due", Amber, onTasks)
         Pill("Focus today ${focusMin}m", Green, onFocus)
+        habits?.let { (done, total) -> Pill("Habits $done/$total", Purple, onHabits) }
     }
 }
 

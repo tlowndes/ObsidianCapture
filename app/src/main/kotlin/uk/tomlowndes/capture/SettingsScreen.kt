@@ -64,7 +64,7 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 @Composable
-fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpenCards: () -> Unit) {
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit) {
     val ctx = LocalContext.current
     var recurring by remember { mutableStateOf(prefs.recurring) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
@@ -106,6 +106,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                 Text(cardsOn?.let { "${it.onCount} of ${HomeCard.values().size} ›" } ?: "›", color = Muted)
             }
         }
+        SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
 
         Text("", Modifier.padding(top = 8.dp))
         RemindersSection(prefs)
