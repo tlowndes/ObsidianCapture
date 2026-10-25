@@ -140,7 +140,7 @@ fun HabitsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     }
 }
 
-private fun litres(ml: Int) = if (ml % 1000 == 0) "${ml / 1000}" else "%.1f".format(ml / 1000.0)
+internal fun litres(ml: Int) = if (ml % 1000 == 0) "${ml / 1000}" else "%.1f".format(ml / 1000.0)
 
 @Composable
 private fun WeekRow(name: String, filled: List<Boolean?>, labels: List<String>? = null) {
