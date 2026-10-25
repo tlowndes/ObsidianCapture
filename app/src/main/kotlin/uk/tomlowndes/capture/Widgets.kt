@@ -361,6 +361,29 @@ private fun CaptureContent(ctx: Context) {
     }
 }
 
+// ---- Flight Deck: one tile that opens the Capture box ----
+
+class DeckCaptureWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        provideContent {
+            Box(
+                GlanceModifier.fillMaxSize().cornerRadius(20.dp).background(Bg).padding(6.dp)
+                    .clickable(actionStartActivity(Widgets.openTab(context, Tab.CAPTURE))),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("＋", style = TextStyle(color = cp(Primary), fontSize = 26.sp, fontWeight = FontWeight.Bold))
+                    Text("Capture", style = TextStyle(color = cp(TextMain), fontSize = 12.sp))
+                }
+            }
+        }
+    }
+}
+
+class DeckCaptureWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = DeckCaptureWidget()
+}
+
 @Composable
 private fun CaptureButton(label: String, bg: Color, fg: Color, intent: Intent, modifier: GlanceModifier) {
     Box(

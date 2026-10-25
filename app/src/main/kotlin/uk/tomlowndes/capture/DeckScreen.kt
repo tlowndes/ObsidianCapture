@@ -89,7 +89,8 @@ private data class DeckData(
     val stuck: List<StuckItem> = emptyList(),
     val focusMin: Int = 0,
     val habits: HabitsNote? = null,
-    val calendars: List<CalendarSource>? = null
+    val calendars: List<CalendarSource>? = null,
+    val jobs: List<Job> = emptyList()
 )
 
 @Composable
@@ -133,7 +134,8 @@ fun DeckScreen(
                 stuck = runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
                 focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull(),
-                calendars = runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrNull()
+                calendars = runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrNull(),
+                jobs = runCatching { Jobs.list(SafVault(ctx, uri)) }.getOrDefault(emptyList())
             )
         }
     }
@@ -188,7 +190,10 @@ fun DeckScreen(
                     if (w != null) WeatherCard(w)
                     else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
                 }
-                HomeCard.JOBS -> {}
+                HomeCard.JOBS -> {
+                    val open = data.jobs.count { !it.closed }
+                    RowCard("Jobs", listOfNotNull("$open", Jobs.nextDate(data.jobs)?.let { shortDate(it) }).joinToString(" · ") + " ›") { onOpenSub(Sub.JOBS) }
+                }
             }
         }
         Box(Modifier.height(12.dp))
