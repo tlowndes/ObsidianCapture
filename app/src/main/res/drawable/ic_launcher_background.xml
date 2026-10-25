@@ -6,7 +6,7 @@
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient android:startX="0" android:startY="0" android:endX="108" android:endY="108"
-                android:startColor="#A58BFF" android:endColor="#5B3FD6" />
+                android:startColor="#9DBBFF" android:endColor="#3F62D6" />
         </aapt:attr>
     </path>
 </vector>

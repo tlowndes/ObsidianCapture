@@ -37,18 +37,28 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-// ---- design tokens (mirror design/ui.css) ----
-internal val Bg = Color(0xFF13111A)
-internal val Surface1 = Color(0xFF1D1A28)
-internal val Surface2 = Color(0xFF262236)
-internal val Outline = Color(0xFF37314D)
-internal val Primary = Color(0xFF8B6CFF)
-internal val OnPrimary = Color(0xFF17102E)
-internal val TextMain = Color(0xFFECE9F6)
-internal val Muted = Color(0xFF9A94B3)
+// ---- design tokens (Flight Deck navy, mirror mockups/flight-deck-v6-home.html) ----
+internal val Bg = Color(0xFF0F131C)
+internal val Surface1 = Color(0xFF161B27)
+internal val Surface2 = Color(0xFF1E2534)
+internal val Outline = Color(0xFF2A3245)
+internal val Primary = Color(0xFF7AA2FF)
+internal val OnPrimary = Color(0xFF0D1630)
+internal val TextMain = Color(0xFFE8ECF5)
+internal val Muted = Color(0xFF8A93A8)
+internal val Green = Color(0xFF5FD39A)
+internal val Amber = Color(0xFFF5C06A)
 internal val Warn = Color(0xFFFF8A80)
+internal val Purple = Color(0xFFB39DFF)
+internal val WorkEdge = Amber
+internal val PersonalEdge = Primary
+internal val NavBg = Color(0xFF121724)
+internal val PrimaryTint = Color(0xFF1F2A48)
 internal val TaskTint = Color(0xFF16352C)
 internal val LinkTint = Color(0xFF142C40)
+internal val TagTint = Color(0xFF2A2250)
+internal val OverdueTint = Color(0xFF3A1D22)
+internal val AmberTint = Color(0xFF3A2F17)
 
 @Composable
 fun CaptureTheme(content: @Composable () -> Unit) {
@@ -60,7 +70,7 @@ fun CaptureTheme(content: @Composable () -> Unit) {
             surfaceVariant = Surface1, onSurfaceVariant = Muted,
             secondaryContainer = Surface2, onSecondaryContainer = Primary,
             outline = Outline, outlineVariant = Outline,
-            inverseSurface = Color(0xFFE8E3FA), inverseOnSurface = Color(0xFF1B1630),
+            inverseSurface = Color(0xFFE3E9F7), inverseOnSurface = Color(0xFF141A2B),
         ),
         content = content
     )
@@ -89,7 +99,7 @@ internal fun dayChip(d: LocalDate): String {
 internal fun Logo() {
     Box(
         Modifier.size(44.dp).clip(RoundedCornerShape(13.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFFA58BFF), Color(0xFF5B3FD6)))),
+            .background(Brush.linearGradient(listOf(Color(0xFF9DBBFF), Color(0xFF3F62D6)))),
         contentAlignment = Alignment.Center
     ) {
         Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(70.dp))
@@ -115,7 +125,7 @@ internal fun PillSwitch(options: List<String>, selected: Int, onSelect: (Int) ->
     }
 }
 
-/** Filter chip with the app's look: purple outline and text when selected. */
+/** Filter chip with the app's look: blue outline and text when selected. */
 @Composable
 internal fun AppChip(
     selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit,

@@ -184,10 +184,10 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
                         GroupLabel(row.title, if (row.bucket == Bucket.OVERDUE) Warn else Muted)
-                        Text("${row.count}", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        Text("${row.count}", fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             color = if (row.bucket == Bucket.OVERDUE) Warn else Primary,
                             modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                                .background(if (row.bucket == Bucket.OVERDUE) Color(0xFF3A1D22) else Color(0xFF2A2250))
+                                .background(if (row.bucket == Bucket.OVERDUE) OverdueTint else TagTint)
                                 .padding(horizontal = 8.dp, vertical = 2.dp))
                     }
                     is Row2.Task -> TaskCard(row.item, { tick(row.item) }, { editing = row.item })
@@ -265,13 +265,13 @@ private fun TaskCard(t: TaskItem, onTick: () -> Unit, onChip: () -> Unit) {
             Text(t.text, fontSize = 14.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val from = if (t.path != VaultTasks.QUICK_TASK) VaultTasks.noteName(t.path) else null
             val meta = listOfNotNull(t.recurrence?.let { "🔁 $it" }, from?.let { "📄 $it" }).joinToString("  ·  ")
-            if (meta.isNotEmpty()) Text(meta, fontSize = 11.5.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (meta.isNotEmpty()) Text(meta, fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(
-            t.due?.let { dayChip(it) } ?: "＋ date", fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+            t.due?.let { dayChip(it) } ?: "＋ date", fontSize = 12.sp, fontWeight = FontWeight.Bold,
             color = if (overdue) Warn else if (t.due == null) Muted else TextMain,
             modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                .background(if (overdue) Color(0xFF3A1D22) else Surface2)
+                .background(if (overdue) OverdueTint else Surface2)
                 .clickable(onClick = onChip).padding(horizontal = 9.dp, vertical = 6.dp)
         )
     }

@@ -101,7 +101,7 @@ private fun IdeaList(
         val uri = vault ?: return
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).list() } }
-            r.onSuccess { ideas = it }.onFailure { snack.showSnackbar("Couldn't read ideas: ${it.message}") }
+            r.onSuccess { ideas = it }.onFailure { snack.showSnackbar("Couldn't read projects: ${it.message}") }
         }
     }
     LaunchedEffect(vault) { reload() }
@@ -113,7 +113,7 @@ private fun IdeaList(
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Column(Modifier.padding(top = 8.dp)) {
-                ScreenTitle("Ideas", "${prefs.ideasDir} · ${ideas?.size ?: 0} ideas") {
+                ScreenTitle("Projects", "${prefs.ideasDir} · ${ideas?.size ?: 0}") {
                     Column {
                         AppChip(true, { menu = true }, { Text(if (byUpdated) "Last updated ▾" else "A–Z ▾") },
                             shape = RoundedCornerShape(12.dp))
@@ -125,11 +125,11 @@ private fun IdeaList(
                 }
             }
             OutlinedTextField(
-                query, { query = it }, placeholder = { Text("🔍  Search ideas") }, singleLine = true,
+                query, { query = it }, placeholder = { Text("🔍  Search projects") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), shape = CircleShape, colors = fieldColors()
             )
             if (ideas != null && shown.isEmpty()) {
-                Text(if (ideas!!.isEmpty()) "No ideas yet. Tap “New idea” to start one." else "Nothing matches.", color = Muted)
+                Text(if (ideas!!.isEmpty()) "No projects yet" else "Nothing matches.", color = Muted)
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp)) {
@@ -137,7 +137,7 @@ private fun IdeaList(
             }
         }
         Text(
-            "＋ New idea", color = OnPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+            "＋ New project", color = OnPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp,
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).clip(RoundedCornerShape(18.dp)).background(Primary)
                 .clickable { if (vault == null) scope.launch { snack.showSnackbar("Pick your vault in Settings first") } else creating = true }
                 .padding(horizontal = 20.dp, vertical = 14.dp)
@@ -165,7 +165,7 @@ private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () ->
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(Modifier.size(58.dp).clip(RoundedCornerShape(12.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF5B3FD6), Color(0xFF2B1D6B)))),
+            .background(Brush.linearGradient(listOf(Color(0xFF3F62D6), Color(0xFF1B2A6B)))),
             contentAlignment = Alignment.Center) {
             if (thumb != null) AsyncImage(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(idea.title.take(1).uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -180,7 +180,7 @@ private fun IdeaCard(idea: IdeaSummary, images: Map<String, Uri>, onClick: () ->
                     append(" · ").append(dayChip(modified))
                     if (idea.status != "idea") append(" · ${idea.status}")
                 },
-                fontSize = 11.sp, color = Muted, modifier = Modifier.padding(top = 5.dp)
+                fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 5.dp)
             )
         }
     }
@@ -192,7 +192,7 @@ private fun NewIdeaDialog(onCreate: (String, String) -> Unit, onDismiss: () -> U
     var summary by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = Surface1,
-        title = { Text("New idea") },
+        title = { Text("New project") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, colors = fieldColors(),
@@ -238,7 +238,7 @@ private fun IdeaDetail(
         val uri = vault ?: return
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).load(title) } }
-            r.onSuccess { doc = it }.onFailure { snack.showSnackbar("Couldn't open idea: ${it.message}") }
+            r.onSuccess { doc = it }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
         }
     }
     LaunchedEffect(title, vault) { reload() }
@@ -293,7 +293,7 @@ private fun IdeaDetail(
                 TextButton(onClick = onBack) { Text("←", fontSize = 24.sp, color = TextMain) }
                 Column {
                     Text(
-                        d?.status ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6EE7B7),
+                        d?.status ?: "", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Green,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(TaskTint).clickable { statusMenu = true }
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     )
@@ -326,7 +326,7 @@ private fun IdeaDetail(
             }
         }
 
-        Column(Modifier.fillMaxWidth().background(Color(0xFF191623)).padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)) {
+        Column(Modifier.fillMaxWidth().background(NavBg).padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)) {
             if (pending.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     pending.forEach { u ->
@@ -341,7 +341,7 @@ private fun IdeaDetail(
             }
             OutlinedTextField(
                 text, { text = it; prefs.setDraft("idea_$title", it) },
-                placeholder = { Text("Add more to this idea…") }, maxLines = 5, shape = RoundedCornerShape(18.dp),
+                placeholder = { Text("Add to the log…") }, maxLines = 5, shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
             )
@@ -402,7 +402,7 @@ private fun EntryRow(e: IdeaEntry, images: Map<String, Uri>, onEdit: () -> Unit,
         }.padding(start = 16.dp, bottom = 16.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(entryLabel(e.heading), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = Muted)
+            Text(entryLabel(e.heading), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Muted)
             Text("✎", color = Primary, modifier = Modifier.clickable(onClick = onEdit).padding(horizontal = 6.dp))
         }
         if (e.text.isNotBlank()) Text(e.text, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 4.dp))

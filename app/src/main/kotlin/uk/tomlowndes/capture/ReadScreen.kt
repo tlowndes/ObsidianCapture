@@ -179,7 +179,7 @@ private fun ReadList(
             articles != null && shown.isEmpty() -> Text(
                 when {
                     query.isNotBlank() -> "Nothing matches."
-                    filter == ReadFilter.UNREAD -> "All caught up. Share a page to Vault Capture to save it here."
+                    filter == ReadFilter.UNREAD -> "All caught up. Share a page to Flight Deck to save it here."
                     filter == ReadFilter.READ -> "Nothing read yet."
                     else -> "Nothing archived yet."
                 }, color = Muted
@@ -247,7 +247,7 @@ private fun CardBody(
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
                 Text(
                     listOfNotNull(ReadStore.host(a.url), savedLabel(a.saved), minutes(a.words)).joinToString(" · "),
-                    fontSize = 11.sp, color = Muted, modifier = Modifier.padding(top = 5.dp)
+                    fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 5.dp)
                 )
             }
         }
@@ -401,7 +401,7 @@ private fun ArticleView(
         }
         HorizontalDivider(color = Outline)
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFF191623)).navigationBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().background(NavBg).navigationBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
             if (ref.archived) {
@@ -436,7 +436,7 @@ private fun BarButton(icon: String, label: String, onClick: () -> Unit) {
     TextButton(onClick = onClick) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(icon, fontSize = 18.sp, color = Primary)
-            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Muted)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Muted)
         }
     }
 }

@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class Tab(val label: String, val icon: String) {
-    CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), IDEAS("Ideas", "💡"), READ("Read", "📖")
+    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), PROJECTS("Projects", "💡")
 }
 
 class MainActivity : ComponentActivity() {
@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
         val vault = prefs.vault
         lifecycleScope.launch {
             val msg = when {
-                vault == null -> "Open Vault Capture once and pick your vault first"
+                vault == null -> "Open Flight Deck once and pick your vault first"
                 url.isBlank() -> "Nothing to save"
                 else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
                     .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
     var vault by remember { mutableStateOf(prefs.vault) }
-    var tab by remember { mutableStateOf(request?.first ?: Tab.CAPTURE) }
+    var tab by remember { mutableStateOf(request?.first ?: Tab.DECK) }
     var settings by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var openIdea by remember { mutableStateOf<String?>(null) }
@@ -165,7 +165,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    val hideNav = (tab == Tab.IDEAS && openIdea != null) || (tab == Tab.READ && openArticle != null)
+    val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null)
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
@@ -175,9 +175,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             when {
                 settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) })
                 search -> SearchScreen(vault, snack) { search = false }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true }) { settings = true }
+                tab == Tab.DECK -> DeckScreen(vault, prefs, snack) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, snack, onOpenSearch = { search = true })
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack)
-                tab == Tab.IDEAS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
+                tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
                 else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
             }
         }
@@ -186,7 +187,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 
 @Composable
 private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Color(0xFF191623))) {
+    Column(Modifier.fillMaxWidth().background(NavBg)) {
         HorizontalDivider(color = Outline)
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(66.dp),
@@ -195,10 +196,10 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
             Tab.values().forEach { t ->
                 val on = t == selected
                 Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) Surface2 else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
+                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
-                    Text(t.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
+                    Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
                 }
             }
         }

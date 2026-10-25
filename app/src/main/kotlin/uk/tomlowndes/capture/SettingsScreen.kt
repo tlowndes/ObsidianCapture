@@ -74,7 +74,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit) {
         SettingRow("Vault", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
             TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
         }
-        PathField("Ideas folder", prefs.ideasDir) { prefs.ideasDir = it }
+        PathField("Projects folder", prefs.ideasDir) { prefs.ideasDir = it }
         PathField("Images folder", prefs.imagesDir) { prefs.imagesDir = it }
     }
 }
