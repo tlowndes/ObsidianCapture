@@ -81,6 +81,11 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
 
     fun load(title: String): IdeaDoc = docOf(title, noteOf(title), logOf(title))
 
+    /** A project's own Changelog or Decisions note, without its frontmatter; null when there isn't one. */
+    fun notePart(title: String, name: String): String? =
+        join(folderOf(title), "$name.md").takeIf { vault.entry(it) != null }
+            ?.let { Md.fmBody(read(it).split("\n")).joinToString("\n").trim() }
+
     /** Image file name -> what this platform's image loader takes, for everything in the images folder. */
     fun imageIndex(): Map<String, Any> =
         vault.list(prefs.imagesDir).filter { !it.isDir }.associate { it.name to vault.handle(join(prefs.imagesDir, it.name)) }

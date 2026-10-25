@@ -273,6 +273,7 @@ private fun IdeaDetail(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var doc by remember { mutableStateOf<IdeaDoc?>(null) }
+    var notes by remember { mutableStateOf<Pair<String?, String?>>(null to null) }
     var text by remember { mutableStateOf(prefs.draft("idea_$title")) }
     val pending = remember { mutableStateListOf<Uri>() }
     var busy by remember { mutableStateOf(false) }
@@ -285,8 +286,13 @@ private fun IdeaDetail(
     fun reload() {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).load(title) } }
-            r.onSuccess { doc = it }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val store = IdeaStore(ctx, uri, prefs)
+                    store.load(title) to (store.notePart(title, "Changelog") to store.notePart(title, "Decisions"))
+                }
+            }
+            r.onSuccess { doc = it.first; notes = it.second }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
         }
     }
     LaunchedEffect(title, vault) { reload() }
@@ -346,7 +352,7 @@ private fun IdeaDetail(
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     )
                     DropdownMenu(statusMenu, { statusMenu = false }, modifier = Modifier.background(Surface2)) {
-                        listOf("active", "shelved", "idea").forEach { s ->
+                        ProjectGroup.STATUSES.forEach { s ->
                             DropdownMenuItem(text = { Text(s) }, onClick = { statusMenu = false; run { setStatus(title, s) } })
                         }
                         HorizontalDivider(color = Outline)
@@ -379,6 +385,13 @@ private fun IdeaDetail(
                 fontSize = 13.5.sp, lineHeight = 19.sp, color = if (d?.summary.isNullOrBlank()) Muted else TextMain,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).padding(14.dp)
             )
+
+            d?.next?.let { next ->
+                Box(Modifier.padding(top = 18.dp, bottom = 10.dp)) { GroupLabel("Next step") }
+                Text("☐  $next", fontSize = 13.5.sp, color = TextMain, modifier = Modifier.fillMaxWidth())
+            }
+            notes.first?.takeIf { it.isNotBlank() }?.let { NotesBlock("Changelog", it) }
+            notes.second?.takeIf { it.isNotBlank() }?.let { NotesBlock("Decisions", it) }
 
             Box(Modifier.padding(top = 18.dp, bottom = 10.dp)) { GroupLabel("Log") }
             if (d != null && d.entries.isEmpty()) Text("Nothing logged yet. Add the first thought below.", color = Muted, fontSize = 13.sp)
@@ -445,6 +458,16 @@ private fun IdeaDetail(
                 contentScale = ContentScale.Fit)
         }
     }
+}
+
+/** A section that shows the project's own note (Changelog or Decisions) as it's written. */
+@Composable
+private fun NotesBlock(label: String, body: String) {
+    Box(Modifier.padding(top = 18.dp, bottom = 10.dp)) { GroupLabel(label) }
+    Text(
+        body, fontSize = 13.sp, lineHeight = 19.sp, color = TextMain,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).padding(14.dp)
+    )
 }
 
 @Composable
