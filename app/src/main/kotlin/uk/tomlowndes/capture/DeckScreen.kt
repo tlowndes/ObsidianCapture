@@ -1,6 +1,9 @@
 package uk.tomlowndes.capture
 
+import android.Manifest
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -103,6 +106,12 @@ fun DeckScreen(
     var data by remember { mutableStateOf(DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
+    var weather by remember { mutableStateOf<WeatherSummary?>(null) }
+    var canLocate by remember { mutableStateOf(WeatherFetch.allowed(ctx)) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { canLocate = it }
+    LaunchedEffect(refresh, canLocate) {
+        weather = withContext(Dispatchers.IO) { runCatching { WeatherFetch.today(ctx, force = refresh > 0) }.getOrNull() }
+    }
 
     // Proton: sync on start, then every 30 min while Flight Deck is open.
     LaunchedEffect(vault) {
@@ -174,7 +183,12 @@ fun DeckScreen(
                     BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
                 }
                 HomeCard.TODAY -> data.calendars?.let { sources -> TodayCard(sources, cal, onConnect = onOpenSettings) }
-                HomeCard.WEATHER, HomeCard.JOBS -> {}
+                HomeCard.WEATHER -> {
+                    val w = weather
+                    if (w != null) WeatherCard(w)
+                    else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
+                }
+                HomeCard.JOBS -> {}
             }
         }
         Box(Modifier.height(12.dp))
@@ -278,6 +292,17 @@ private fun TodayCard(sources: List<CalendarSource>, cache: List<CalendarCache>,
                 Text(e.title, fontSize = 13.5.sp, color = if (broken) Muted else TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (broken && synced > 0) Text(clockOf(synced), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
             }
+        }
+    }
+}
+
+@Composable
+private fun WeatherCard(w: WeatherSummary) {
+    DeckCard(border = WeatherBorder, bg = WeatherBg) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)) {
+            Text("WEATHER & TRAVEL", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
+            Text("${w.high}° / ${w.low}° · ${w.headline}", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+            Text(w.detail, fontSize = 13.sp, color = Muted, lineHeight = 19.sp)
         }
     }
 }

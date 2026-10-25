@@ -62,6 +62,9 @@ internal val AmberTint = Color(0xFF3A2F17)
 internal val NextBg = Color(0xFF1A2238)
 internal val NextBorder = Color(0xFF2D3D66)
 internal val OverdueLine = Color(0xFF5A2D33)
+internal val WeatherBg = Color(0xFF141D2E)
+internal val WeatherBorder = Color(0xFF2A3D5C)
+internal val WeatherLabel = Color(0xFF7FB8FF)
 
 @Composable
 fun CaptureTheme(content: @Composable () -> Unit) {
