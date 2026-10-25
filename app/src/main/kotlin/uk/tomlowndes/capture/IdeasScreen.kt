@@ -274,6 +274,8 @@ private fun IdeaDetail(
     val scope = rememberCoroutineScope()
     var doc by remember { mutableStateOf<IdeaDoc?>(null) }
     var notes by remember { mutableStateOf<Pair<String?, String?>>(null to null) }
+    var github by remember { mutableStateOf<GitHubRepo.Activity?>(null) }
+    var githubError by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf(prefs.draft("idea_$title")) }
     val pending = remember { mutableStateListOf<Uri>() }
     var busy by remember { mutableStateOf(false) }
@@ -292,7 +294,16 @@ private fun IdeaDetail(
                     store.load(title) to (store.notePart(title, "Changelog") to store.notePart(title, "Decisions"))
                 }
             }
-            r.onSuccess { doc = it.first; notes = it.second }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
+            r.onSuccess { doc = it.first; notes = it.second }
+            // The repo line needs a token on the phone and a github.com link in the note.
+            val token = SecretStore(ctx).githubToken
+            val repo = GitHubRepo.repoOf(withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).noteText(title) }.getOrDefault("") })
+            github = null
+            githubError = false
+            if (token != null && repo != null) {
+                withContext(Dispatchers.IO) { runCatching { GitHubRepo.fetch(repo.first, repo.second, token) } }
+                    .onSuccess { github = it }.onFailure { githubError = true }
+            }.onFailure { snack.showSnackbar("Couldn't open project: ${it.message}") }
         }
     }
     LaunchedEffect(title, vault) { reload() }
@@ -390,6 +401,8 @@ private fun IdeaDetail(
                 Box(Modifier.padding(top = 18.dp, bottom = 10.dp)) { GroupLabel("Next step") }
                 Text("☐  $next", fontSize = 13.5.sp, color = TextMain, modifier = Modifier.fillMaxWidth())
             }
+            github?.let { GitHubBlock(it) }
+            if (githubError) Text("Couldn't reach GitHub. Check the token in Settings.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
             notes.first?.takeIf { it.isNotBlank() }?.let { NotesBlock("Changelog", it) }
             notes.second?.takeIf { it.isNotBlank() }?.let { NotesBlock("Decisions", it) }
 
@@ -457,6 +470,20 @@ private fun IdeaDetail(
             AsyncImage(u, null, Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { viewImage = null },
                 contentScale = ContentScale.Fit)
         }
+    }
+}
+
+/** The repo's last push, open pull requests and latest release. */
+@Composable
+private fun GitHubBlock(a: GitHubRepo.Activity) {
+    Box(Modifier.padding(top = 18.dp, bottom = 10.dp)) { GroupLabel("GitHub") }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).padding(14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column { Text("Last push", fontSize = 12.sp, color = Muted); Text(a.lastPush ?: "–", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        Column { Text("Open PRs", fontSize = 12.sp, color = Muted); Text("${a.openPrs}", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        Column { Text("Release", fontSize = 12.sp, color = Muted); Text(a.release ?: "None", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
     }
 }
 

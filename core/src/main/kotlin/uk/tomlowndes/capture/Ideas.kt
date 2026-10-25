@@ -81,6 +81,9 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
 
     fun load(title: String): IdeaDoc = docOf(title, noteOf(title), logOf(title))
 
+    /** The idea note as written, for finding its links. */
+    fun noteText(title: String): String = read(noteOf(title))
+
     /** A project's own Changelog or Decisions note, without its frontmatter; null when there isn't one. */
     fun notePart(title: String, name: String): String? =
         join(folderOf(title), "$name.md").takeIf { vault.entry(it) != null }
