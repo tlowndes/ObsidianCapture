@@ -31,7 +31,7 @@ class JobsTest {
         val j = Jobs.parse("a/Monzo.md", note("\"Monzo\"", "UX designer", "Applied", "2026-10-30"))!!
         assertEquals(Job("a/Monzo.md", "Monzo", "UX designer", "Applied", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 20)), j)
         assertNull(Jobs.parse("a/Other.md", "---\ntype: area\n---\n"))
-        assertNull(Jobs.parse("a/New.md", note("", "", "", "")).next)
+        assertNull(Jobs.parse("a/New.md", note("", "", "", ""))!!.next)
     }
 
     @Test fun `open jobs sort by next date, closed ones apart`() {
