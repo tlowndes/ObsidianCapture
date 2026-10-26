@@ -40,7 +40,7 @@ import java.util.Locale
 @Composable
 internal fun TaskLine(
     t: TaskItem, edge: Boolean, onTick: () -> Unit, modifier: Modifier = Modifier,
-    faded: Boolean = false, trailing: @Composable RowScope.() -> Unit
+    faded: Boolean = false, onOpen: (() -> Unit)? = null, trailing: @Composable RowScope.() -> Unit
 ) {
     Row(
         modifier.fillMaxWidth().height(IntrinsicSize.Min)
@@ -68,6 +68,7 @@ internal fun TaskLine(
             fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             color = if (faded) Muted else TextMain,
             modifier = Modifier.weight(1f).padding(vertical = 9.dp)
+                .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
         )
         trailing()
     }
@@ -98,7 +99,7 @@ internal fun DuePill(d: LocalDate, onClick: (() -> Unit)? = null) {
 }
 
 /** Time chips offered for a task's estimate. */
-internal val ESTIMATES = listOf(5, 15, 30, 60, 120)
+internal val ESTIMATES = TaskRules.ESTIMATE_CHOICES
 
 /** "▶ 15m" on today's tasks: starts a Focus session. */
 @Composable

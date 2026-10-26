@@ -67,6 +67,18 @@ class VaultWriter(
         return c
     }
 
+    /**
+     * Rewrites this task's wording, due date, recurrence and estimate on its current line.
+     * Anything else on the line (priority, scheduled date, fields the app doesn't edit) stays.
+     * If that exact line is no longer in the note, throws and writes nothing.
+     * Returns the line as it now stands.
+     */
+    fun editTask(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?): String {
+        val updated = TaskRules.editedLine(t.raw, text, due, recurrence, minutes)
+        edit(noteOf(t)) { TaskNote.edit(it, t.raw, text, due, recurrence, minutes) }
+        return updated
+    }
+
     /** Changes (or clears, for null) a task's due date in place. Returns the task's new line. */
     fun rescheduleTask(t: TaskItem, date: LocalDate?): String {
         val updated = TaskRules.withDue(t.raw, date)

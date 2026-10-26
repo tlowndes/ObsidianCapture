@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,7 +25,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,8 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -94,15 +90,14 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
         }
     }
 
-    fun reschedule(t: TaskItem, date: LocalDate?) {
+    fun save(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).rescheduleTask(t, date) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, text, due, recurrence, minutes) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { newRaw ->
-                val msg = if (date == null) "Due date cleared" else "Moved to ${dueLabel(date)}"
-                if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                if (snack.showSnackbar("Task updated", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                     withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
                     reload()
                 }
@@ -165,7 +160,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
                     ListCard(Modifier.padding(top = 6.dp)) {
                         items.forEachIndexed { i, t ->
                             if (i > 0) HorizontalDivider(color = Outline)
-                            TaskLine(t, edge = true, onTick = { tick(t) }) {
+                            TaskLine(t, edge = true, onTick = { tick(t) }, onOpen = { editing = t }) {
                                 if (g == TaskGroup.TODAY) {
                                     (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
                                 } else {
@@ -181,58 +176,11 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
     }
 
     editing?.let { t ->
-        RescheduleDialog(
+        EditTaskSheet(
             t,
-            onDate = { d -> editing = null; reschedule(t, d) },
-            onMinutes = { m ->
-                editing = null
-                val uri = vault
-                if (uri != null) scope.launch {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).setEstimate(t, m) } }
-                        .onFailure { snack.showSnackbar("Failed: ${it.message}") }
-                    reload()
-                }
-            },
+            onSave = { text, due, rule, minutes -> editing = null; save(t, text, due, rule, minutes) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }
         )
     }
-}
-
-@Composable
-private fun RescheduleDialog(t: TaskItem, onDate: (LocalDate?) -> Unit, onMinutes: (Int?) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
-    var picking by remember { mutableStateOf(false) }
-    val today = LocalDate.now()
-    if (picking) {
-        PickDateDialog(t.due, onPick = { onDate(it) }, onDismiss = { picking = false })
-        return
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface1,
-        title = { Text(t.text, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Move due date", color = Muted, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppChip(false, { onDate(today) }, { Text("Today") }, shape = RoundedCornerShape(12.dp))
-                    AppChip(false, { onDate(today.plusDays(1)) }, { Text("Tomorrow") }, shape = RoundedCornerShape(12.dp))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppChip(false, { onDate(today.plusDays(7)) }, { Text("Next week") }, shape = RoundedCornerShape(12.dp))
-                    AppChip(false, { picking = true }, { Text("Pick date…") }, shape = RoundedCornerShape(12.dp))
-                }
-                if (t.due != null) TextButton(onClick = { onDate(null) }) { Text("Clear due date", color = Primary) }
-                Text("Time", color = Muted, fontSize = 12.sp)
-                val current = Deck.minutes(t)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ESTIMATES.forEach { m ->
-                        AppChip(current == m, { onMinutes(if (current == m) null else m) }, { Text(TaskRules.minutesLabel(m)) }, shape = RoundedCornerShape(12.dp))
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onRemove) { Text("Remove task", color = Warn) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = Muted) } }
-    )
 }

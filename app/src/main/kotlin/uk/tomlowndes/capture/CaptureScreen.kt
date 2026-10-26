@@ -33,15 +33,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -69,10 +66,8 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.util.Locale
 
 /**
@@ -352,7 +347,6 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     var minutes by remember { mutableStateOf<Int?>(null) }
     var repeat by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
-    var customRepeat by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
     fun submit() {
@@ -406,18 +400,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
         }
-        Box(Modifier.padding(top = 10.dp)) { GroupLabel("Repeat") }
-        val customRule = repeat != null && repeat !in REPEAT_PRESETS.map { it.second }
-        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            REPEAT_PRESETS.forEach { (label, rule) ->
-                AppChip(repeat == rule, { repeat = if (repeat == rule) null else rule }, { Text(if (repeat == rule) "↻ $label" else label) })
-            }
-            AppChip(customRule, { customRepeat = true }, { Text(if (customRule) "↻ Custom" else "Custom…") })
-        }
-        repeat?.let {
-            Text((if (customRule) "🔁 $it · " else "") + "Next one appears when you tick it · first due ${dueLabel(due ?: today)}", fontSize = 12.5.sp, color = Muted,
-                modifier = Modifier.padding(top = 6.dp))
-        }
+        RepeatPicker(repeat, due) { repeat = it }
     }
     Text(
         if (link) "Save link" else "Add task", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
@@ -446,73 +429,4 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         }
     }
     if (picking) PickDateDialog(due, onPick = { due = it; picking = false }, onDismiss = { picking = false })
-    if (customRepeat) RepeatSheet(repeat, onPick = { repeat = it; customRepeat = false }, onDismiss = { customRepeat = false })
-}
-
-private val REPEAT_PRESETS = listOf("Daily" to "every day", "Weekly" to "every week", "Monthly" to "every month")
-private val REPEAT_UNITS = listOf("day", "week", "month", "year")
-
-/** Custom repeat: every N days/weeks/months/years, a set day, or weekdays; optionally counted from the tick. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RepeatSheet(current: String?, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
-    val start = current?.lowercase()?.trim().orEmpty()
-    val startBody = start.removeSuffix("when done").trim()
-    val m = Regex("^every (\\d+ )?(day|week|month|year)s?$").matchEntire(startBody)
-    var every by remember { mutableIntStateOf(m?.groupValues?.get(1)?.trim()?.toIntOrNull() ?: 1) }
-    var unit by remember { mutableStateOf(m?.groupValues?.get(2) ?: "week") }
-    var day by remember { mutableStateOf(DayOfWeek.values().firstOrNull { startBody == "every ${it.name.lowercase()}" }) }
-    var weekdays by remember { mutableStateOf(startBody == "every weekday") }
-    var whenDone by remember { mutableStateOf(start.endsWith("when done")) }
-    val byUnit = day == null && !weekdays
-    val rule = TaskRules.repeatRule(every, unit, day, weekdays, whenDone)
-
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Surface1) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
-            Text("Repeat", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Every", fontSize = 15.sp, color = if (byUnit) TextMain else Muted)
-                Row(
-                    Modifier.padding(start = 10.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Outline, RoundedCornerShape(12.dp)),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("−", color = Muted, fontSize = 16.sp, modifier = Modifier.clickable { every = (every - 1).coerceAtLeast(1); day = null; weekdays = false }
-                        .padding(horizontal = 14.dp, vertical = 7.dp))
-                    Text("$every", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 8.dp))
-                    Text("+", color = Muted, fontSize = 16.sp, modifier = Modifier.clickable { every = (every + 1).coerceAtMost(99); day = null; weekdays = false }
-                        .padding(horizontal = 14.dp, vertical = 7.dp))
-                }
-            }
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                REPEAT_UNITS.forEach { u ->
-                    AppChip(byUnit && unit == u, { unit = u; day = null; weekdays = false }, { Text(if (every == 1) u else "${u}s") })
-                }
-            }
-            Box(Modifier.padding(top = 14.dp)) { GroupLabel("Or on a day") }
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DayOfWeek.values().forEach { d ->
-                    AppChip(day == d, { day = if (day == d) null else d; weekdays = false },
-                        { Text(d.getDisplayName(TextStyle.NARROW, Locale.UK)) })
-                }
-            }
-            AppChip(weekdays, { weekdays = !weekdays; day = null }, { Text("Weekdays") })
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp).clickable { whenDone = !whenDone }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Count from when I tick it", fontSize = 14.sp)
-                    Text("Off: from the due date, like the Tasks plugin", fontSize = 12.sp, color = Muted)
-                }
-                Switch(whenDone, { whenDone = it })
-            }
-            Text("🔁 $rule", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary,
-                modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PrimaryTint)
-                    .padding(horizontal = 12.dp, vertical = 10.dp))
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Clear", color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { onPick(null) }.padding(vertical = 13.dp))
-                Text("Done", color = OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).clip(CircleShape).background(Primary).clickable { onPick(rule) }.padding(vertical = 13.dp))
-            }
-        }
-    }
 }
