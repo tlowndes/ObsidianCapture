@@ -58,7 +58,8 @@ import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.time.LocalDate
 
-private val URL = Regex("^https?://\\S+$")
+/** The whole clipboard or field is one http(s) link, with nothing else around it. */
+internal fun isBareUrl(text: String) = Regex("^https?://\\S+$").matches(text.trim())
 
 /** The small always-on-top popup the global shortcut (or Ctrl+N) opens: add a task or save a link, then it goes away. */
 @Composable
@@ -103,14 +104,14 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
     LaunchedEffect(Unit) {
         // Opened with a link on the clipboard: start in Link mode with it filled in, selected so typing replaces it.
         val clip = runCatching { Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as String }.getOrNull()?.trim()
-        if (clip != null && URL.matches(clip)) { link = true; value = TextFieldValue(clip, TextRange(0, clip.length)) }
+        if (clip != null && isBareUrl(clip)) { link = true; value = TextFieldValue(clip, TextRange(0, clip.length)) }
         delay(50); focus.requestFocus()
     }
     // A pasted link switches to Link mode by itself.
-    LaunchedEffect(text) { if (URL.matches(text)) link = true }
+    LaunchedEffect(text) { if (isBareUrl(text)) link = true }
     // Link preview, once typing stops.
     LaunchedEffect(text, link) {
-        if (!link || !URL.matches(text) || text == previewFor) return@LaunchedEffect
+        if (!link || !isBareUrl(text) || text == previewFor) return@LaunchedEffect
         preview = null
         delay(400)
         previewFor = text
@@ -122,7 +123,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
         busy = true
         scope.launch {
             if (link) {
-                if (!URL.matches(text)) { busy = false; state.notify("Not a link", "Paste a link starting with http"); return@launch }
+                if (!isBareUrl(text)) { busy = false; state.notify("Not a link", "Paste a link starting with http"); return@launch }
                 val vault = state.vault!!
                 val got = preview?.takeIf { previewFor == text }
                 close()
@@ -168,7 +169,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
                 if (!link && due != null) Text("📅 " + dayChip(due), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextMain,
                     modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(Surface2).padding(horizontal = 9.dp, vertical = 4.dp))
             }
-            if (link && URL.matches(text)) Row(
+            if (link && isBareUrl(text)) Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp)).background(Surface1).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically
             ) {

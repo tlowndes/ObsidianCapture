@@ -66,7 +66,7 @@ Three modes, and it reopens on the last one used:
 
 - **Task**: adds to Quick Task, with Today / Tomorrow / a picked date, a time estimate (5, 15, 30, 60 or 120 minutes) and a repeat (daily, weekly, monthly, or a custom rule).
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
-- **Brain dump**: type or dictate (UK speech recognition). **Sort it** sends the text to Claude Haiku with the tags already in use, and queues it on the phone until you save. Nothing is written until **Check and save**. You can drop items there. Tasks go to Quick Task, ideas become projects with `type: idea`, and any leftover note goes to the inbox. If the phone is offline the dump stays queued and sorts on the next try. This needs the Claude API key from Settings.
+- **Brain dump**: type or dictate (UK speech recognition). **Sort it** sends the text to Claude with the tags already in use, and queues it on the phone until you save. Nothing is written until **Check and save**. You can drop items there. Tasks go to Quick Task, ideas become projects with `type: idea`, and any leftover note goes to the inbox. The model is `claude-haiku-5-5` unless Settings has another id. If Claude rejects that model, Sort it says so and you can paste a current id. Save writes the tasks, the ideas and the note together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again. If the phone is offline the dump stays queued and sorts on the next try. This needs the Claude API key from Settings.
 
 ### Tasks
 
@@ -127,6 +127,7 @@ Deck, Sort it, the calendar, weather, habits, jobs and the focus timer are on th
 2. Open Settings and pick the vault root, the folder that contains `.obsidian`. On Android the gear is on Deck. Until a vault is picked, Deck shows a banner and capture tells you to pick one.
 3. Optional, Android only, all on the Settings screen:
    - **Claude API key** (`sk-ant-…`) for Sort it. Stored on the phone, encrypted with the Android Keystore.
+   - **Sort it model**, the Claude model id. Leave it on `claude-haiku-5-5` unless that model is retired.
    - **GitHub token** (`github_pat_…`) for the activity line on a project, stored the same way. Read access to the linked repos is enough.
    - **Proton Calendar.** In Proton Calendar on the web: Settings › Share › Share with anyone, Full view, then paste the `.ics` link. Name it and pick a colour. Links are saved in `99 - Meta/capture-config.json` and fetched read-only. Deck keeps the next seven days and refreshes every 30 minutes while it is open.
    - **Reminders**, the times above.

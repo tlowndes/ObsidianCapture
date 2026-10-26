@@ -10,39 +10,58 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import kotlin.math.max
+
+/**
+ * One node in a document tree. On Android this is a Storage Access Framework document; tests use a
+ * memory tree so the path, create and move logic can run without a device.
+ */
+internal interface VaultDoc {
+    val name: String
+    val isDirectory: Boolean
+    val modified: Long
+    val length: Long
+    fun findChild(name: String): VaultDoc?
+    fun children(): List<VaultDoc>
+    fun mkdir(name: String): VaultDoc?
+    fun createFile(mime: String, displayName: String): VaultDoc?
+    fun open(): InputStream?
+    fun writeBytes(bytes: ByteArray)
+    fun delete()
+    /** Moves this document from [fromDir] into [targetDir], or null if this tree can't move it. */
+    fun moveInto(fromDir: VaultDoc, targetDir: VaultDoc): VaultDoc?
+    fun handle(): Any
+}
 
 /**
  * The vault through the Storage Access Framework folder the user picked. Folder listings use one query per folder
  * (DocumentFile asks again for every name and type, which is far too slow for a whole vault).
  */
-class SafVault(private val ctx: Context, private val tree: Uri) : Vault {
-    private val root = DocumentFile.fromTreeUri(ctx, tree) ?: error("Vault folder unavailable")
-    private val cr get() = ctx.contentResolver
+class SafVault internal constructor(private val root: VaultDoc) : Vault {
+    constructor(ctx: Context, tree: Uri) : this(androidRoot(ctx, tree))
 
     private fun parts(path: String) = path.split("/").filter { it.isNotEmpty() }
 
-    private fun find(path: String): DocumentFile? {
+    private fun find(path: String): VaultDoc? {
         var cur = root
-        for (p in parts(path)) cur = cur.findFile(p) ?: return null
+        for (p in parts(path)) cur = cur.findChild(p) ?: return null
         return cur
     }
 
-    private fun need(path: String) = find(path) ?: error("${nameOf(path)} not found")
-
     private fun nameOf(path: String) = path.substringAfterLast('/')
 
-    private fun folder(path: String): DocumentFile {
+    private fun folder(path: String): VaultDoc {
         var cur = root
         for (p in parts(path)) {
-            cur = cur.findFile(p)?.takeIf { it.isDirectory } ?: cur.createDirectory(p) ?: error("Cannot create $p")
+            cur = cur.findChild(p)?.takeIf { it.isDirectory } ?: cur.mkdir(p) ?: error("Cannot create $p")
         }
         return cur
     }
 
     override fun read(path: String, max: Int): String? {
-        val f = find(path)?.takeIf { it.isFile } ?: return null
-        return cr.openInputStream(f.uri)?.bufferedReader()?.use { r ->
+        val f = find(path)?.takeIf { !it.isDirectory } ?: return null
+        return f.open()?.bufferedReader()?.use { r ->
             if (max == Int.MAX_VALUE) return@use r.readText()
             val buf = CharArray(max)
             var n = 0
@@ -54,49 +73,29 @@ class SafVault(private val ctx: Context, private val tree: Uri) : Vault {
     override fun writeOnce(path: String, text: String) = writeBytes(path, text.toByteArray())
 
     override fun writeBytes(path: String, bytes: ByteArray) {
-        cr.openOutputStream(need(path).uri, "wt")?.use { it.write(bytes); it.flush() } ?: error("Cannot write ${nameOf(path)}")
+        (find(path) ?: error("${nameOf(path)} not found")).writeBytes(bytes)
     }
 
     override fun entry(path: String): Vault.Entry? =
-        find(path)?.let { Vault.Entry(it.name ?: nameOf(path), it.isDirectory, it.lastModified(), it.length()) }
-
-    private val cols = arrayOf(
-        DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-        DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-        DocumentsContract.Document.COLUMN_SIZE
-    )
-
-    /** Children of the folder with document id [docId]: (id, entry). */
-    private fun children(docId: String): List<Pair<String, Vault.Entry>> {
-        val out = mutableListOf<Pair<String, Vault.Entry>>()
-        cr.query(DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId), cols, null, null, null)?.use { c ->
-            while (c.moveToNext()) {
-                val id = c.getString(0) ?: continue
-                val name = c.getString(1) ?: continue
-                val isDir = c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
-                out.add(id to Vault.Entry(name, isDir, c.getLong(3), if (c.isNull(4)) 0L else c.getLong(4)))
-            }
-        }
-        return out
-    }
+        find(path)?.let { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
 
     override fun list(dir: String): List<Vault.Entry> {
         val d = find(dir)?.takeIf { it.isDirectory } ?: return emptyList()
-        return children(DocumentsContract.getDocumentId(d.uri)).map { it.second }
+        return d.children().map { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
     }
 
     override fun notes(skip: (String) -> Boolean): List<VaultNote> {
         val out = mutableListOf<VaultNote>()
-        fun walk(docId: String, prefix: String) {
-            val dirs = mutableListOf<Pair<String, String>>()
-            for ((id, e) in children(docId)) {
+        fun walk(doc: VaultDoc, prefix: String) {
+            val dirs = mutableListOf<Pair<VaultDoc, String>>()
+            for (e in doc.children()) {
                 val path = prefix + e.name
-                if (e.isDir) { if (!skip(path)) dirs.add(id to "$path/") }
+                if (e.isDirectory) { if (!skip(path)) dirs.add(e to "$path/") }
                 else if (e.name.endsWith(".md") && !e.name.startsWith(".")) out.add(VaultNote(path, e.modified))
             }
-            dirs.forEach { (id, p) -> walk(id, p) }
+            dirs.forEach { (d, p) -> walk(d, p) }
         }
-        walk(DocumentsContract.getTreeDocumentId(tree), "")
+        walk(root, "")
         return out
     }
 
@@ -111,29 +110,103 @@ class SafVault(private val ctx: Context, private val tree: Uri) : Vault {
             else -> "application/octet-stream" to "$base.$ext"
         }
         val f = folder(dir).createFile(mime, name) ?: error("Cannot create $base.$ext")
-        val made = f.name ?: "$base.$ext"
+        val made = f.name.ifEmpty { "$base.$ext" }
         return if (dir.isEmpty()) made else "$dir/$made"
     }
 
     override fun move(path: String, toDir: String): String {
-        val f = need(path)
-        val name = f.name ?: nameOf(path)
+        val f = find(path) ?: error("${nameOf(path)} not found")
+        val name = f.name
         val from = find(path.substringBeforeLast('/', "")) ?: error("Cannot move $name")
         val to = folder(toDir)
-        val moved = runCatching { DocumentsContract.moveDocument(cr, f.uri, from.uri, to.uri) }.getOrNull()
-        if (moved != null) return "$toDir/" + (DocumentFile.fromSingleUri(ctx, moved)?.name ?: name)
+        val moved = f.moveInto(from, to)
+        if (moved != null) return "$toDir/" + moved.name.ifEmpty { name }
         // Provider can't move: copy, then remove the original.
-        val bytes = cr.openInputStream(f.uri)?.use { it.readBytes() } ?: error("Cannot move $name")
+        val bytes = f.open()?.use { it.readBytes() } ?: error("Cannot move $name")
         val copy = create(toDir, name.substringBeforeLast('.'), name.substringAfterLast('.', "md"))
         writeBytes(copy, bytes)
-        if (cr.openInputStream(need(copy).uri)?.use { it.readBytes() }?.contentEquals(bytes) != true) error("Cannot move $name")
+        val back = find(copy)?.open()?.use { it.readBytes() }
+        if (back == null || !back.contentEquals(bytes)) error("Cannot move $name")
         f.delete()
         return copy
     }
 
     override fun delete(path: String) { find(path)?.delete() }
 
-    override fun handle(path: String): Any = need(path).uri
+    override fun handle(path: String): Any = (find(path) ?: error("${nameOf(path)} not found")).handle()
+}
+
+private fun androidRoot(ctx: Context, tree: Uri): VaultDoc {
+    val root = DocumentFile.fromTreeUri(ctx, tree) ?: error("Vault folder unavailable")
+    return AndroidDoc(ctx, tree, root, DocumentsContract.getTreeDocumentId(tree), root.uri, root.name ?: "", true, root.lastModified(), root.length())
+}
+
+/** A SAF document. [file] is set for the tree root and anything reached by [VaultDoc.findChild]; listings use a query. */
+private class AndroidDoc(
+    private val ctx: Context,
+    private val tree: Uri,
+    private val file: DocumentFile?,
+    private val docId: String,
+    private val uri: Uri,
+    override val name: String,
+    override val isDirectory: Boolean,
+    override val modified: Long,
+    override val length: Long,
+) : VaultDoc {
+    private val cr get() = ctx.contentResolver
+
+    override fun findChild(name: String): VaultDoc? {
+        val f = file?.findFile(name) ?: return null
+        return fromFile(f)
+    }
+
+    override fun children(): List<VaultDoc> {
+        val cols = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        val out = mutableListOf<VaultDoc>()
+        cr.query(DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId), cols, null, null, null)?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0) ?: continue
+                val childName = c.getString(1) ?: continue
+                val isDir = c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+                val childUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                out.add(AndroidDoc(ctx, tree, null, id, childUri, childName, isDir, c.getLong(3), if (c.isNull(4)) 0L else c.getLong(4)))
+            }
+        }
+        return out
+    }
+
+    override fun mkdir(name: String): VaultDoc? = file?.createDirectory(name)?.let(::fromFile)
+
+    override fun createFile(mime: String, displayName: String): VaultDoc? = file?.createFile(mime, displayName)?.let(::fromFile)
+
+    override fun open(): InputStream? = cr.openInputStream(uri)
+
+    override fun writeBytes(bytes: ByteArray) {
+        cr.openOutputStream(uri, "wt")?.use { it.write(bytes); it.flush() } ?: error("Cannot write $name")
+    }
+
+    override fun delete() {
+        if (file != null) file.delete() else DocumentsContract.deleteDocument(cr, uri)
+    }
+
+    override fun moveInto(fromDir: VaultDoc, targetDir: VaultDoc): VaultDoc? {
+        val fromUri = (fromDir as AndroidDoc).uri
+        val toUri = (targetDir as AndroidDoc).uri
+        val moved = runCatching { DocumentsContract.moveDocument(cr, uri, fromUri, toUri) }.getOrNull() ?: return null
+        val movedName = DocumentFile.fromSingleUri(ctx, moved)?.name ?: name
+        return AndroidDoc(ctx, tree, DocumentFile.fromSingleUri(ctx, moved), DocumentsContract.getDocumentId(moved), moved, movedName, false, 0L, length)
+    }
+
+    override fun handle(): Any = uri
+
+    private fun fromFile(f: DocumentFile) = AndroidDoc(
+        ctx, tree, f, DocumentsContract.getDocumentId(f.uri), f.uri,
+        f.name ?: "", f.isDirectory, f.lastModified(), f.length()
+    )
 }
 
 // ---- the shared stores, set up for Android: the picked folder, the cache folder, and widget refreshes ----

@@ -20,6 +20,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     // Global quick-capture hotkey (Win32 RegisterHotKey).
     implementation("net.java.dev.jna:jna-platform:5.14.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 compose.desktop {

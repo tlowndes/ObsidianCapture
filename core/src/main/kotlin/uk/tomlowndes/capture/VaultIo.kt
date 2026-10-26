@@ -13,14 +13,15 @@ object VaultIo {
     /**
      * Writes [text] in one go and reads it back. If only part of it landed, writes it again.
      * Returns what is in the file afterwards: [text], or a newer version another device wrote on top.
+     * [wait] runs before another try (the attempt number, starting at 0). Tests pass a no-op.
      */
-    fun write(v: Vault, path: String, text: String): String {
+    fun write(v: Vault, path: String, text: String, wait: (Int) -> Unit = ::pause): String {
         repeat(ATTEMPTS) { n ->
             v.writeOnce(path, text)
             val after = read(v, path)
             if (after == text) return after
             if (after.isNotEmpty() && !text.startsWith(after)) return after
-            Thread.sleep(100L * (n + 1))
+            wait(n)
         }
         error("Couldn't save ${nameOf(path)}, try again")
     }
@@ -30,7 +31,7 @@ object VaultIo {
      * Just before writing the note is read again; if it changed in the meantime (a sync landed), [change] is
      * redone on the new copy instead of writing over it. [change] can throw to stop when the bit it edits is gone.
      */
-    fun edit(v: Vault, path: String, change: (MutableList<String>) -> Unit) {
+    fun edit(v: Vault, path: String, wait: (Int) -> Unit = ::pause, change: (MutableList<String>) -> Unit) {
         var current = read(v, path)
         repeat(ATTEMPTS) {
             val lines = current.split("\n").toMutableList()
@@ -39,10 +40,12 @@ object VaultIo {
             if (out == current) return
             val latest = read(v, path)
             if (latest != current) { current = latest; return@repeat }
-            val after = write(v, path, out)
+            val after = write(v, path, out, wait)
             if (after == out) return
             current = after
         }
         error("${nameOf(path)} kept changing on another device, try again")
     }
+
+    private fun pause(attempt: Int) { Thread.sleep(100L * (attempt + 1)) }
 }

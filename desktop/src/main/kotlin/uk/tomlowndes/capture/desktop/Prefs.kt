@@ -5,8 +5,7 @@ import java.io.File
 import java.util.prefs.Preferences
 
 /** Settings kept in the Windows user registry (java.util.prefs), the desktop twin of the Android app's AppPrefs. */
-class DesktopPrefs : VaultPrefs {
-    private val p: Preferences = Preferences.userRoot().node("uk/tomlowndes/capture")
+class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/tomlowndes/capture")) : VaultPrefs {
 
     private fun str(key: String, def: String) = p.get(key, def)
     private fun put(key: String, v: String?) { if (v == null) p.remove(key) else p.put(key, v); p.flush() }
