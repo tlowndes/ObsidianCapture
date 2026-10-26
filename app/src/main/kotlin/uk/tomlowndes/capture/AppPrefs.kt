@@ -66,6 +66,17 @@ class AppPrefs(ctx: Context) : VaultPrefs {
             p.getStringSet("later", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
 
+    /**
+     * Claude model id for Sort it. Blank or missing uses [Sorting.MODEL], so a retired id can be
+     * replaced in Settings without a new build.
+     */
+    var sortModel: String
+        get() = p.getString("sort_model", null)?.trim()?.ifEmpty { null } ?: Sorting.MODEL
+        set(v) {
+            val id = v.trim()
+            p.edit().apply { if (id.isEmpty() || id == Sorting.MODEL) remove("sort_model") else putString("sort_model", id) }.apply()
+        }
+
     /** Brain dumps waiting to be sorted or saved; raw text is kept until Save. */
     var captureQueue: List<QueuedDump>
         get() = Sorting.queueFromJson(p.getString("capture_queue", null))

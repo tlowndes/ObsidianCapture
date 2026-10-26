@@ -21,6 +21,12 @@ import java.io.File
 import java.net.URI
 import java.net.URLEncoder
 
+/** obsidian:// link for [path] inside the vault named [vaultName]. Spaces are %20; the .md is dropped. */
+fun obsidianOpenUrl(vaultName: String, path: String): String {
+    fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+    return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
+}
+
 enum class Tab { TASKS, IDEAS, READ, FIND, SETTINGS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
@@ -74,8 +80,7 @@ class AppState(val prefs: DesktopPrefs) {
     /** Opens a vault note in Obsidian (obsidian://open), or the URL in the browser. */
     fun openInObsidian(path: String) {
         val v = prefs.vault ?: return
-        fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
-        browse("obsidian://open?vault=${enc(v.name)}&file=${enc(path.removeSuffix(".md"))}")
+        browse(obsidianOpenUrl(v.name, path))
     }
 
     fun browse(url: String) {

@@ -146,6 +146,11 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Claude API key", masked ?: "Not set") {
             TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
         }
+        PathField("Sort it model", prefs.sortModel) { prefs.sortModel = it }
+        Text(
+            "Claude model id for brain dumps. ${Sorting.MODEL} is the default. If Claude says that model was rejected, put the current id here.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp)
+        )
         SettingRow("GitHub token", ghMasked ?: "Not set") {
             TextButton(onClick = { editingGh = true }) { Text(if (ghMasked == null) "Add" else "Change", color = Primary) }
         }

@@ -87,11 +87,9 @@ class MainActivity : ComponentActivity() {
      * Returns false for a link, which still goes to Read It Later.
      */
     private fun toCapture(i: Intent): Boolean {
-        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
-        val url = Regex("https?://\\S+").find(text)?.value
-        if (text.isEmpty() || (url != null && text.replace(url, "").trim().length < 60)) return false
-        val draft = prefs.draft("capture").trim()
-        prefs.setDraft("capture", if (draft.isEmpty()) text else "$draft\n$text")
+        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        if (ShareIntent.isPage(text)) return false
+        prefs.setDraft("capture", ShareIntent.captureDraft(prefs.draft("capture"), text))
         prefs.captureMode = 2
         openRequest = Tab.CAPTURE to null
         return true
@@ -117,9 +115,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
-        val url = Regex("https?://\\S+").find(text)?.value ?: text
-        val title = i.getStringExtra(Intent.EXTRA_SUBJECT) ?: text.replace(url, "").trim().ifBlank { null }
+        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        val url = ShareIntent.urlOf(text)
+        val title = ShareIntent.pageTitle(text, i.getStringExtra(Intent.EXTRA_SUBJECT))
         val vault = prefs.vault
         lifecycleScope.launch {
             val msg = when {

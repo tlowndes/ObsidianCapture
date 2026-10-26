@@ -19,7 +19,11 @@ data class QueuedDump(val id: Long, val text: String, val sorted: SortResult? = 
  * The Capture "Sort it" step, minus the network call: the instructions and output schema sent to Claude,
  * reading its JSON answer, and writing the result into the vault.
  */
+/** Save failed. [message] is what to show the user; a retry of the same result won't add a second copy. */
+class SortSaveException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
 object Sorting {
+    /** Default Claude model for Sort it. The phone can override it in Settings. */
     const val MODEL = "claude-haiku-5-5"
 
     val SYSTEM = """
@@ -68,14 +72,70 @@ object Sorting {
     /** The Quick Task text for a sorted task: its words plus its tag (the due date is added by [VaultWriter.addTask]). */
     fun taskText(t: SortedTask) = listOfNotNull(t.text, t.tag).joinToString(" ")
 
-    /** Writes [r] into the vault: tasks to Quick Task, ideas as projects tagged `type: idea`, the note to the inbox. */
+    /**
+     * Writes [r] into the vault: tasks to Quick Task, ideas as projects tagged `type: idea`, the note to the inbox.
+     * The three are written one after another. If one fails, this attempt's writes are removed, so the vault is
+     * unchanged. If that cleanup itself fails, what's left is kept and a second Save matches it and doesn't add
+     * it again. Either way this throws [SortSaveException] with a message for the user.
+     */
     fun save(r: SortResult, writer: VaultWriter, ideas: IdeaStore, today: LocalDate = LocalDate.now()) {
-        r.tasks.forEach { writer.addTask(taskText(it), it.due?.toString()) }
-        r.ideas.forEach { title ->
-            val made = runCatching { ideas.create(title, "") }.getOrNull()
-            if (made != null) ideas.setType(made, "idea")
+        val undo = ArrayDeque<() -> Unit>()
+        try {
+            saveTasks(r, writer, undo)
+            saveIdeas(r, ideas, undo)
+            saveNote(r, writer, today, undo)
+        } catch (e: SortSaveException) {
+            throw e
+        } catch (e: Exception) {
+            val cleaned = rollback(undo)
+            val why = e.message?.takeIf { it.isNotBlank() } ?: "something went wrong"
+            val hint = if (cleaned) "Nothing was written."
+            else "Some of it is already in the vault. Tap Save again and it won't be added twice."
+            throw SortSaveException("Couldn't save this brain dump ($why). $hint", e)
         }
-        r.note?.let { writer.addInboxNote("Capture $today", it + "\n") }
+    }
+
+    /** Tasks in [r] that aren't already open in Quick Task, matched one-for-one on wording and due date. */
+    private fun saveTasks(r: SortResult, writer: VaultWriter, undo: ArrayDeque<() -> Unit>) {
+        val pending = r.tasks.toMutableList()
+        for (have in writer.listQuickTasks()) {
+            val i = pending.indexOfFirst { taskText(it) == have.text && it.due == have.due }
+            if (i >= 0) pending.removeAt(i)
+        }
+        pending.forEach { t ->
+            val text = taskText(t)
+            val due = t.due?.toString()
+            writer.addTask(text, due)
+            val raw = TaskNote.newTask(text, due)
+            undo.addFirst { writer.deleteTask(TaskItem(raw, text, t.due)) }
+        }
+    }
+
+    private fun saveIdeas(r: SortResult, ideas: IdeaStore, undo: ArrayDeque<() -> Unit>) {
+        r.ideas.forEach { raw ->
+            val made = ideas.ensureIdea(raw)
+            if (!made.created) return@forEach
+            undo.addFirst { ideas.discard(made.title) }
+            ideas.setType(made.title, "idea")
+        }
+    }
+
+    private fun saveNote(r: SortResult, writer: VaultWriter, today: LocalDate, undo: ArrayDeque<() -> Unit>) {
+        val body = r.note?.trim()?.takeIf { it.isNotEmpty() }?.plus("\n") ?: return
+        val name = "Capture $today"
+        val already = writer.hasInboxNote(name, body)
+        val path = writer.putInboxNote(name, body)
+        if (!already) undo.addFirst { writer.deleteNote(path) }
+    }
+
+    /** Runs the undos newest first. Returns false if any of them failed, so a retry must not duplicate. */
+    private fun rollback(undo: ArrayDeque<() -> Unit>): Boolean {
+        var cleaned = true
+        while (undo.isNotEmpty()) {
+            val step = undo.removeFirst()
+            if (runCatching { step() }.isFailure) cleaned = false
+        }
+        return cleaned
     }
 
     // ---- the on-phone queue, kept as JSON ----

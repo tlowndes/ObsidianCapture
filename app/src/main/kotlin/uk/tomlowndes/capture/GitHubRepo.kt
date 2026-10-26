@@ -18,9 +18,12 @@ object GitHubRepo {
     fun repoOf(note: String): Pair<String, String>? =
         LINK.find(note)?.let { it.groupValues[1] to it.groupValues[2] }
 
-    /** Blocking network call; run it off the main thread. Throws if GitHub can't be reached. */
-    fun fetch(owner: String, repo: String, token: String): Activity {
-        val base = "https://api.github.com/repos/$owner/$repo"
+    /**
+     * Blocking network call; run it off the main thread. Throws if GitHub can't be reached.
+     * [api] is the API origin; tests point it at a local server.
+     */
+    fun fetch(owner: String, repo: String, token: String, api: String = "https://api.github.com"): Activity {
+        val base = "${api.trimEnd('/')}/repos/$owner/$repo"
         val info = JSONObject(get(base, token))
         val prs = JSONArray(get("$base/pulls?state=open&per_page=100", token))
         val release = runCatching { JSONObject(get("$base/releases/latest", token)).optString("tag_name") }.getOrNull()

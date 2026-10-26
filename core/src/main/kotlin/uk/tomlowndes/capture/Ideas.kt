@@ -58,7 +58,7 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
         return if (log == null) doc else doc.copy(entries = IdeaNote.parse(title, read(log)).entries)
     }
 
-    private fun edit(title: String, change: (MutableList<String>) -> Unit) = VaultIo.edit(vault, noteOf(title), change)
+    private fun edit(title: String, change: (MutableList<String>) -> Unit) = VaultIo.edit(vault, noteOf(title), change = change)
 
     // ---- reading ----
 
@@ -101,10 +101,67 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
         val folder = join(prefs.ideasDir, title)
         require(vault.entry(folder) == null) { "\"$title\" already exists" }
         vault.mkdirs(folder)
-        VaultIo.write(vault, vault.create(folder, title, "md"), IdeaNote.newNote(title, summary, java.time.LocalDate.now()))
-        VaultIo.write(vault, vault.create(folder, IdeaNote.logName(title), "md"), IdeaNote.newLog(title))
+        try {
+            VaultIo.write(vault, vault.create(folder, title, "md"), IdeaNote.newNote(title, summary, java.time.LocalDate.now()))
+            VaultIo.write(vault, vault.create(folder, IdeaNote.logName(title), "md"), IdeaNote.newLog(title))
+        } catch (e: Exception) {
+            runCatching { discard(title) }
+            throw e
+        }
         return title
     }
+
+    /**
+     * The idea project for a Sort it save. [created] is true when this call made it (or finished one a
+     * failed save left half-written), so the caller can remove it if the rest of the save fails.
+     * A project that was already in the vault is left as it is.
+     */
+    fun ensureIdea(rawTitle: String, summary: String = ""): Ensured {
+        val title = IdeaNote.safeName(rawTitle)
+        require(title.isNotBlank()) { "Give the idea a title" }
+        val folder = join(prefs.ideasDir, title)
+        if (vault.entry(folder) == null) return Ensured(create(rawTitle, summary), created = true)
+        if (vault.entry(folder)?.isDir != true) error("\"$title\" already exists")
+        val notePath = join(folder, "$title.md")
+        val logPath = join(folder, "${IdeaNote.logName(title)}.md")
+        val note = if (vault.entry(notePath) != null) VaultIo.read(vault, notePath) else ""
+        val log = if (vault.entry(logPath) != null) VaultIo.read(vault, logPath) else ""
+        if (note.isBlank()) {
+            if (vault.entry(notePath) == null) vault.create(folder, title, "md")
+            VaultIo.write(vault, notePath, IdeaNote.newNote(title, summary, java.time.LocalDate.now()))
+            writeLog(folder, title, logPath)
+            return Ensured(title, created = true)
+        }
+        // The note landed and the log write didn't (the log file is missing or still empty). Finish it,
+        // but don't treat the project as new: a later failure must not delete a note that already survived.
+        if (freshCapture(title, summary, note) && log.isBlank()) writeLog(folder, title, logPath)
+        return Ensured(title, created = false)
+    }
+
+    /** Removes an idea this save just created, files first so the folder can go too. */
+    fun discard(title: String) {
+        val safe = IdeaNote.safeName(title)
+        val folder = join(prefs.ideasDir, safe)
+        if (vault.entry(folder) == null) return
+        vault.list(folder).filter { !it.isDir }.forEach { vault.delete(join(folder, it.name)) }
+        vault.delete(folder)
+    }
+
+    private fun writeLog(folder: String, title: String, logPath: String) {
+        if (vault.entry(logPath) == null) vault.create(folder, IdeaNote.logName(title), "md")
+        VaultIo.write(vault, logPath, IdeaNote.newLog(title))
+    }
+
+    /** The empty idea note [create] writes, ignoring the created date so a later retry still matches. */
+    private fun freshCapture(title: String, summary: String, text: String): Boolean {
+        val created = Regex("created: \\d{4}-\\d{2}-\\d{2}")
+        val got = text.trimEnd().replace(created, "created: DATE")
+        val want = IdeaNote.newNote(title, summary, java.time.LocalDate.EPOCH).trimEnd().replace(created, "created: DATE")
+        return got == want
+    }
+
+    /** Result of [ensureIdea]. */
+    data class Ensured(val title: String, val created: Boolean)
 
     /** [was] is the summary as shown when editing started; stops rather than overwrite a change made elsewhere. */
     fun setSummary(title: String, was: String, text: String) = edit(title) { IdeaNote.setSummary(it, was, text) }

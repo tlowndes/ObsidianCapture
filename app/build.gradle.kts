@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -50,4 +52,12 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // The android.jar stub of org.json throws on every call. Put the real library in front of it.
+    testImplementation("org.json:json:20240303")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+}
+
+tasks.withType<Test>().configureEach {
+    val json = classpath.files.filter { it.name.startsWith("json-") }
+    if (json.isNotEmpty()) classpath = files(json, classpath.filter { !it.name.startsWith("json-") })
 }

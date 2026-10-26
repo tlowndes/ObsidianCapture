@@ -31,7 +31,7 @@ class VaultWriter(
 
     /** Edits a note (redone on the fresh copy if a sync lands meanwhile) and lets listeners know. */
     private fun edit(path: String, change: (MutableList<String>) -> Unit) {
-        VaultIo.edit(vault, path, change)
+        VaultIo.edit(vault, path, change = change)
         onTasksChanged()
     }
 
@@ -120,6 +120,42 @@ class VaultWriter(
     /** Writes a note named [name] (a free name is picked if it's taken) into the inbox. */
     fun addInboxNote(name: String, content: String) {
         VaultIo.write(vault, vault.create(INBOX, name, "md"), content)
+    }
+
+    /** True when an inbox note named [name] (or "[name] (1)") already holds exactly [content]. */
+    fun hasInboxNote(name: String, content: String): Boolean =
+        inboxNamed(name).any { VaultIo.read(vault, "$INBOX/${it.name}") == content }
+
+    /**
+     * Writes [content] into the inbox under [name]. If that exact note is already there, or an empty
+     * file was left by a failed write of it, that file is reused so a retry doesn't add a second copy.
+     * Returns the note's path.
+     */
+    fun putInboxNote(name: String, content: String): String {
+        val named = inboxNamed(name)
+        named.firstOrNull { VaultIo.read(vault, "$INBOX/${it.name}") == content }?.let { return "$INBOX/${it.name}" }
+        val hole = named.firstOrNull { VaultIo.read(vault, "$INBOX/${it.name}").isEmpty() }
+        if (hole != null) {
+            val path = "$INBOX/${hole.name}"
+            VaultIo.write(vault, path, content)
+            return path
+        }
+        val path = vault.create(INBOX, name, "md")
+        try {
+            VaultIo.write(vault, path, content)
+        } catch (e: Exception) {
+            runCatching { vault.delete(path) }
+            throw e
+        }
+        return path
+    }
+
+    /** Removes the note at [path]. Used to undo a capture note when the rest of the save fails. */
+    fun deleteNote(path: String) { vault.delete(path) }
+
+    private fun inboxNamed(name: String): List<Vault.Entry> {
+        val re = Regex("^${Regex.escape(name)}( \\(\\d+\\))?\\.md$")
+        return vault.list(INBOX).filter { !it.isDir && re.matches(it.name) }
     }
 
     companion object {

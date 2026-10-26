@@ -46,7 +46,7 @@ jobs:
           "$sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Unit tests
-        run: ./gradlew --console=plain :core:test testDebugUnitTest
+        run: ./gradlew --console=plain :core:test :desktop:test testDebugUnitTest
 
       - name: Test report
         if: failure()

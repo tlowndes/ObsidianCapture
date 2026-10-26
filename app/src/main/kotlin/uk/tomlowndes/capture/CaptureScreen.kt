@@ -104,14 +104,18 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
         }.orEmpty()
         sorting = true
         for (d in queue.filter { it.sorted == null }) {
-            val r = withContext(Dispatchers.IO) { runCatching { SortClient.sort(key, d.text, tags) } }
+            val r = withContext(Dispatchers.IO) { runCatching { SortClient.sort(key, d.text, tags, model = prefs.sortModel) } }
             r.onSuccess { res ->
                 offline = false
                 val done = d.copy(sorted = res)
                 setQueue(queue.map { if (it.id == d.id) done else it })
                 if (openFirst && checking == null) checking = done
             }.onFailure { e ->
-                if (e is OfflineException) offline = true else snack.showSnackbar("Couldn't sort: ${e.message}")
+                when (e) {
+                    is OfflineException -> offline = true
+                    is ModelRejectedException -> snack.showSnackbar(e.message ?: "That model was rejected")
+                    else -> snack.showSnackbar("Couldn't sort: ${e.message}")
+                }
             }
             if (r.isFailure) break
         }
