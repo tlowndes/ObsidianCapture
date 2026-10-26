@@ -143,6 +143,35 @@ class TaskNoteTest {
         assertEquals(note, text(ls))
     }
 
+    @Test fun `editing one task rewrites that line and leaves every other line alone`() {
+        val ls = lines()
+        TaskNote.edit(ls, milk, "Buy oat milk", LocalDate.parse("2026-10-20"), "every week on Tuesday", 15)
+        val updated = "- [ ] #task Buy oat milk ⏱ 15m 🔁 every week on Tuesday 📅 2026-10-20"
+        assertEquals(note.replace(milk, updated), text(ls))
+        assertEquals(listOf("Buy oat milk", "Call mum", "Bins out"), TaskNote.list(ls).map { it.text })
+        assertEquals("every week on Tuesday", TaskNote.list(ls)[0].recurrence)
+    }
+
+    @Test fun `a line that no longer matches is not overwritten`() {
+        val ls = lines()
+        val before = text(ls)
+        val stale = "- [ ] #task Buy milk 📅 2026-10-13"
+        val ex = assertThrows(IllegalStateException::class.java) {
+            TaskNote.edit(ls, stale, "Buy oat milk", LocalDate.parse("2026-10-20"), "every month on the 1st", null)
+        }
+        assertTrue(ex.message!!.contains("Task changed in Obsidian"))
+        assertEquals(before, text(ls))
+    }
+
+    @Test fun `edit keeps indent priority and fields on that line only`() {
+        val raw = "    - [ ] #task Pay rent 🔁 every month 📅 2026-10-01 ⏫ [id:: abc123]"
+        val next = "- [ ] #task Leave this line alone"
+        val ls = mutableListOf(raw, next)
+        TaskNote.edit(ls, raw, "Pay the rent", LocalDate.parse("2026-11-01"), "every month on the 1st", null)
+        assertEquals("    - [ ] #task Pay the rent 🔁 every month on the 1st 📅 2026-11-01 ⏫ [id:: abc123]", ls[0])
+        assertEquals(next, ls[1])
+    }
+
     @Test fun `delete and its undo`() {
         val ls = lines()
         TaskNote.delete(ls, mum)

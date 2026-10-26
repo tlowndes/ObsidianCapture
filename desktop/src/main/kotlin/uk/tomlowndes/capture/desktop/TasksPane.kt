@@ -86,6 +86,13 @@ fun TasksPane(state: AppState) {
         state.offerUndo("Task removed") { state.io { state.writer()!!.restoreTask(t, null, at = at) }; reload() }
     }
 
+    fun edit(t: TaskItem, text: String, due: LocalDate?, rule: String?, minutes: Int?) = scope.launch {
+        val newRaw = state.io { state.writer()!!.editTask(t, text, due, rule, minutes) } ?: return@launch
+        reload()
+        state.offerUndo("Task updated") { state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload() }
+    }
+
+    var editing by remember { mutableStateOf<TaskItem?>(null) }
     val shown = tasks.orEmpty().filter { filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
@@ -105,7 +112,7 @@ fun TasksPane(state: AppState) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             if (tasks != null && shown.isEmpty()) Sub(if (filter.isBlank()) "Nothing to do." else "No tasks match.", Modifier.padding(top = 24.dp))
             if (!byDue) {
-                shown.forEach { TaskRow(it, ::tick, ::move, ::remove) }
+                shown.forEach { TaskRow(it, ::tick, ::move, ::remove) { editing = it } }
             } else {
                 // Groups flow into two columns, balanced by how many rows each holds.
                 val groups = TaskGroups.groups(shown, LocalDate.now())
@@ -117,13 +124,16 @@ fun TasksPane(state: AppState) {
                         Column(Modifier.weight(1f)) {
                             col.forEach { (b, items) ->
                                 GroupHeader(b, items.size)
-                                items.forEach { TaskRow(it, ::tick, ::move, ::remove) }
+                                items.forEach { TaskRow(it, ::tick, ::move, ::remove) { editing = it } }
                             }
                         }
                     }
                 }
             }
         }
+    }
+    editing?.let { t ->
+        EditTaskDialog(t, onSave = { text, due, rule, minutes -> editing = null; edit(t, text, due, rule, minutes) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
     }
 }
 
@@ -144,6 +154,8 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
     var picked by remember { mutableStateOf<LocalDate?>(null) }
     var noDate by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
+    var repeat by remember { mutableStateOf<String?>(null) }
+    var repeatOpen by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     val (body, typed) = DateWords.split(text, today)
     val due = if (noDate) null else picked ?: typed
@@ -152,8 +164,8 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
         val t = body.trim()
         if (t.isEmpty()) return
         scope.launch {
-            state.io { state.writer()!!.addTask(t, due?.toString()) } ?: return@launch
-            text = ""; picked = null; noDate = false
+            state.io { state.writer()!!.addTask(t + (repeat?.let { " 🔁 $it" } ?: ""), due?.toString()) } ?: return@launch
+            text = ""; picked = null; noDate = false; repeat = null
             onAdded()
             state.say("Added to Quick Task" + (due?.let { " · due ${dueLabel(it)}" } ?: ""))
         }
@@ -172,15 +184,20 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
         Chip("Today", !noDate && due == today, small = true) { picked = today; noDate = false }
         Chip("📅 " + (due?.takeIf { it != today }?.let(::dayChip) ?: "Pick date"), !noDate && due != null && due != today, small = true) { picking = true }
         Chip("No date", noDate, small = true) { noDate = true; picked = null }
+        Chip(repeatChipLabel(repeat), repeat != null, small = true) { repeatOpen = true }
         PrimaryButton("Add", enabled = body.isNotBlank(), hint = "↵") { add() }
     }
     Text("Adds to ⚡ Quick Task · type a date like “fri” or “25 oct”", fontSize = 11.5.sp, color = Muted,
         modifier = Modifier.padding(start = 4.dp, top = 6.dp))
     if (picking) PickDateDialog(due, onPick = { picking = false; picked = it; noDate = it == null }, onDismiss = { picking = false })
+    if (repeatOpen) RepeatDialog(repeat, onPick = { repeatOpen = false; repeat = it }, onDismiss = { repeatOpen = false })
 }
 
 @Composable
-private fun TaskRow(t: TaskItem, onTick: (TaskItem) -> Unit, onMove: (TaskItem, LocalDate?) -> Unit, onRemove: (TaskItem) -> Unit) {
+private fun TaskRow(
+    t: TaskItem, onTick: (TaskItem) -> Unit, onMove: (TaskItem, LocalDate?) -> Unit, onRemove: (TaskItem) -> Unit,
+    onEdit: (TaskItem) -> Unit,
+) {
     val today = LocalDate.now()
     val overdue = t.due?.isBefore(today) == true
     var menu by remember { mutableStateOf(false) }
@@ -195,13 +212,17 @@ private fun TaskRow(t: TaskItem, onTick: (TaskItem) -> Unit, onMove: (TaskItem, 
         ) {
             Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, Primary, CircleShape).hand().clickable { onTick(t) })
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(t.text, fontSize = 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(
+                    t.text, fontSize = 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).hand().clickable { onEdit(t) }
+                )
                 t.recurrence?.let { Text("🔁 $it", fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp), maxLines = 1) }
                 if (t.path != VaultTasks.QUICK_TASK) Text(VaultTasks.noteName(t.path), fontSize = 11.sp, color = LinkBlue,
                     modifier = Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (hovered || menu) Box {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HoverAction("✎ Edit") { onEdit(t) }
                     HoverAction("📅 Move") { menu = true }
                     HoverAction("🗑") { onRemove(t) }
                 }

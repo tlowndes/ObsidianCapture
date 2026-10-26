@@ -2,11 +2,13 @@ package uk.tomlowndes.capture
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.time.LocalDate
 
 /** The stores working on a plain folder, as the desktop app uses them. */
 class FileVaultTest {
@@ -42,6 +44,23 @@ class FileVaultTest {
         w.completeTask(t)
         assertEquals(emptyList<TaskItem>(), w.listQuickTasks())
         assertTrue(file(VaultTasks.QUICK_TASK).readText().contains("- [x] #task Book MOT"))
+    }
+
+    @Test fun `editing a task rewrites its line and a stale line is left alone`() {
+        val w = VaultWriter(vault())
+        w.addTask("Book MOT", "2026-10-17")
+        w.addTask("Call mum", null)
+        val mot = w.listQuickTasks().first { it.text == "Book MOT" }
+        val updated = w.editTask(mot, "Book the MOT", LocalDate.parse("2026-10-20"), "every month on the 1st", 30)
+        val text = file(VaultTasks.QUICK_TASK).readText()
+        assertTrue(text.contains(updated))
+        assertTrue(text.contains("- [ ] #task Call mum"))
+        assertFalse(text.contains("- [ ] #task Book MOT 📅 2026-10-17"))
+        val ex = assertThrows(IllegalStateException::class.java) { w.editTask(mot, "Nope", null, null, null) }
+        assertTrue(ex.message!!.contains("Task changed in Obsidian"))
+        val after = file(VaultTasks.QUICK_TASK).readText()
+        assertEquals(text, after)
+        assertFalse(after.contains("Nope"))
     }
 
     @Test fun `tasks in other notes are found, skipping dot folders`() {

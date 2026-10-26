@@ -70,6 +70,14 @@ object TaskNote {
         lines[i] = updated
     }
 
+    /**
+     * Rewrites [raw] in place: wording, due date, recurrence and estimate. The line has to still be [raw];
+     * if Obsidian (or a sync) changed it, this throws and [lines] is left untouched.
+     */
+    fun edit(lines: MutableList<String>, raw: String, text: String, due: LocalDate?, recurrence: String?, minutes: Int?) {
+        replace(lines, raw, TaskRules.editedLine(raw, text, due, recurrence, minutes))
+    }
+
     fun delete(lines: MutableList<String>, raw: String) {
         if (!lines.remove(raw)) error("Task changed in Obsidian, refreshed")
     }

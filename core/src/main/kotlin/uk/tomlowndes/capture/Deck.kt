@@ -84,11 +84,10 @@ object DeckConfig {
 
 /** Picking what Flight Deck shows from the vault's tasks. */
 object Deck {
-    private val MINUTES = Regex("⏱\\s*(\\d+)\\s*m(?:in)?\\b")
     private val BILL = Regex("(^|\\s)#bill(\\s|$)")
 
     /** Rough minutes from `⏱ 15m`, or null if the task doesn't say. */
-    fun minutes(t: TaskItem): Int? = MINUTES.find(t.raw)?.groupValues?.get(1)?.toIntOrNull()
+    fun minutes(t: TaskItem): Int? = TaskRules.minutes(t.raw)
 
     fun isBill(t: TaskItem) = BILL.containsMatchIn(t.raw)
 
