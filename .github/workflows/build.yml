@@ -2,11 +2,21 @@ name: Build
 
 # Tests, a debug APK and the Windows installer for every push and pull request.
 # Pushing a version tag (e.g. v1.2) also publishes a GitHub Release with the APK and the installer attached.
+# If the release already exists (made on GitHub first), the files are added to it.
+# Run it by hand with a tag to rebuild and re-attach the files to that release.
 on:
   push:
     branches: ["**"]
     tags: ["v*"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach the APK and installer to (e.g. v1.7)"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
 
 concurrency:
   group: build-${{ github.ref }}
@@ -43,7 +53,7 @@ jobs:
         run: |
           ./gradlew --console=plain assembleDebug
           name="VaultCapture-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then name="VaultCapture-$GITHUB_REF_NAME.apk"; fi
+          if [[ -n "$RELEASE_TAG" ]]; then name="VaultCapture-$RELEASE_TAG.apk"; fi
           cp app/build/outputs/apk/debug/app-debug.apk "$name"
           echo "APK=$name" >> "$GITHUB_ENV"
 
@@ -54,10 +64,15 @@ jobs:
           if-no-files-found: error
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "Vault Capture $GITHUB_REF_NAME" --generate-notes
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$APK" --title "Vault Capture $RELEASE_TAG" --generate-notes
+          fi
 
   desktop:
     runs-on: windows-latest
@@ -79,7 +94,7 @@ jobs:
         run: |
           ./gradlew --console=plain :desktop:packageMsi
           name="VaultCapture-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.msi"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then name="VaultCapture-$GITHUB_REF_NAME.msi"; fi
+          if [[ -n "$RELEASE_TAG" ]]; then name="VaultCapture-$RELEASE_TAG.msi"; fi
           cp desktop/build/compose/binaries/main/msi/*.msi "$name"
           echo "MSI=$name" >> "$GITHUB_ENV"
 
@@ -90,8 +105,8 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" "$MSI"
+        run: gh release upload "$RELEASE_TAG" "$MSI" --clobber
