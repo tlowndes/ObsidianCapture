@@ -25,6 +25,20 @@ object TaskRules {
     /** Human label for a recurrence rule, e.g. "every week". */
     fun recurrenceLabel(rule: String) = rule.trim()
 
+    /**
+     * A rule [nextDate] understands: "every week", "every 2 months", "every monday", "every weekday",
+     * with " when done" to count from the tick rather than the due date.
+     */
+    fun repeatRule(every: Int, unit: String, day: DayOfWeek? = null, weekdays: Boolean = false, whenDone: Boolean = false): String {
+        val base = when {
+            weekdays -> "every weekday"
+            day != null -> "every ${day.name.lowercase()}"
+            every <= 1 -> "every $unit"
+            else -> "every $every ${unit}s"
+        }
+        return if (whenDone) "$base when done" else base
+    }
+
     /** Next date for [rule], or null if the rule isn't one we understand. */
     fun nextDate(rule: String, due: LocalDate?, completed: LocalDate): LocalDate? {
         var r = rule.trim().lowercase()

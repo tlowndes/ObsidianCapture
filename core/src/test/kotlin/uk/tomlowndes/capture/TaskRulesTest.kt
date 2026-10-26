@@ -89,4 +89,29 @@ class EstimateTest {
         org.junit.Assert.assertEquals("Setup WOL", TaskNote.parse(set)!!.text)
         org.junit.Assert.assertEquals("1h 30m", TaskRules.minutesLabel(90))
     }
+
+    @Test fun `repeat rules from the capture sheet are ones nextDate understands`() {
+        val due = d("2026-10-26") // a Monday
+        val cases = mapOf(
+            TaskRules.repeatRule(1, "day") to d("2026-10-27"),
+            TaskRules.repeatRule(1, "week") to d("2026-11-02"),
+            TaskRules.repeatRule(2, "week") to d("2026-11-09"),
+            TaskRules.repeatRule(3, "month") to d("2027-01-26"),
+            TaskRules.repeatRule(1, "year") to d("2027-10-26"),
+            TaskRules.repeatRule(1, "week", day = java.time.DayOfWeek.THURSDAY) to d("2026-10-29"),
+            TaskRules.repeatRule(1, "week", weekdays = true) to d("2026-10-27"),
+        )
+        cases.forEach { (rule, next) -> assertEquals(rule, next, TaskRules.nextDate(rule, due, due)) }
+        assertEquals("every 2 weeks", TaskRules.repeatRule(2, "week"))
+        assertEquals("every month when done", TaskRules.repeatRule(1, "month", whenDone = true))
+        assertEquals(d("2026-11-08"), TaskRules.nextDate(TaskRules.repeatRule(10, "day", whenDone = true), due, d("2026-10-29")))
+    }
+
+    @Test fun `a captured repeating task reads back with its rule and due date`() {
+        val line = TaskNote.newTask("Bins out ⏱ 5m 🔁 every week", "2026-10-27")
+        assertEquals("- [ ] #task Bins out ⏱ 5m 🔁 every week 📅 2026-10-27", line)
+        assertEquals("every week", TaskRules.recurrence(line))
+        assertEquals("Bins out", TaskRules.cleanText(line.removePrefix("- [ ] ")))
+        assertEquals("- [ ] #task Bins out ⏱ 5m 🔁 every week 📅 2026-11-03", TaskRules.nextOccurrence(line, d("2026-10-27")))
+    }
 }
