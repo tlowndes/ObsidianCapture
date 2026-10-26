@@ -406,8 +406,15 @@ private fun IdeaDetail(
     val d = doc
     Column(Modifier.fillMaxSize().imePadding()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Text("‹ Projects", color = Primary, fontSize = 14.sp,
-                modifier = Modifier.padding(top = 10.dp, bottom = 12.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(vertical = 4.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹ Projects", color = Primary, fontSize = 14.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(vertical = 4.dp))
+                Box(Modifier.weight(1f))
+                // Status, area and type for this project.
+                Box(Modifier.size(40.dp).clip(CircleShape).clickable(enabled = d != null) { sheet = true }, contentAlignment = Alignment.Center) {
+                    Text("⚙", fontSize = 19.sp, color = Muted)
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.clip(CircleShape).clickable(enabled = d != null) { sheet = true }.padding(3.dp)) { StatusGlyph(d?.status ?: "idea", 18.dp) }
                 Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
