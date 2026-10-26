@@ -1,15 +1,17 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "uk.tomlowndes.capture"
-    compileSdk = 34
+    // Compose 1.12.1 (BOM 2026.09.00) declares minCompileSdk 37. targetSdk stays 35,
+    // which is what opts the app into Android 15 edge-to-edge and foreground-service rules.
+    compileSdk = 37
     defaultConfig {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 7
         versionName = providers.gradleProperty("captureVersion").get()
     }
@@ -26,14 +28,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        // anthropic-java is built with a newer Kotlin than this project's 1.9 compiler.
-        freeCompilerArgs += "-Xskip-metadata-version-check"
-    }
     packaging { resources { excludes += setOf("META-INF/*.kotlin_module", "META-INF/versions/**", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*") } }
     buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 }
 
 dependencies {
@@ -43,11 +39,13 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("androidx.glance:glance-appwidget:1.1.0")
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.glance:glance-appwidget:1.2.0")
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // Material3 no longer pulls icons in. These are the same outlined icons the screens already use.
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 

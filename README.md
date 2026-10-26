@@ -137,7 +137,7 @@ Deck, Sort it, the calendar, weather, habits, jobs and the focus timer are on th
 
 ## Building and installing
 
-Open this folder in Android Studio, let it sync, then Run on a phone, or build the APK. Use a JDK between 17 and 22 for Gradle (a JBR 21 is fine; Java 25 is not). The Android app is only part of the Gradle build when `ANDROID_HOME`, `ANDROID_SDK_ROOT` or `sdk.dir` in `local.properties` is set, so a machine that only builds the desktop app can do so without the Android SDK.
+Open this folder in Android Studio, let it sync, then Run on a phone, or build the APK. Use a JDK from 17 to 26 to run Gradle (CI uses 21). Java 25 is fine. The Android app is only part of the Gradle build when `ANDROID_HOME`, `ANDROID_SDK_ROOT` or `sdk.dir` in `local.properties` is set, so a machine that only builds the desktop app can do so without the Android SDK.
 
 ```
 ./gradlew :core:test testDebugUnitTest   # unit tests

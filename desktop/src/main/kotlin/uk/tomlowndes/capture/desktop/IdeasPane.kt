@@ -1,9 +1,9 @@
 package uk.tomlowndes.capture.desktop
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -37,6 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -48,8 +52,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.onExternalDrag
-import androidx.compose.ui.DragData
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -177,6 +179,23 @@ private fun IdeaDetail(state: AppState, title: String, images: MutableMap<String
     var editing by remember { mutableStateOf<IdeaEntry?>(null) }
     var statusMenu by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
+    // onExternalDrag was removed in Compose Multiplatform 1.8. This is the same drop: image files land in the entry box.
+    val dropTarget = remember(title) {
+        object : DragAndDropTarget {
+            override fun onEntered(event: DragAndDropEvent) { dragging = true }
+            override fun onExited(event: DragAndDropEvent) { dragging = false }
+            override fun onEnded(event: DragAndDropEvent) { dragging = false }
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                dragging = false
+                val data = event.dragData()
+                if (data is DragData.FilesList) {
+                    data.readFiles().mapNotNull { runCatching { File(URI(it)) }.getOrNull() }
+                        .mapNotNull(Images::read).forEach { pending.add(it) }
+                }
+                return data is DragData.FilesList
+            }
+        }
+    }
     var viewImage by remember { mutableStateOf<Any?>(null) }
 
     fun reload() = scope.launch { state.io("Couldn't open the idea") { state.ideaStore()!!.load(title) }?.let { doc = it } }
@@ -255,15 +274,7 @@ private fun IdeaDetail(state: AppState, title: String, images: MutableMap<String
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp).clip(shape)
                 .background(if (dragging) Surface2 else Surface1).border(1.5.dp, Primary.copy(alpha = if (dragging) 1f else .6f), shape)
-                .onExternalDrag(
-                    onDragStart = { dragging = true }, onDragExit = { dragging = false },
-                    onDrop = { v ->
-                        dragging = false
-                        val data = v.dragData
-                        if (data is DragData.FilesList) data.readFiles().mapNotNull { runCatching { File(URI(it)) }.getOrNull() }
-                            .mapNotNull(Images::read).forEach { pending.add(it) }
-                    }
-                )
+                .dragAndDropTarget(shouldStartDragAndDrop = { true }, target = dropTarget)
                 .padding(12.dp)
         ) {
             if (pending.isNotEmpty()) Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
