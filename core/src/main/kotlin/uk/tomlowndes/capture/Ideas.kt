@@ -115,6 +115,9 @@ class IdeaStore(private val vault: Vault, private val prefs: VaultPrefs) {
 
     fun setArea(title: String, area: String) = edit(title) { Md.fmSet(it, "area", area) }
 
+    /** Ticks the next step (the note's first open checkbox) with today's date. */
+    fun tickNext(title: String) = edit(title) { IdeaNote.tickNext(it, java.time.LocalDate.now()) }
+
     fun setCouldContinue(title: String, on: Boolean) = edit(title) { Md.fmSet(it, "could_continue", on.toString()) }
 
     /** New entries go at the top of the log file, newest first. */
