@@ -59,6 +59,36 @@ object IdeaNote {
         )
     }
 
+    /** Ticks the note's first open checkbox (the next step) where it stands, with today's ✅ date. */
+    fun tickNext(lines: MutableList<String>, today: LocalDate) {
+        val start = lines.size - Md.fmBody(lines).size
+        val i = (start until lines.size).firstOrNull { TaskNote.parse(lines[it]) != null } ?: error("No next step to tick")
+        lines[i] = TaskNote.completion(lines[i], today, recurring = false).doneLine
+    }
+
+    /** A link in the note's Links section: a web address, or a note name for `[[wikilinks]]`. */
+    data class Link(val label: String, val target: String, val web: Boolean)
+
+    private val MD_LINK = Regex("\\[([^\\]]+)]\\((https?://[^)\\s]+)\\)")
+    private val WIKI = Regex("\\[\\[([^\\]|#]+)(?:#[^\\]|]*)?(?:\\|([^\\]]+))?]]")
+    private val BARE = Regex("(?<![(\\w])https?://[^\\s)>\\]]+")
+
+    /** The links in `## Links`, in the order written. */
+    fun links(text: String): List<Link> {
+        val lines = text.split("\n")
+        val body = Md.sectionRange(lines, "Links")?.let { lines.slice(it) }?.joinToString("\n") ?: return emptyList()
+        val found = mutableListOf<Pair<Int, Link>>()
+        MD_LINK.findAll(body).forEach { found += it.range.first to Link(it.groupValues[1].trim(), it.groupValues[2], true) }
+        WIKI.findAll(body).forEach {
+            val note = it.groupValues[1].trim()
+            found += it.range.first to Link(it.groupValues[2].trim().ifEmpty { note.substringAfterLast('/') }, note, false)
+        }
+        BARE.findAll(body).forEach { m ->
+            if (found.none { it.second.web && it.second.target == m.value }) found += m.range.first to Link(m.value.removePrefix("https://").removePrefix("http://"), m.value, true)
+        }
+        return found.sortedBy { it.first }.map { it.second }
+    }
+
     /** Project types Flight Deck shows as a tag. */
     val TYPES = listOf("claude", "concept", "idea")
 

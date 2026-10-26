@@ -7,7 +7,7 @@ import java.time.LocalDate
 /** The cards Flight Deck can show on home, in their default order. */
 enum class HomeCard(val label: String) {
     NEXT_STEP("Next step"), WEATHER("Weather & travel"), TODAY("Today"), BILLS("Bills"), PROJECTS("Projects"),
-    TOP_TASKS("Top tasks"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs")
+    TOP_TASKS("Top tasks"), HABITS("Habits"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs")
 }
 
 /** Card order and which cards are switched off, from Settings › Cards on home. */
@@ -29,8 +29,19 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
 
     val onCount get() = order.count { it !in hidden }
 
-    /** Any card missing from a saved order (added in a later version) goes on the end. */
-    fun normalised() = copy(order = order.distinct() + HomeCard.values().filter { it !in order })
+    /**
+     * Any card missing from a saved order (added in a later version) goes straight after the card it follows by
+     * default, or on the end when that card isn't there either.
+     */
+    fun normalised(): DeckLayout {
+        val list = order.distinct().toMutableList()
+        val all = HomeCard.values()
+        all.filter { it !in list }.forEach { card ->
+            val before = all.take(card.ordinal).lastOrNull { it in list }
+            if (before == null) list.add(card) else list.add(list.indexOf(before) + 1, card)
+        }
+        return copy(order = list)
+    }
 }
 
 /**

@@ -71,6 +71,32 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     val secrets = remember { SecretStore(ctx) }
     var masked by remember { mutableStateOf(secrets.maskedKey()) }
     var editingKey by remember { mutableStateOf(false) }
+    var ghMasked by remember { mutableStateOf(secrets.githubToken?.let { "••••" + it.takeLast(4) }) }
+    var editingGh by remember { mutableStateOf(false) }
+    if (editingGh) {
+        var draft by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingGh = false }, containerColor = Surface1,
+            title = { Text("GitHub token") },
+            text = {
+                OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
+                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("github_pat_…") })
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    secrets.githubToken = draft
+                    ghMasked = secrets.githubToken?.let { "••••" + it.takeLast(4) }
+                    editingGh = false
+                }, enabled = draft.isNotBlank()) { Text("Save", color = Primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (ghMasked != null) { secrets.githubToken = null; ghMasked = null }
+                    editingGh = false
+                }) { Text(if (ghMasked != null) "Remove" else "Cancel", color = Muted) }
+            }
+        )
+    }
     if (editingKey) {
         var draft by remember { mutableStateOf("") }
         AlertDialog(
@@ -119,6 +145,9 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         GroupLabel("Brain dump AI")
         SettingRow("Claude API key", masked ?: "Not set") {
             TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
+        }
+        SettingRow("GitHub token", ghMasked ?: "Not set") {
+            TextButton(onClick = { editingGh = true }) { Text(if (ghMasked == null) "Add" else "Change", color = Primary) }
         }
         SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
 

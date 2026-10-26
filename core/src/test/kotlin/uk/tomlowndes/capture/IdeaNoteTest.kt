@@ -171,4 +171,26 @@ class IdeaNoteTest {
         assertThrows(IllegalStateException::class.java) { IdeaNote.moveLogOut(note, "Garden shed", moved) }
         assertEquals(snapshot, note)
     }
+
+    @Test fun `ticking the next step marks the first open checkbox done in place`() {
+        val ls = lines("---\nstatus: active\n---\n\n## Next step\n\n- [x] Old ✅ 2026-10-01\n- [ ] Test the build\n- [ ] Later thing\n")
+        IdeaNote.tickNext(ls, LocalDate.parse("2026-10-26"))
+        assertEquals("- [x] Test the build ✅ 2026-10-26", ls[7])
+        assertEquals("- [ ] Later thing", ls[8])
+        assertEquals("Later thing", IdeaNote.parse("X", ls.joinToString("\n")).next)
+    }
+
+    @Test fun `ticking with no next step says so`() {
+        assertThrows(IllegalStateException::class.java) { IdeaNote.tickNext(lines("## Summary\n\nNothing\n"), LocalDate.parse("2026-10-26")) }
+    }
+
+    @Test fun `links come from the Links section in order`() {
+        val note = "## Summary\n\nSee https://ignored.example\n\n## Links\n\n- [Repo](https://github.com/tlowndes/ObsidianCapture)\n" +
+            "- [[Capture app changes]]\n- [[Docs/Vault summary|Summary]]\n- https://tomlowndes.co.uk/work\n\n## Files\n"
+        val links = IdeaNote.links(note)
+        assertEquals(listOf("Repo", "Capture app changes", "Summary", "tomlowndes.co.uk/work"), links.map { it.label })
+        assertEquals(listOf(true, false, false, true), links.map { it.web })
+        assertEquals("Docs/Vault summary", links[2].target)
+        assertTrue(IdeaNote.links("## Summary\n\nNo links\n").isEmpty())
+    }
 }

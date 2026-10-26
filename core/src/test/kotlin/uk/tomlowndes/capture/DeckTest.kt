@@ -55,9 +55,9 @@ class DeckTest {
     }
 
     @Test fun `cards reorder and switch off`() {
-        val l = DeckLayout().moved(8, 0).toggled(HomeCard.WEATHER)
+        val l = DeckLayout().moved(9, 0).toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
-        assertEquals(8, l.onCount)
+        assertEquals(9, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
     }
 
@@ -77,6 +77,13 @@ class DeckTest {
         val json = "{\"cards\":[\"JOBS\",\"NEXT_STEP\"],\"hiddenCards\":[]}"
         val l = DeckConfig.layout(json)
         assertEquals(listOf(HomeCard.JOBS, HomeCard.NEXT_STEP), l.order.take(2))
+        assertEquals(HomeCard.values().size, l.order.size)
+    }
+
+    @Test fun `Habits added later lands under Top tasks in a saved order`() {
+        val saved = DeckLayout().order.filter { it != HomeCard.HABITS }.reversed().map { "\"${it.name}\"" }
+        val l = DeckConfig.layout("{\"cards\":[${saved.joinToString(",")}],\"hiddenCards\":[]}")
+        assertEquals(HomeCard.HABITS, l.order[l.order.indexOf(HomeCard.TOP_TASKS) + 1])
         assertEquals(HomeCard.values().size, l.order.size)
     }
 
