@@ -89,6 +89,10 @@ class EstimateTest {
         org.junit.Assert.assertEquals("Setup WOL", TaskNote.parse(set)!!.text)
         org.junit.Assert.assertEquals("1h 30m", TaskRules.minutesLabel(90))
     }
+}
+
+class RepeatRuleTest {
+    private fun d(s: String) = LocalDate.parse(s)
 
     @Test fun `repeat rules from the capture sheet are ones nextDate understands`() {
         val due = d("2026-10-26") // a Monday
@@ -101,7 +105,7 @@ class EstimateTest {
             TaskRules.repeatRule(1, "week", day = java.time.DayOfWeek.THURSDAY) to d("2026-10-29"),
             TaskRules.repeatRule(1, "week", weekdays = true) to d("2026-10-27"),
         )
-        cases.forEach { (rule, next) -> assertEquals(rule, next, TaskRules.nextDate(rule, due, due)) }
+        for ((rule, next) in cases) assertEquals(rule, next, TaskRules.nextDate(rule, due, due))
         assertEquals("every 2 weeks", TaskRules.repeatRule(2, "week"))
         assertEquals("every month when done", TaskRules.repeatRule(1, "month", whenDone = true))
         assertEquals(d("2026-11-08"), TaskRules.nextDate(TaskRules.repeatRule(10, "day", whenDone = true), due, d("2026-10-29")))

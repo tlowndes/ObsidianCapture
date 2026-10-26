@@ -407,15 +407,15 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
             ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
         }
         Box(Modifier.padding(top = 10.dp)) { GroupLabel("Repeat") }
-        val custom = repeat != null && repeat !in REPEAT_PRESETS.map { it.second }
+        val customRule = repeat != null && repeat !in REPEAT_PRESETS.map { it.second }
         Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             REPEAT_PRESETS.forEach { (label, rule) ->
                 AppChip(repeat == rule, { repeat = if (repeat == rule) null else rule }, { Text(if (repeat == rule) "↻ $label" else label) })
             }
-            AppChip(custom, { customRepeat = true }, { Text(if (custom) "↻ Custom" else "Custom…") })
+            AppChip(customRule, { customRepeat = true }, { Text(if (customRule) "↻ Custom" else "Custom…") })
         }
         repeat?.let {
-            Text((if (custom) "🔁 $it · " else "") + "Next one appears when you tick it · first due ${dueLabel(due ?: today)}", fontSize = 12.5.sp, color = Muted,
+            Text((if (customRule) "🔁 $it · " else "") + "Next one appears when you tick it · first due ${dueLabel(due ?: today)}", fontSize = 12.5.sp, color = Muted,
                 modifier = Modifier.padding(top = 6.dp))
         }
     }
