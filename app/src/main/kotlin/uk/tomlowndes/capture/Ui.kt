@@ -65,6 +65,9 @@ internal val OverdueLine = Color(0xFF5A2D33)
 internal val WeatherBg = Color(0xFF141D2E)
 internal val WeatherBorder = Color(0xFF2A3D5C)
 internal val WeatherLabel = Color(0xFF7FB8FF)
+internal val WeatherSlot = Color(0xFF101827)
+internal val WeatherSlotBorder = Color(0xFF22314B)
+internal val WeatherSlotWet = Color(0xFF2F4F7A)
 
 @Composable
 fun CaptureTheme(content: @Composable () -> Unit) {

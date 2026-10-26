@@ -104,6 +104,7 @@ fun DeckScreen(
     var refresh by remember { mutableIntStateOf(0) }
     var energy by remember { mutableStateOf(prefs.energy) }
     var later by remember { mutableStateOf(prefs.laterToday) }
+    var showStrip by remember { mutableStateOf(prefs.weatherStrip) }
     // Show the last Deck straight away, then refresh from the vault.
     var data by remember { mutableStateOf(DeckCache.load(ctx) ?: DeckData()) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
@@ -219,7 +220,7 @@ fun DeckScreen(
                 HomeCard.TODAY -> data.calendars?.let { sources -> TodayCard(sources, cal, onConnect = onOpenSettings) }
                 HomeCard.WEATHER -> {
                     val w = weather
-                    if (w != null) WeatherCard(w, travel)
+                    if (w != null) WeatherCard(w, travel, showStrip) { showStrip = !showStrip; prefs.weatherStrip = showStrip }
                     else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
                 }
                 HomeCard.JOBS -> {
@@ -334,12 +335,32 @@ private fun TodayCard(sources: List<CalendarSource>, cache: List<CalendarCache>,
 }
 
 @Composable
-private fun WeatherCard(w: WeatherSummary, travel: TravelLine?) {
-    DeckCard(border = WeatherBorder, bg = WeatherBg) {
+private fun WeatherCard(w: WeatherSummary, travel: TravelLine?, showStrip: Boolean, onToggle: () -> Unit) {
+    DeckCard(border = WeatherBorder, bg = WeatherBg, modifier = Modifier.clickable(onClick = onToggle)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)) {
-            Text(if (travel != null) "WEATHER & TRAVEL" else "WEATHER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(if (travel != null) "WEATHER & TRAVEL" else "WEATHER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
+                if (w.parts.isNotEmpty()) Text(if (showStrip) "▴" else "▾", fontSize = 12.sp, color = Muted)
+            }
             Text("${w.high}° / ${w.low}° · ${w.headline}", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+            if (showStrip && w.parts.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    w.parts.forEach { p ->
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(WeatherSlot)
+                                .border(1.dp, if (p.rain >= 50) WeatherSlotWet else WeatherSlotBorder, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(p.name.uppercase(), fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 0.5.sp, color = Muted)
+                            Text(p.icon, fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+                            Text("${p.temp}°", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("${p.rain}%", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = WeatherLabel, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                }
+            }
             Text(w.detail, fontSize = 13.sp, color = Muted, lineHeight = 19.sp)
+            w.tip?.let { Text(it, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp)) }
             if (travel != null) {
                 HorizontalDivider(color = WeatherBorder, modifier = Modifier.padding(top = 12.dp, bottom = 10.dp))
                 val hm = DateTimeFormatter.ofPattern("HH:mm")

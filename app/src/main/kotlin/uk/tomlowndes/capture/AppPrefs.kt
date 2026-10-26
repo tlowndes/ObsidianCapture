@@ -55,6 +55,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         else Energy.MED
         set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
 
+    /** Weather card: Morning / Afternoon / Evening strip, shown after a tap on the card. */
+    var weatherStrip: Boolean
+        get() = p.getBoolean("weather_strip", false)
+        set(v) { p.edit().putBoolean("weather_strip", v).apply() }
+
     /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
     var laterToday: Set<String>
         get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
