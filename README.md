@@ -150,7 +150,7 @@ Debug builds are signed with the committed `app/debug.keystore` (store and key p
 
 The unit tests cover the note formats the app reads and writes (tasks and recurrence, project notes, Read It Later, habits, jobs, sorting, the calendar, weather and the weekly review), so a change that would mangle a note fails here first.
 
-GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for every push and pull request. Both files are uploaded as workflow artefacts. The APK is named `VaultCapture-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Vault Capture v1.7`, with the APK and the MSI attached (`VaultCapture-v1.7.apk` and `VaultCapture-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach.
+GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for pull requests, pushes to main, and version tags. Both files are uploaded as workflow artefacts and kept for 7 days (a failed test report is kept for 3 days). The APK is named `VaultCapture-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Vault Capture v1.7`, with the APK and the MSI attached (`VaultCapture-v1.7.apk` and `VaultCapture-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach. Clean up artifacts (`.github/workflows/cleanup-artifacts.yml`) deletes older artefacts every week, and can be run by hand.
 
 ## Repo layout
 
