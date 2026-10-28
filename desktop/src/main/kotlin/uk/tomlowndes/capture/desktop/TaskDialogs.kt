@@ -130,7 +130,7 @@ private fun RepeatSpec?.isSimple(unit: String) =
     this != null && this.unit == unit && every == 1 && !weekdays && !whenDone
 
 @Composable
-private fun RepeatForm(current: String?, onUse: (String) -> Unit, onClear: () -> Unit) {
+internal fun RepeatForm(current: String?, onUse: (String) -> Unit, onClear: () -> Unit) {
     val spec = remember(current) { current?.let { TaskRules.parseRepeat(it) } }
     var every by remember(current) { mutableIntStateOf(spec?.every ?: 1) }
     var unit by remember(current) { mutableStateOf(spec?.unit ?: "week") }
@@ -190,7 +190,7 @@ private fun RepeatForm(current: String?, onUse: (String) -> Unit, onClear: () ->
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Chip("Clear", false) { onClear() }
-        PrimaryButton("Use this") { onUse(rule) }
+        PrimaryButton("Done") { onUse(rule) }
     }
 }
 

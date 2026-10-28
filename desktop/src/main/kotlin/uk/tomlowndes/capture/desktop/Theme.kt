@@ -47,26 +47,44 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-// ---- design tokens (mirror design/ui.css and the Android app's Ui.kt) ----
-val Bg = Color(0xFF13111A)
-val SideBg = Color(0xFF171420)
-val Divider = Color(0xFF221E31)
-val Surface1 = Color(0xFF1D1A28)
-val Surface2 = Color(0xFF262236)
-val Outline = Color(0xFF37314D)
-val Primary = Color(0xFF8B6CFF)
-val OnPrimary = Color(0xFF17102E)
-val TextMain = Color(0xFFECE9F6)
-val Muted = Color(0xFF9A94B3)
-val Faint = Color(0xFF5E5878)
+// ---- design tokens (the Flight Deck palette, mirrors the Android app's Ui.kt) ----
+val Bg = Color(0xFF0F131C)
+val SideBg = Color(0xFF121724)
+val Divider = Color(0xFF2A3245)
+val Surface1 = Color(0xFF161B27)
+val Surface2 = Color(0xFF1E2534)
+val Outline = Color(0xFF2A3245)
+val Primary = Color(0xFF7AA2FF)
+val OnPrimary = Color(0xFF0D1630)
+val TextMain = Color(0xFFE8ECF5)
+val Muted = Color(0xFF8A93A8)
+val Faint = Color(0xFF5C6478)
 val Warn = Color(0xFFFF8A80)
 val WarnTint = Color(0xFF3A1D22)
-val TaskGreen = Color(0xFF6EE7B7)
+val TaskGreen = Color(0xFF5FD39A)
 val TaskTint = Color(0xFF16352C)
 val LinkBlue = Color(0xFF7CC4FF)
-val PurpleTint = Color(0xFF2A2250)
-val Popup = Color(0xFF1B1827)
-val Menu = Color(0xFF201C2E)
+val PrimaryTint = Color(0xFF1B2440)
+val Popup = Color(0xFF1A2030)
+val Menu = Color(0xFF1E2534)
+val Amber = Color(0xFFF5C06A)
+val AmberTint = Color(0xFF3A2F17)
+val Purple = Color(0xFFB39DFF)
+val TagTint = Color(0xFF2A2250)
+val NextBg = Color(0xFF1A2238)
+val NextBorder = Color(0xFF2D3D66)
+val OverdueLine = Color(0xFF5A2D33)
+val WeatherBg = Color(0xFF141D2E)
+val WeatherBorder = Color(0xFF2A3D5C)
+val WeatherLabel = Color(0xFF7FB8FF)
+val WeatherSlot = Color(0xFF101827)
+val WeatherSlotBorder = Color(0xFF22314B)
+val WeatherSlotWet = Color(0xFF2F4F7A)
+val WorkEdge = Color(0xFFF5C06A)
+val PersonalEdge = Color(0xFF7AA2FF)
+val SnackBg = Color(0xFFE3EAFB)
+val SnackText = Color(0xFF0D1630)
+val SnackAction = Color(0xFF3A5BC4)
 
 @Composable
 fun CaptureTheme(content: @Composable () -> Unit) {
@@ -79,7 +97,7 @@ fun CaptureTheme(content: @Composable () -> Unit) {
             secondaryContainer = Surface2, onSecondaryContainer = Primary,
             surfaceContainerHigh = Surface1, surfaceContainer = Surface1,
             outline = Outline, outlineVariant = Outline,
-            inverseSurface = Color(0xFFE8E3FA), inverseOnSurface = Color(0xFF1B1630), inversePrimary = Color(0xFF5A3FD0),
+            inverseSurface = SnackBg, inverseOnSurface = SnackText, inversePrimary = SnackAction,
         ),
         content = content
     )
@@ -125,7 +143,7 @@ fun GroupLabel(text: String, color: Color = Muted) =
 @Composable
 fun Count(n: Int, warn: Boolean = false, text: String = "$n") = Text(
     text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (warn) Warn else Primary,
-    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (warn) WarnTint else PurpleTint)
+    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (warn) WarnTint else PrimaryTint)
         .padding(horizontal = 7.dp, vertical = 1.dp)
 )
 
@@ -139,7 +157,7 @@ fun Chip(
     Text(
         text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         color = color ?: if (selected) Primary else TextMain,
-        modifier = modifier.clip(shape).background(if (selected) Surface2 else Color.Transparent)
+        modifier = modifier.clip(shape).background(if (selected) PrimaryTint else Color.Transparent)
             .border(1.5.dp, if (selected) Primary else Outline, shape).hand().clickable(onClick = onClick)
             .padding(horizontal = if (small) 11.dp else 14.dp, vertical = if (small) 5.dp else 7.dp)
     )

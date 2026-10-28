@@ -13,7 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,10 +57,13 @@ import uk.tomlowndes.capture.Article
 import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.ReadLater
 import uk.tomlowndes.capture.ReadStore
+import uk.tomlowndes.capture.TaskRules
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 /** The whole clipboard or field is one http(s) link, with nothing else around it. */
 internal fun isBareUrl(text: String) = Regex("^https?://\\S+$").matches(text.trim())
@@ -85,12 +92,17 @@ fun QuickCaptureWindow(state: AppState, icon: Painter) {
             window.toFront(); window.requestFocus()
             onDispose { window.removeWindowFocusListener(l) }
         }
-        CaptureTheme { QuickCapture(state, ::close) }
+        CaptureTheme {
+            QuickCapture(state, ::close) { side, tall ->
+                // Grows to the right for the Custom… or date panel, and down for the task chips.
+                winState.size = DpSize((width + if (side) 420 else 0).dp, (if (side) 560 else if (tall) 400 else 300).dp)
+            }
+        }
     }
 }
 
 @Composable
-private fun QuickCapture(state: AppState, close: () -> Unit) {
+private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Boolean, tall: Boolean) -> Unit) {
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
     var link by remember { mutableStateOf(false) }
@@ -98,8 +110,16 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
     var preview by remember { mutableStateOf<Article?>(null) }
     var previewFor by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var picked by remember { mutableStateOf<LocalDate?>(null) }
+    var minutes by remember { mutableStateOf<Int?>(null) }
+    var repeat by remember { mutableStateOf<String?>(null) }
+    var side by remember { mutableStateOf<Side?>(null) }
+    val today = LocalDate.now()
     val text = value.text.trim()
-    val (body, due) = DateWords.split(text, LocalDate.now())
+    val (body, typed) = DateWords.split(text, today)
+    // A repeating task needs a first date for the series to count from.
+    val due = picked ?: typed ?: if (repeat != null) today else null
+    LaunchedEffect(side, link) { resize(side != null && !link, !link) }
 
     LaunchedEffect(Unit) {
         // Opened with a link on the clipboard: start in Link mode with it filled in, selected so typing replaces it.
@@ -130,21 +150,22 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
                 val full = state.io("Couldn't save the link") { ReadLater.save(vault, text, null, got) }
                 if (full != null) state.notify("Saved to Read later", if (full) (got?.title ?: text) else "Saved the link only (couldn't fetch the page)")
             } else {
-                val ok = state.io("Couldn't add the task") { state.writer()!!.addTask(body, due?.toString()) } != null
+                val line = body + (minutes?.let { " ⏱ ${it}m" } ?: "") + (repeat?.let { " 🔁 $it" } ?: "")
+                val ok = state.io("Couldn't add the task") { state.writer()!!.addTask(line, due?.toString()) } != null
                 close()
-                if (ok) state.notify("Added to Quick Task", body + (due?.let { " · due ${dueLabel(it)}" } ?: ""))
+                if (ok) state.notify("Added to Quick Task", body + (due?.let { " · due ${dueLabel(it)}" } ?: "") + (repeat?.let { " · 🔁 $it" } ?: ""))
             }
             state.changed()
         }
     }
 
     val shape = RoundedCornerShape(18.dp)
-    Box(Modifier.fillMaxSize().padding(16.dp)) {
+    Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
         Column(
-            Modifier.fillMaxWidth().clip(shape).background(Popup).border(1.dp, Outline, shape).padding(18.dp)
+            Modifier.width(628.dp).clip(shape).background(Popup).border(1.dp, Outline, shape).padding(18.dp)
         ) {
             if (state.vault == null) {
-                Text("Pick your vault in Vault Capture first.", color = Muted)
+                Text("Pick your vault in Flight Deck first.", color = Muted)
                 return@Column
             }
             Pill(listOf("✓ Task", "🔗 Link"), if (link) 1 else 0, Modifier.width(220.dp).padding(bottom = 12.dp)) { link = it == 1; focus.requestFocus() }
@@ -166,9 +187,17 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
                         Box { if (value.text.isEmpty()) Text(if (link) "Paste a link…" else "Add a task… (end with a date like “fri”)", color = Muted, fontSize = 17.sp); inner() }
                     }
                 )
-                if (!link && due != null) Text("📅 " + dayChip(due), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextMain,
+                if (!link && typed != null && picked == null) Text("📅 " + dayChip(typed), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextMain,
                     modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(Surface2).padding(horizontal = 9.dp, vertical = 4.dp))
             }
+            if (!link) TaskOptions(
+                due, picked, minutes, repeat, side,
+                onDay = { d -> picked = if (picked == d) null else d; if (side == Side.DATE) side = null; focus.requestFocus() },
+                onPickDate = { side = if (side == Side.DATE) null else Side.DATE },
+                onMinutes = { m -> minutes = if (minutes == m) null else m; focus.requestFocus() },
+                onRepeat = { r -> repeat = r; if (side == Side.REPEAT) side = null; focus.requestFocus() },
+                onCustom = { side = if (side == Side.REPEAT) null else Side.REPEAT },
+            )
             if (link && isBareUrl(text)) Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp)).background(Surface1).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically
@@ -182,7 +211,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (link) "Saves the page as a full article note" else "Saves to ⚡ Quick Task · Tab switches to Link · a pasted URL switches by itself",
+                    if (link) "Saves the page as a full article note" else "Saves to ⚡ Quick Task · Tab switches to Link",
                     fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -191,6 +220,68 @@ private fun QuickCapture(state: AppState, close: () -> Unit) {
                 }
             }
         }
+        if (!link && side != null) Column(
+            Modifier.width(400.dp).clip(shape).background(Popup).border(1.dp, Outline, shape).padding(18.dp)
+        ) {
+            if (side == Side.REPEAT) {
+                Text("Repeat", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextMain, modifier = Modifier.padding(bottom = 12.dp))
+                RepeatForm(repeat, onUse = { repeat = it; side = null; focus.requestFocus() }, onClear = { repeat = null; side = null; focus.requestFocus() })
+            } else {
+                InlineDatePicker(due) { d -> picked = d; side = null; focus.requestFocus() }
+            }
+        }
+    }
+}
+
+private enum class Side { REPEAT, DATE }
+
+/** Task mode: Today / Tomorrow / Pick date, the time estimate, and the phone's Repeat row. */
+@Composable
+private fun TaskOptions(
+    due: LocalDate?, picked: LocalDate?, minutes: Int?, repeat: String?, side: Side?,
+    onDay: (LocalDate) -> Unit, onPickDate: () -> Unit, onMinutes: (Int) -> Unit, onRepeat: (String?) -> Unit, onCustom: () -> Unit,
+) {
+    val today = LocalDate.now()
+    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Chip("Today", picked == today, small = true) { onDay(today) }
+        Chip("Tomorrow", picked == today.plusDays(1), small = true) { onDay(today.plusDays(1)) }
+        val other = picked != null && picked != today && picked != today.plusDays(1)
+        Chip(if (other) dayChip(picked!!) else "Pick date", other || side == Side.DATE, small = true, onClick = onPickDate)
+        Box(Modifier.width(8.dp))
+        TaskRules.ESTIMATE_CHOICES.forEach { m -> Chip(TaskRules.minutesLabel(m), minutes == m, small = true) { onMinutes(m) } }
+    }
+    val spec = repeat?.let { TaskRules.parseRepeat(it) }
+    fun simple(unit: String) = spec != null && spec.unit == unit && spec.every == 1 && !spec.weekdays && !spec.whenDone && spec.weekday == null && spec.monthDay == null
+    val daily = repeat == "every day"
+    val weekly = simple("week")
+    val monthly = simple("month")
+    val custom = repeat != null && !daily && !weekly && !monthly
+    Column(Modifier.padding(top = 12.dp)) {
+        GroupLabel("Repeat")
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip(if (daily) "↻ Daily" else "Daily", daily, small = true) { onRepeat(if (daily) null else "every day") }
+            Chip(if (weekly) "↻ Weekly" else "Weekly", weekly, small = true) { onRepeat(if (weekly) null else "every week") }
+            Chip(if (monthly) "↻ Monthly" else "Monthly", monthly, small = true) { onRepeat(if (monthly) null else "every month") }
+            Chip(if (custom) "↻ $repeat" else "Custom…", custom || side == Side.REPEAT, small = true, onClick = onCustom)
+        }
+        if (repeat != null && due != null) Text(
+            "Next one appears when you tick it · first due ${dayChip(due)}", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/** A calendar inside the popup: a separate date dialog would take focus and close quick capture. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InlineDatePicker(initial: LocalDate?, onPick: (LocalDate?) -> Unit) {
+    val picker = rememberDatePickerState(
+        initialSelectedDateMillis = (initial ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    )
+    DatePicker(picker, title = null, headline = null, showModeToggle = false,
+        colors = DatePickerDefaults.colors(containerColor = Popup))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+        Chip("No date", false, small = true) { onPick(null) }
+        PrimaryButton("Done") { onPick(picker.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }) }
     }
 }
 

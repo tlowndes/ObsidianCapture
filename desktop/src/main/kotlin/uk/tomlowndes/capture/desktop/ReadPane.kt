@@ -267,7 +267,7 @@ private fun Reader(
 
     val d = doc
     val blocks = remember(d) { d?.let { MdBlocks.parse(it.body) }.orEmpty() }
-    val body = TextStyle(fontSize = size.sp, lineHeight = (size * 1.65f).sp, color = Color(0xFFD9D5E8),
+    val body = TextStyle(fontSize = size.sp, lineHeight = (size * 1.65f).sp, color = Color(0xFFD8DDE8),
         fontFamily = if (serif) FontFamily.Serif else FontFamily.Default)
     val blockKeys = remember(blocks) { blocks.mapNotNull { MdBlocks.highlightKey(it) }.toSet() }
 
@@ -369,7 +369,7 @@ private fun Rich(text: String, style: TextStyle, onLink: (String) -> Unit, modif
 
 @Composable
 private fun MdBlockView(b: MdBlock, images: Map<String, Any>, body: TextStyle, highlighted: Boolean, onLink: (String) -> Unit) {
-    val tint = if (highlighted) Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF3B2F6E)).padding(horizontal = 8.dp, vertical = 4.dp)
+    val tint = if (highlighted) Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF263A66)).padding(horizontal = 8.dp, vertical = 4.dp)
     else Modifier
     when (b) {
         is MdBlock.Heading -> Rich(b.text, body.copy(color = TextMain, fontFamily = FontFamily.Default,
