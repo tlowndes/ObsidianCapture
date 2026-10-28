@@ -1,0 +1,401 @@
+name: Clean up artifacts
+
+# Deletes Actions artifacts and stale Actions caches. GitHub Release assets are a
+# different store and are never listed or deleted here.
+on:
+  schedule:
+    # Monday 06:15 UTC. Scheduled workflows run from the default branch only.
+    - cron: "15 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Delete artifacts older than this many days. 0 deletes every artifact. Caches not used in the last 7 days are always deleted."
+        required: false
+        default: "7"
+        type: string
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cleanup-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Delete old artifacts and unused caches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+            echo "::error::gh and jq are required."
+            exit 1
+          fi
+          if [[ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]]; then
+            echo "::error::GH_TOKEN is not set."
+            exit 1
+          fi
+
+          repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+          event_name="${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}"
+          if [[ ! "$repo" =~ ^[^/]+/[^/]+$ ]]; then
+            echo "::error::Unexpected repository name '${repo}'."
+            exit 1
+          fi
+
+          # workflow_dispatch defaults live in the event payload. Reading them here
+          # keeps days=0 intact (the expression language treats 0 as empty).
+          days=7
+          if [[ "$event_name" == "workflow_dispatch" ]]; then
+            if [[ -z "${GITHUB_EVENT_PATH:-}" || ! -f "$GITHUB_EVENT_PATH" ]]; then
+              echo "::error::workflow_dispatch payload is missing, so days cannot be read."
+              exit 1
+            fi
+            days=$(jq -r '.inputs.days // "7"' "$GITHUB_EVENT_PATH")
+          fi
+          days=$(printf '%s' "$days" | tr -d '[:space:]')
+          if [[ -z "$days" || "$days" == "null" ]]; then
+            days=7
+          fi
+          if [[ ! "$days" =~ ^[0-9]+$ ]]; then
+            echo "::error::days must be a whole number of 0 or more (got '${days}')."
+            exit 1
+          fi
+          days=$((10#$days))
+
+          cache_days=7
+          now_epoch=$(date -u +%s)
+          cache_cutoff_epoch=$(date -u -d "${cache_days} days ago" +%s)
+          cache_cutoff_iso=$(date -u -d "@${cache_cutoff_epoch}" +"%Y-%m-%dT%H:%M:%SZ")
+          artifact_delete_all=0
+          artifact_cutoff_epoch=$now_epoch
+          if [[ "$days" -eq 0 ]]; then
+            artifact_delete_all=1
+            echo "Repository: ${repo}"
+            echo "Artifacts: deleting all of them (days=0)."
+          else
+            artifact_cutoff_epoch=$(date -u -d "${days} days ago" +%s)
+            artifact_cutoff_iso=$(date -u -d "@${artifact_cutoff_epoch}" +"%Y-%m-%dT%H:%M:%SZ")
+            echo "Repository: ${repo}"
+            echo "Artifacts: deleting those created before ${artifact_cutoff_iso} (older than ${days} days)."
+          fi
+          echo "Caches: deleting those last used before ${cache_cutoff_iso} (not used in the last ${cache_days} days)."
+          echo "Release assets are not Actions artifacts and are left as they are."
+
+          tmp_dir=$(mktemp -d)
+          trap 'rm -rf "$tmp_dir"' EXIT
+          DELETE_RESULT=failed
+
+          format_bytes() {
+            local bytes="$1"
+            local pretty
+            if pretty=$(numfmt --to=iec --suffix=B "$bytes" 2>/dev/null); then
+              printf '%s\n' "$pretty"
+            else
+              printf '%s B\n' "$bytes"
+            fi
+          }
+
+          epoch_of() {
+            date -u -d "$1" +%s 2>/dev/null || true
+          }
+
+          sleep_for_retry() {
+            local attempt="$1"
+            local body="$2"
+            local retry_after pause
+            retry_after=$(awk 'tolower($1)=="retry-after:" {print $2; exit}' "$body" | tr -d '\r[:space:]')
+            pause=$((attempt * 2))
+            if [[ "$retry_after" =~ ^[0-9]+$ ]]; then
+              pause=$retry_after
+              if [[ "$pause" -gt 120 ]]; then
+                pause=120
+              fi
+            fi
+            sleep "$pause"
+          }
+
+          should_retry() {
+            local http_code="$1"
+            local body="$2"
+            local err="$3"
+            case "$http_code" in
+              ""|429|500|502|503|504)
+                return 0
+                ;;
+              403)
+                grep -Eqi 'rate limit|secondary rate' "$body" "$err"
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          # `gh api --paginate` follows Link headers. `--slurp` joins every page into one JSON array.
+          # A failed call can still print a one-element JSON array (`[{"message":...}]`), so the
+          # exit code is what decides success. Otherwise an auth or 404 error looks like an empty list.
+          fetch_pages() {
+            local endpoint="$1"
+            local dest="$2"
+            local err attempt rc
+            err="${tmp_dir}/list-err"
+            rc=1
+            for attempt in 1 2 3 4 5; do
+              set +e
+              gh api --paginate --slurp "$endpoint" >"$dest" 2>"$err"
+              rc=$?
+              set -e
+              if [[ "$rc" -eq 0 ]]; then
+                if ! jq -e 'type == "array"' "$dest" >/dev/null 2>&1; then
+                  echo "::error::List response from ${endpoint} was not a JSON array."
+                  return 1
+                fi
+                return 0
+              fi
+              if grep -Eqi 'rate limit|HTTP 5[0-9][0-9]|temporarily unavailable|abuse detection' "$err"; then
+                echo "Listing ${endpoint} failed (attempt ${attempt}). Retrying."
+                cat "$err" || true
+                sleep_for_retry "$attempt" "$err"
+                continue
+              fi
+              echo "::error::Failed to list ${endpoint}."
+              cat "$err" || true
+              return 1
+            done
+            echo "::error::Failed to list ${endpoint} after 5 attempts."
+            cat "$err" || true
+            return 1
+          }
+
+          check_listed_count() {
+            local pages="$1"
+            local array_key="$2"
+            local label="$3"
+            local reported parsed page_count
+            reported=$(jq '[.[] | .total_count // 0] | max // 0' "$pages")
+            parsed=$(jq --arg key "$array_key" '[.[] | .[$key][]?] | length' "$pages")
+            page_count=$(jq 'length' "$pages")
+            echo "Listed ${parsed} ${label} across ${page_count} page(s); API total_count=${reported}."
+            if [[ "$reported" =~ ^[0-9]+$ && "$parsed" =~ ^[0-9]+$ && "$reported" -gt 0 && "$parsed" -eq 0 ]]; then
+              echo "::error::API reported ${reported} ${label} but the paged response contained none."
+              return 1
+            fi
+            if [[ "$reported" =~ ^[0-9]+$ && "$parsed" =~ ^[0-9]+$ && "$parsed" -lt "$reported" ]]; then
+              echo "::warning::Paged ${label} (${parsed}) is less than total_count (${reported}). Some items may be left for the next run."
+            fi
+          }
+
+          delete_by_id() {
+            local kind="$1"
+            local id="$2"
+            local endpoint="$3"
+            local body err attempt http_code
+            body="${tmp_dir}/delete-body"
+            err="${tmp_dir}/delete-err"
+            DELETE_RESULT=failed
+            for attempt in 1 2 3 4 5; do
+              set +e
+              gh api --method DELETE -i "$endpoint" >"$body" 2>"$err"
+              set -e
+              http_code=$(awk '/^HTTP\//{code=$2} END{print code}' "$body" | tr -d '\r[:space:]')
+              if [[ "$http_code" == "204" || "$http_code" == "200" ]]; then
+                DELETE_RESULT=deleted
+                return 0
+              fi
+              if [[ "$http_code" == "404" ]]; then
+                DELETE_RESULT=missing
+                return 0
+              fi
+              if should_retry "$http_code" "$body" "$err"; then
+                echo "Delete ${kind} ${id} returned HTTP ${http_code:-none} (attempt ${attempt}). Retrying."
+                sleep_for_retry "$attempt" "$body"
+                continue
+              fi
+              echo "::warning::Failed to delete ${kind} ${id} (HTTP ${http_code:-none})."
+              if [[ -s "$err" ]]; then
+                cat "$err"
+              fi
+              DELETE_RESULT=failed
+              return 0
+            done
+            echo "::warning::Failed to delete ${kind} ${id} after 5 attempts."
+            if [[ -s "$err" ]]; then
+              cat "$err"
+            fi
+            DELETE_RESULT=failed
+            return 0
+          }
+
+          write_lines() {
+            local pages="$1"
+            local array_key="$2"
+            local when_expr="$3"
+            local dest="$4"
+            jq -c --arg key "$array_key" --arg when_expr "$when_expr" '
+              def timestamp:
+                if $when_expr == "created" then (.created_at // "")
+                else (.last_accessed_at // .created_at // "")
+                end;
+              [ .[] | .[$key][]?
+                | select((.id | type) == "number")
+                | {
+                    id: .id,
+                    name: (if $when_expr == "created" then (.name // "") else (.key // "") end),
+                    ref: (.ref // ""),
+                    size: (
+                      if ((.size_in_bytes | type) == "number") and (.size_in_bytes > 0)
+                      then (.size_in_bytes | floor)
+                      else 0
+                      end
+                    ),
+                    when: timestamp
+                  }
+              ]
+              | unique_by(.id)
+              | .[]
+            ' "$pages" >"$dest"
+          }
+
+          process_list() {
+            local kind="$1"
+            local file="$2"
+            local cutoff="$3"
+            local url_base="$4"
+            local stats="$5"
+            local delete_all="$6"
+            local deleted=0 kept=0 missing=0 failed=0 bytes=0
+            local row id name size when ref epoch found
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Missing ${kind} list."
+              return 1
+            fi
+            found=$(grep -c . "$file" || true)
+            echo "Considering ${found} ${kind}(s)."
+            while IFS= read -r row; do
+              [[ -z "$row" ]] && continue
+              id=$(jq -r '.id' <<<"$row")
+              name=$(jq -r '.name' <<<"$row")
+              size=$(jq -r '.size' <<<"$row")
+              when=$(jq -r '.when' <<<"$row")
+              ref=$(jq -r '.ref // ""' <<<"$row")
+              name=${name//$'\n'/ }
+              ref=${ref//$'\n'/ }
+              if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+                echo "::warning::Skipping ${kind} with non-numeric id."
+                failed=$((failed + 1))
+                continue
+              fi
+              if [[ ! "$size" =~ ^[0-9]+$ ]]; then
+                size=0
+              fi
+              if [[ "$delete_all" != "1" ]]; then
+                epoch=$(epoch_of "$when")
+                if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
+                  echo "::warning::Skipping ${kind} ${id} (${name}); could not parse timestamp '${when}'."
+                  failed=$((failed + 1))
+                  continue
+                fi
+                if [[ "$epoch" -ge "$cutoff" ]]; then
+                  kept=$((kept + 1))
+                  continue
+                fi
+              fi
+              delete_by_id "$kind" "$id" "${url_base}/${id}"
+              case "$DELETE_RESULT" in
+                deleted)
+                  deleted=$((deleted + 1))
+                  bytes=$((bytes + 10#$size))
+                  if [[ "$kind" == "cache" ]]; then
+                    printf 'Deleted cache id=%s key=%s ref=%s bytes=%s (%s) last_accessed=%s\n' \
+                      "$id" "$name" "$ref" "$size" "$(format_bytes "$size")" "$when"
+                  else
+                    printf 'Deleted artifact id=%s name=%s bytes=%s (%s) created=%s\n' \
+                      "$id" "$name" "$size" "$(format_bytes "$size")" "$when"
+                  fi
+                  ;;
+                missing)
+                  missing=$((missing + 1))
+                  printf 'Already gone: %s id=%s name=%s\n' "$kind" "$id" "$name"
+                  ;;
+                *)
+                  failed=$((failed + 1))
+                  ;;
+              esac
+            done <"$file"
+            printf '%s\n' "$deleted" "$kept" "$missing" "$failed" "$bytes" >"$stats"
+          }
+
+          artifact_pages="${tmp_dir}/artifact-pages.json"
+          cache_pages="${tmp_dir}/cache-pages.json"
+          artifact_lines="${tmp_dir}/artifacts.jsonl"
+          cache_lines="${tmp_dir}/caches.jsonl"
+          artifact_stats="${tmp_dir}/artifact-stats"
+          cache_stats="${tmp_dir}/cache-stats"
+
+          echo "::group::Artifacts"
+          fetch_pages "/repos/${repo}/actions/artifacts?per_page=100" "$artifact_pages"
+          check_listed_count "$artifact_pages" "artifacts" "artifacts"
+          write_lines "$artifact_pages" "artifacts" "created" "$artifact_lines"
+          process_list "artifact" "$artifact_lines" "$artifact_cutoff_epoch" \
+            "/repos/${repo}/actions/artifacts" "$artifact_stats" "$artifact_delete_all"
+          echo "::endgroup::"
+
+          echo "::group::Caches"
+          fetch_pages "/repos/${repo}/actions/caches?per_page=100" "$cache_pages"
+          check_listed_count "$cache_pages" "actions_caches" "caches"
+          write_lines "$cache_pages" "actions_caches" "accessed" "$cache_lines"
+          process_list "cache" "$cache_lines" "$cache_cutoff_epoch" \
+            "/repos/${repo}/actions/caches" "$cache_stats" "0"
+          echo "::endgroup::"
+
+          {
+            read -r artifact_deleted
+            read -r artifact_kept
+            read -r artifact_missing
+            read -r artifact_failed
+            read -r artifact_bytes
+          } <"$artifact_stats"
+          {
+            read -r cache_deleted
+            read -r cache_kept
+            read -r cache_missing
+            read -r cache_failed
+            read -r cache_bytes
+          } <"$cache_stats"
+
+          for n in "$artifact_bytes" "$cache_bytes" "$artifact_deleted" "$cache_deleted"; do
+            if [[ ! "$n" =~ ^[0-9]+$ ]]; then
+              echo "::error::Internal count was not a number ('${n}')."
+              exit 1
+            fi
+          done
+          total_bytes=$((artifact_bytes + cache_bytes))
+
+          echo "Artifacts: deleted ${artifact_deleted}, kept ${artifact_kept}, already gone ${artifact_missing}, failed ${artifact_failed}, bytes freed ${artifact_bytes} ($(format_bytes "$artifact_bytes"))"
+          echo "Caches: deleted ${cache_deleted}, kept ${cache_kept}, already gone ${cache_missing}, failed ${cache_failed}, bytes freed ${cache_bytes} ($(format_bytes "$cache_bytes"))"
+          echo "Total bytes freed: ${total_bytes} ($(format_bytes "$total_bytes"))"
+
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo "### Clean up artifacts"
+              echo ""
+              echo "Artifacts deleted: ${artifact_deleted} (${artifact_bytes} bytes). Kept: ${artifact_kept}. Failed: ${artifact_failed}."
+              echo ""
+              echo "Caches deleted: ${cache_deleted} (${cache_bytes} bytes). Kept: ${cache_kept}. Failed: ${cache_failed}."
+              echo ""
+              echo "Total bytes freed: ${total_bytes}"
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ $((artifact_failed + cache_failed)) -gt 0 ]]; then
+            echo "::error::${artifact_failed} artifact delete(s) and ${cache_failed} cache delete(s) failed."
+            exit 1
+          fi

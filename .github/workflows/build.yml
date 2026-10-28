@@ -1,12 +1,13 @@
 name: Build
 
-# Tests, a debug APK and the Windows installer for every push and pull request.
+# Tests, a debug APK and the Windows installer for pull requests, pushes to main, and version tags.
+# APK and MSI artifacts are kept for 7 days; a failed test report is kept for 3 days.
 # Pushing a version tag (e.g. v1.2) also publishes a GitHub Release with the APK and the installer attached.
 # If the release already exists (made on GitHub first), the files are added to it.
 # Run it by hand with a tag to rebuild and re-attach the files to that release.
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -53,6 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-report
+          retention-days: 3
           path: |
             core/build/reports/tests/test/
             app/build/reports/tests/testDebugUnitTest/
@@ -69,6 +71,7 @@ jobs:
         with:
           name: ${{ env.APK }}
           path: ${{ env.APK }}
+          retention-days: 7
           if-no-files-found: error
 
       - name: Release
@@ -110,6 +113,7 @@ jobs:
         with:
           name: ${{ env.MSI }}
           path: ${{ env.MSI }}
+          retention-days: 7
           if-no-files-found: error
 
       - name: Attach to release
