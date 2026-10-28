@@ -99,6 +99,7 @@ fun DeckPane(state: AppState) {
     var later by remember { mutableStateOf(state.prefs.laterToday) }
     var showStrip by remember { mutableStateOf(state.prefs.weatherStrip) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
+    var managing by remember { mutableStateOf(false) }
 
     fun reload() = scope.launch {
         val v = state.vault ?: return@launch
@@ -162,7 +163,7 @@ fun DeckPane(state: AppState) {
                 BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
             }
             HomeCard.TOP_TASKS -> if (top.isNotEmpty()) TopTasksCard(top, ::tick) { state.tab = Tab.TASKS }
-            HomeCard.HABITS -> data.habits?.let { HabitsCard(it, ::changeHabits) { state.openInObsidian(Habits.PATH) } }
+            HomeCard.HABITS -> data.habits?.let { HabitsCard(it, ::changeHabits) { managing = true } }
             HomeCard.WEATHER -> {
                 val w = weather
                 if (w != null) WeatherCard(w, showStrip) { showStrip = !showStrip; state.prefs.weatherStrip = showStrip }
@@ -173,6 +174,8 @@ fun DeckPane(state: AppState) {
             else -> Unit
         }
     }
+
+    if (managing) ManageHabitsDialog(state) { managing = false; reload() }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -188,7 +191,7 @@ fun DeckPane(state: AppState) {
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
             DeckPill("Focus today ${data.focusMin}m", TaskGreen) { state.openInObsidian(FlightNotes.FOCUS_LOG) }
-            DeckPill(data.habits?.let { h -> "Habits ${h.habits.count { it in h.day(today).done }}/${h.habits.size}" } ?: "Habits", Purple) {
+            DeckPill(data.habits?.progress(today)?.let { (done, total) -> "Habits $done/$total" } ?: "Habits", Purple) {
                 state.openInObsidian(Habits.PATH)
             }
         }
@@ -358,42 +361,45 @@ private fun TopTasksCard(tasks: List<TaskItem>, onTick: (TaskItem) -> Unit, onAl
     }
 }
 
-private fun litres(ml: Int) = if (ml % 1000 == 0) "${ml / 1000}" else "%.2f".format(Locale.UK, ml / 1000.0).trimEnd('0').trimEnd('.')
-
-/** Habits: water bar with +250, today's ticks with streaks. "All ›" opens the Habits note in Obsidian. */
+/** Habits: a bar and press button per counter, today's ticks with streaks. "Manage ›" opens Manage habits. */
 @Composable
-private fun HabitsCard(n: HabitsNote, onChange: ((HabitDay) -> HabitDay) -> Unit, onAll: () -> Unit) {
+private fun HabitsCard(n: HabitsNote, onChange: ((HabitDay) -> HabitDay) -> Unit, onManage: () -> Unit) {
     val today = LocalDate.now()
     val day = n.day(today)
+    val (done, total) = n.progress(today)
     DeckCard {
-        CardHead("Habits", "${n.habits.count { it in day.done }} of ${n.habits.size} · All ›", onAll)
-        Line()
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("💧", fontSize = 13.sp)
-            Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(Surface2)) {
-                Box(Modifier.fillMaxWidth((day.waterMl.toFloat() / n.waterGoalMl).coerceIn(0f, 1f)).height(6.dp).background(Primary))
-            }
-            Text("${litres(day.waterMl)} / ${litres(n.waterGoalMl)} L", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
-            Text(
-                "+${Habits.GLASS_ML}", color = Primary, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                modifier = Modifier.clip(CircleShape).border(1.dp, Primary, CircleShape).hand()
-                    .clickable { onChange { it.copy(waterMl = it.waterMl + Habits.GLASS_ML) } }.padding(horizontal = 10.dp, vertical = 3.dp)
-            )
-        }
-        n.habits.forEach { h ->
+        CardHead("Habits", "$done of $total · Manage ›", onManage)
+        n.on(today).forEach { h ->
             Line()
-            val on = h in day.done
-            val streak = n.streak(h, today)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                TickBox(on) { onChange { it.copy(done = if (on) it.done - h else it.done + h) } }
-                Text(h, fontSize = 13.5.sp, color = TextMain, modifier = Modifier.weight(1f))
-                if (streak > 0) Text("🔥 $streak", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            if (h.counter) {
+                val v = day.value(h)
+                val over = h.max && v > h.goal
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(h.emoji.ifEmpty { h.name.take(1) }, fontSize = 13.sp)
+                    Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(Surface2)) {
+                        Box(Modifier.fillMaxWidth((v.toFloat() / h.goal.coerceAtLeast(1)).coerceIn(0f, 1f)).height(6.dp).background(if (over) Amber else Primary))
+                    }
+                    Text(Habits.short(h, v), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (over) Amber else Muted)
+                    Text(
+                        Habits.press(h), color = Primary, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.clip(CircleShape).border(1.dp, Primary, CircleShape).hand()
+                            .clickable { onChange { it.add(h, h.step) } }.padding(horizontal = 10.dp, vertical = 3.dp)
+                    )
+                }
+            } else {
+                val on = h.name in day.done
+                val streak = n.streak(h, today)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TickBox(on) { onChange { it.toggle(h) } }
+                    Text(h.label, fontSize = 13.5.sp, color = TextMain, modifier = Modifier.weight(1f))
+                    if (streak > 0) Text("🔥 $streak", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                }
             }
         }
     }

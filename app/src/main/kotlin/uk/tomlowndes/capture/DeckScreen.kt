@@ -196,7 +196,7 @@ fun DeckScreen(
         }
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
-            data.habits?.let { h -> h.habits.count { it in h.day(LocalDate.now()).done } to h.habits.size },
+            data.habits?.progress(LocalDate.now()),
             onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) }, onHabits = { onOpenSub(Sub.HABITS) }
         )
 
@@ -506,40 +506,45 @@ private fun TopTasksCard(tasks: List<TaskItem>, low: Boolean, onTick: (TaskItem)
     }
 }
 
-/** Habits on home: water bar with +250, today's ticks with streaks. "All ›" opens the full Habits screen. */
+/** Habits on home: a bar and press button per counter, today's ticks with streaks. "All ›" opens the full Habits screen. */
 @Composable
 private fun HabitsCard(n: HabitsNote, onChange: ((HabitDay) -> HabitDay) -> Unit, onAll: () -> Unit) {
     val today = LocalDate.now()
     val day = n.day(today)
+    val (done, total) = n.progress(today)
     DeckCard {
-        CardHead("Habits", "${n.habits.count { it in day.done }} of ${n.habits.size} · All ›", onAll)
-        HorizontalDivider(color = Outline)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("💧", fontSize = 13.sp)
-            Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(Surface2)) {
-                Box(Modifier.fillMaxWidth((day.waterMl.toFloat() / n.waterGoalMl).coerceIn(0f, 1f)).height(6.dp).background(Primary))
-            }
-            Text("${litres(day.waterMl)} / ${litres(n.waterGoalMl)} L", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
-            Text(
-                "+${Habits.GLASS_ML}", color = Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(CircleShape).background(PrimaryTint)
-                    .clickable { onChange { it.copy(waterMl = it.waterMl + Habits.GLASS_ML) } }.padding(horizontal = 10.dp, vertical = 4.dp)
-            )
-        }
-        n.habits.forEach { h ->
+        CardHead("Habits", "$done of $total · All ›", onAll)
+        n.on(today).forEach { h ->
             HorizontalDivider(color = Outline)
-            val on = h in day.done
-            val streak = n.streak(h, today)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                TickBox(done = on, onClick = { onChange { it.copy(done = if (on) it.done - h else it.done + h) } })
-                Text(h, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-                if (streak > 0) Text("🔥 $streak", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            if (h.counter) {
+                val v = day.value(h)
+                val over = h.max && v > h.goal
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(h.emoji.ifEmpty { h.name.take(1) }, fontSize = 13.sp)
+                    Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(Surface2)) {
+                        Box(Modifier.fillMaxWidth((v.toFloat() / h.goal.coerceAtLeast(1)).coerceIn(0f, 1f)).height(6.dp).background(if (over) Amber else Primary))
+                    }
+                    Text(Habits.short(h, v), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (over) Amber else Muted)
+                    Text(
+                        Habits.press(h), color = Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(CircleShape).background(PrimaryTint)
+                            .clickable { onChange { it.add(h, h.step) } }.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                val on = h.name in day.done
+                val streak = n.streak(h, today)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TickBox(done = on, onClick = { onChange { it.toggle(h) } })
+                    Text(h.label, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+                    if (streak > 0) Text("🔥 $streak", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                }
             }
         }
     }
