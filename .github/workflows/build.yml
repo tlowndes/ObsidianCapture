@@ -67,7 +67,9 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk "$name"
           echo "APK=$name" >> "$GITHUB_ENV"
 
+      # A full artifact store shouldn't stop a release: the Release step still attaches the file.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ env.APK }}
           path: ${{ env.APK }}
@@ -109,7 +111,9 @@ jobs:
           cp desktop/build/compose/binaries/main/msi/*.msi "$name"
           echo "MSI=$name" >> "$GITHUB_ENV"
 
+      # A full artifact store shouldn't stop a release: the Release step still attaches the file.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ env.MSI }}
           path: ${{ env.MSI }}
