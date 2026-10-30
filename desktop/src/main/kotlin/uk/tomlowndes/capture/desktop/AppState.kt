@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { TASKS, IDEAS, READ, FIND, SETTINGS }
+enum class Tab { DECK, TASKS, PROJECTS, READ, FIND, SETTINGS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -36,7 +36,11 @@ class AppState(val prefs: DesktopPrefs) {
 
     var vault by mutableStateOf(prefs.vault?.takeIf { it.isDirectory }?.let(::FileVault))
         private set
-    var tab by mutableStateOf(Tab.TASKS)
+    var tab by mutableStateOf(Tab.DECK)
+    /** A project to open when the Projects tab next shows (from the Projects card on Deck). */
+    var openProject by mutableStateOf<String?>(null)
+    /** The focus timer started from Deck; it keeps running while you switch tabs. */
+    var focus by mutableStateOf<FocusRun?>(null)
     var windowVisible by mutableStateOf(true)
     var quickVisible by mutableStateOf(false)
     /** Bumped when notes may have changed outside the open tab (window refocused, quick capture saved). */
@@ -49,7 +53,7 @@ class AppState(val prefs: DesktopPrefs) {
     var notify: (String, String) -> Unit = { _, _ -> }
     /** Counts for the sidebar. */
     var overdue by mutableIntStateOf(0)
-    var ideas by mutableIntStateOf(0)
+    var activeProjects by mutableIntStateOf(0)
     var unread by mutableIntStateOf(0)
 
     fun setVault(dir: File) {
@@ -67,6 +71,8 @@ class AppState(val prefs: DesktopPrefs) {
     /** Runs [work] off the UI thread; shows its failure as a message. Returns null on failure. */
     suspend fun <T> io(failure: String = "Failed", work: () -> T): T? =
         withContext(Dispatchers.IO) { runCatching(work) }.onFailure { say("$failure: ${it.message}") }.getOrNull()
+
+    fun openProjects(title: String?) { openProject = title; tab = Tab.PROJECTS }
 
     fun say(msg: String) { scope.launch { snack.showSnackbar(msg, withDismissAction = false) } }
 

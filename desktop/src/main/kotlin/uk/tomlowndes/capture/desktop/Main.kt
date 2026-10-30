@@ -64,11 +64,11 @@ fun main(args: Array<String>) {
         }
 
         Tray(
-            icon = icon, state = tray, tooltip = "Vault Capture",
+            icon = icon, state = tray, tooltip = "Flight Deck",
             onAction = { state.windowVisible = true },
             menu = {
                 Item("Quick capture  ($hotkeyLabel)", onClick = { state.quickVisible = true })
-                Item("Open Vault Capture", onClick = { state.windowVisible = true })
+                Item("Open Flight Deck", onClick = { state.windowVisible = true })
                 Separator()
                 Item("Settings", onClick = { state.tab = Tab.SETTINGS; state.windowVisible = true })
                 Item("Quit", onClick = ::exitApplication)
@@ -81,7 +81,7 @@ fun main(args: Array<String>) {
             onCloseRequest = { state.windowVisible = false },
             visible = state.windowVisible,
             state = winState,
-            title = "Vault Capture",
+            title = "Flight Deck",
             icon = icon,
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) false

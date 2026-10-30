@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsPane(state: AppState) {
@@ -34,6 +36,25 @@ fun SettingsPane(state: AppState) {
     var ideas by remember { mutableStateOf(p.ideasDir) }
     var images by remember { mutableStateOf(p.imagesDir) }
     var autostart by remember { mutableStateOf(Autostart.enabled()) }
+    var town by remember { mutableStateOf(p.weatherPlace) }
+    var finding by remember { mutableStateOf(false) }
+    var hasToken by remember { mutableStateOf(p.githubToken != null) }
+    var token by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    fun findTown() {
+        if (town.isBlank() || finding) return
+        finding = true
+        scope.launch {
+            val hit = state.io("Couldn't reach the weather service") { DesktopWeather.find(town) }
+            finding = false
+            if (hit == null) { state.say("Couldn't find “$town”"); return@launch }
+            p.weatherPlace = hit.third; p.weatherLatLon = hit.first to hit.second; p.weatherJson = null
+            town = hit.third
+            state.say("Weather set to ${hit.third}")
+            state.changed()
+        }
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
         H1("Settings")
@@ -55,8 +76,25 @@ fun SettingsPane(state: AppState) {
             Setting("Repeat recurring tasks", "Ticking a 🔁 task adds its next one, like the Tasks plugin") {
                 Toggle(recurring) { recurring = it; p.recurring = it }
             }
+            Setting("Weather", if (p.weatherLatLon != null) "Deck shows today's forecast for ${p.weatherPlace}" else "The town Deck shows the forecast for") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Field(town, { town = it }, Modifier.width(220.dp).onKeys(enter = ::findTown), "Manchester")
+                    Chip(if (finding) "Finding…" else "Set", small = true) { findTown() }
+                }
+            }
+            Setting("GitHub token", if (hasToken) "Saved, encrypted for your Windows account" else "Shows the last push, open PRs and release on a project. Read access is enough") {
+                if (hasToken) Chip("Remove", small = true) { p.githubToken = null; hasToken = false }
+                else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Field(token, { token = it }, Modifier.width(220.dp), "github_pat_…")
+                    Chip("Save", small = true) {
+                        if (token.isNotBlank()) runCatching { p.githubToken = token }
+                            .onSuccess { token = ""; hasToken = true; state.changed() }
+                            .onFailure { state.say("Couldn't save it: ${it.message}") }
+                    }
+                }
+            }
             Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
-            FolderSetting("Ideas", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
+            FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
             FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
             Sub("The same folders as the phone app.", Modifier.padding(top = 10.dp))
         }

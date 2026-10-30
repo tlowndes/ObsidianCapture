@@ -2,7 +2,7 @@
 
 Flight Deck (v1.7) is a personal capture and daily-planning app that writes straight into an Obsidian vault. The notes stay ordinary markdown, so Obsidian, and whatever syncs the vault, remain the source of truth. It needs no Obsidian plugin.
 
-The phone app is labelled **Flight Deck**. It is the daily home screen: what to do next, what is due, what to read, and the small loops (focus, habits, weather, calendar, jobs) that otherwise live in separate apps. A Windows desktop app in `desktop/` (window title **Vault Capture**) shares the same vault for tasks, projects, reading and quick capture.
+The phone app is labelled **Flight Deck**. It is the daily home screen: what to do next, what is due, what to read, and the small loops (focus, habits, weather, calendar, jobs) that otherwise live in separate apps. A Windows desktop app in `desktop/` (window title **Flight Deck**) shares the same vault, with its own Deck, tasks, projects, reading and quick capture.
 
 ## Writing into the vault
 
@@ -109,17 +109,18 @@ Scheduled with WorkManager (they survive a reboot, and may fire a few minutes la
 
 ## Windows
 
-Compose Desktop, installed per user from an MSI. The window is titled Vault Capture. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
+Compose Desktop, installed per user from an MSI (still named Vault Capture, so it upgrades the installed copy). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
 
-The sidebar is Tasks, Ideas, Read later, Find a note (Ctrl+K) and Settings, plus a Capture button (Ctrl+N). Ctrl+R re-reads the vault.
+The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Settings, plus a Capture button (Ctrl+N). Ctrl+R re-reads the vault.
 
 - **Tasks**: the same vault-wide `#task` list, grouped Overdue, Today, Tomorrow, This week, Later and No date, or in note order. Add a task in the box; a typed date such as `fri` or `25 oct` is taken as the due date. Tick, reschedule or remove, with Undo.
-- **Ideas**: the same project notes: summary, status, newest-first log, and photos from a file, a drop or the clipboard.
+- **Deck**: the phone's home cards in two columns, in the order and with the cards switched off in `capture-config.json`. Left: Next step (Start runs a focus timer in the card, Finish writes the focus log and asks if it's done; Later hides it until tomorrow), Bills, Top tasks and Habits. Right: Weather (the town from Settings; click for the day strip), Projects and Read it later. Today, Stuck? and Jobs stay on the phone.
+- **Projects**: the phone's quiet list (Active, Paused, Ideas, Done folded) beside the open project. The status icon or ⚙ opens a menu for status, Work or Personal, and type. The detail has the tickable next step, the summary, the GitHub line (with the token from Settings), and Log, Changelog, Decisions and Links tabs. Photos come from a file, a drop or the clipboard.
 - **Read later**: the inbox beside the reader. J and K move through the list, E archives, M marks read. Hover a paragraph and click to highlight it. Reading position is remembered.
 - **Find a note**: search, then add a task or a line.
-- **Quick capture**: a small always-on-top window from the global shortcut (Ctrl+Shift+Space by default; the other choices are in Settings). A link on the clipboard opens it in link mode, with a preview of the page. Escape or a click away dismisses it. Windows keeps Win+Space for switching keyboard language, so the shortcuts leave the Win key alone.
+- **Quick capture**: a small always-on-top window from the global shortcut (Ctrl+Shift+Space by default; the other choices are in Settings). A link on the clipboard opens it in link mode, with a preview of the page. A task can have Today, Tomorrow or a picked date, a time estimate, and a repeat (Daily, Weekly, Monthly, or Custom… in a panel beside it). Escape or a click away dismisses it. Windows keeps Win+Space for switching keyboard language, so the shortcuts leave the Win key alone.
 
-Deck, Sort it, the calendar, weather, habits, jobs and the focus timer are on the phone. Both apps write the same notes, so a task captured on Windows shows up on Deck.
+Sort it, the calendar, jobs and reminders are on the phone. Both apps write the same notes, so a task captured on Windows shows up on Deck.
 
 ## Setup
 
@@ -134,7 +135,7 @@ Deck, Sort it, the calendar, weather, habits, jobs and the focus timer are on th
    - **Cards on home**, **Weekly review** and **Habits** open those screens.
    - **Notes used** shows the projects folder, the images folder, and the fixed paths.
 4. Allow notifications if you want reminders, coarse location if you want weather, and the microphone if you want dictation.
-5. On Windows, Settings also holds the quick-capture shortcut, start with Windows, the recurring-task switch, and the projects and images folders (the same defaults as the phone).
+5. On Windows, Settings also holds the quick-capture shortcut, start with Windows, the recurring-task switch, the weather town, a GitHub token (encrypted for your Windows account), and the projects and images folders (the same defaults as the phone).
 
 ## Building and installing
 

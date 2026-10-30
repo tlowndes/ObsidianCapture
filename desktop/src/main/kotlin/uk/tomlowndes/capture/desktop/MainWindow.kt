@@ -21,6 +21,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,17 +44,25 @@ fun MainWindow(state: AppState) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
             if (state.vault == null && state.tab != Tab.SETTINGS) Welcome(state)
             else when (state.tab) {
+                Tab.DECK -> DeckPane(state)
                 Tab.TASKS -> TasksPane(state)
-                Tab.IDEAS -> IdeasPane(state)
+                Tab.PROJECTS -> ProjectsPane(state)
                 Tab.READ -> ReadPane(state)
                 Tab.FIND -> FindPane(state)
                 Tab.SETTINGS -> SettingsPane(state)
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
-                Snackbar(data, containerColor = Color(0xFFE8E3FA), contentColor = Color(0xFF1B1630),
-                    actionColor = Color(0xFF5A3FD0), shape = RoundedCornerShape(12.dp))
+                Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
+                    actionColor = SnackAction, shape = RoundedCornerShape(12.dp))
             }
         }
+    }
+    // The focus timer from Deck: a tray notification when it runs out, whichever tab is open.
+    LaunchedEffect(state.focus) {
+        val f = state.focus ?: return@LaunchedEffect
+        if (f.pausedLeft != null || f.asking) return@LaunchedEffect
+        delay(f.left())
+        state.notify("Focus time's up", f.task.text)
     }
     // Sidebar counts, refreshed whenever notes may have changed.
     LaunchedEffect(state.vault, state.changes) {
@@ -61,10 +70,10 @@ fun MainWindow(state: AppState) {
         state.io("Couldn't read the vault") {
             Triple(
                 state.writer()?.listTasks()?.count { t -> t.due?.isBefore(today) == true } ?: 0,
-                state.ideaStore()?.list()?.size ?: 0,
+                state.ideaStore()?.list()?.count { it.status.lowercase() == "active" } ?: 0,
                 state.readStore()?.inbox()?.let { ReadNote.unread(it).first } ?: 0
             )
-        }?.let { (o, i, u) -> state.overdue = o; state.ideas = i; state.unread = u }
+        }?.let { (o, i, u) -> state.overdue = o; state.activeProjects = i; state.unread = u }
     }
 }
 
@@ -72,7 +81,7 @@ fun MainWindow(state: AppState) {
 private fun Sidebar(state: AppState) {
     Column(Modifier.width(220.dp).fillMaxHeight().background(SideBg).padding(horizontal = 12.dp, vertical = 18.dp)) {
         Column(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 14.dp)) {
-            Text("Vault Capture", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextMain)
+            Text("Flight Deck", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextMain)
             Text(state.prefs.vault?.absolutePath ?: "No vault picked", fontSize = 11.sp, color = Muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -85,8 +94,9 @@ private fun Sidebar(state: AppState) {
             Text("Ctrl N", color = OnPrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x22000000)).padding(horizontal = 5.dp, vertical = 1.dp))
         }
+        NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
-        NavItem(state, Tab.IDEAS, "💡", "Ideas") { if (state.ideas > 0) Count(state.ideas) }
+        NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
         NavItem(state, Tab.FIND, "🔍", "Find a note") { Text("Ctrl K", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
@@ -111,7 +121,7 @@ private fun Sidebar(state: AppState) {
 private fun NavItem(state: AppState, tab: Tab, icon: String, name: String, trailing: @Composable () -> Unit = {}) {
     val on = state.tab == tab
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(12.dp)).background(if (on) Surface2 else Color.Transparent)
+        Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
             .hand().clickable { state.tab = tab }.padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
