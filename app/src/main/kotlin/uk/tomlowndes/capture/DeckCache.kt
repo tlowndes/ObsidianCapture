@@ -68,10 +68,5 @@ internal object DeckCache {
     }.getOrNull()
 
     /** A HabitsNote written back as note text, which [Habits.parse] reads. */
-    private fun habitsText(h: HabitsNote) = buildString {
-        append("## Habits\n")
-        h.habits.forEach { append("- ").append(it).append('\n') }
-        append("\n## Water\ngoal: ${h.waterGoalMl} ml\n\n## Log\n| Date | Water ml | Done |\n|---|---|---|\n")
-        h.days.values.sortedBy { it.date }.takeLast(14).forEach { append(Habits.row(it, h.habits)).append('\n') }
-    }
+    private fun habitsText(h: HabitsNote) = Habits.text(h)
 }

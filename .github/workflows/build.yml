@@ -67,7 +67,9 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk "$name"
           echo "APK=$name" >> "$GITHUB_ENV"
 
+      # A full artifact store shouldn't stop a release: the Release step still attaches the file.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ env.APK }}
           path: ${{ env.APK }}
@@ -82,7 +84,13 @@ jobs:
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "$APK" --clobber
           else
-            gh release create "$RELEASE_TAG" "$APK" --title "Vault Capture $RELEASE_TAG" --generate-notes
+            # A tag that isn't a version (e.g. a test build) goes up as a pre-release, so v* stays Latest.
+            if [[ "$RELEASE_TAG" == v* ]]; then
+              gh release create "$RELEASE_TAG" "$APK" --title "Vault Capture $RELEASE_TAG" --generate-notes
+            else
+              gh release create "$RELEASE_TAG" "$APK" --title "Test build $RELEASE_TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
+                --notes "Test build from ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Not a release; safe to delete."
+            fi
           fi
 
   desktop:
@@ -109,7 +117,9 @@ jobs:
           cp desktop/build/compose/binaries/main/msi/*.msi "$name"
           echo "MSI=$name" >> "$GITHUB_ENV"
 
+      # A full artifact store shouldn't stop a release: the Release step still attaches the file.
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ${{ env.MSI }}
           path: ${{ env.MSI }}
