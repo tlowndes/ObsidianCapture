@@ -194,6 +194,7 @@ fun DeckScreen(
                     .clickable(onClick = onOpenSettings).padding(horizontal = 14.dp, vertical = 10.dp)
             )
         }
+        UpdateBanner()
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.progress(LocalDate.now()),

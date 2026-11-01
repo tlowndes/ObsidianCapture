@@ -188,6 +188,7 @@ fun DeckPane(state: AppState) {
             }
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }
+        UpdateBanner(state)
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
             DeckPill("Focus today ${data.focusMin}m", TaskGreen) { state.openInObsidian(FlightNotes.FOCUS_LOG) }

@@ -97,6 +97,20 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
             put("github_token", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
         }
 
+    /** In-app updater: check GitHub on launch, the tag Later hid, and the last check. */
+    var updateChecks: Boolean
+        get() = p.getBoolean("update_checks", true)
+        set(v) { p.putBoolean("update_checks", v); p.flush() }
+    var updateSkip: String?
+        get() = p.get("update_skip", null)
+        set(v) = put("update_skip", v)
+    var updateCheckedAt: Long
+        get() = p.getLong("update_checked_at", 0)
+        set(v) { p.putLong("update_checked_at", v); p.flush() }
+    var updateLatest: String?
+        get() = p.get("update_latest", null)
+        set(v) = put("update_latest", v)
+
     fun draft(key: String): String = str("draft_${key.hashCode()}", "")
     fun setDraft(key: String, text: String) = put("draft_${key.hashCode()}", text.ifEmpty { null })
 
