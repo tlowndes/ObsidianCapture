@@ -24,6 +24,16 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
+// The version the in-app updater compares against GitHub's latest release.
+val captureVersionFile = tasks.register("captureVersionFile") {
+    val version = providers.gradleProperty("captureVersion")
+    val out = layout.buildDirectory.dir("generated/version")
+    inputs.property("version", version)
+    outputs.dir(out)
+    doLast { out.get().file("capture-version.txt").asFile.writeText(version.get()) }
+}
+sourceSets.main { resources.srcDir(captureVersionFile) }
+
 compose.desktop {
     application {
         mainClass = "uk.tomlowndes.capture.desktop.MainKt"

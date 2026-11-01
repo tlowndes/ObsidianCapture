@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -100,7 +101,7 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
         NavItem(state, Tab.FIND, "🔍", "Find a note") { Text("Ctrl K", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
-        NavItem(state, Tab.SETTINGS, "⚙", "Settings")
+        NavItem(state, Tab.SETTINGS, "⚙", "Settings") { if (DesktopUpdate.waiting()) Box(Modifier.size(8.dp).clip(CircleShape).background(Primary)) }
         Column(
             Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, Outline, RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),

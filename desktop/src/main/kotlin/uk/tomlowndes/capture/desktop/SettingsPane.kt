@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
 import kotlinx.coroutines.launch
+import uk.tomlowndes.capture.Updater
 
 @Composable
 fun SettingsPane(state: AppState) {
@@ -40,6 +41,8 @@ fun SettingsPane(state: AppState) {
     var finding by remember { mutableStateOf(false) }
     var hasToken by remember { mutableStateOf(p.githubToken != null) }
     var token by remember { mutableStateOf("") }
+    var checks by remember { mutableStateOf(p.updateChecks) }
+    val latest = DesktopUpdate.release?.tag ?: p.updateLatest
     val scope = rememberCoroutineScope()
 
     fun findTown() {
@@ -82,7 +85,7 @@ fun SettingsPane(state: AppState) {
                     Chip(if (finding) "Finding…" else "Set", small = true) { findTown() }
                 }
             }
-            Setting("GitHub token", if (hasToken) "Saved, encrypted for your Windows account" else "Shows the last push, open PRs and release on a project. Read access is enough") {
+            Setting("GitHub token", if (hasToken) "Saved, encrypted for your Windows account" else "Read-only, for app updates and the GitHub line on projects. Fine-grained: ObsidianCapture, Contents read") {
                 if (hasToken) Chip("Remove", small = true) { p.githubToken = null; hasToken = false }
                 else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Field(token, { token = it }, Modifier.width(220.dp), "github_pat_…")
@@ -90,6 +93,26 @@ fun SettingsPane(state: AppState) {
                         if (token.isNotBlank()) runCatching { p.githubToken = token }
                             .onSuccess { token = ""; hasToken = true; state.changed() }
                             .onFailure { state.say("Couldn't save it: ${it.message}") }
+                    }
+                }
+            }
+            Text("UPDATES", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+            Setting("Check for updates on launch", "Asks GitHub for a newer release when the app opens. Uses the GitHub token above") {
+                Toggle(checks) { checks = it; p.updateChecks = it }
+            }
+            Setting("Installed", "Latest: " + when {
+                DesktopUpdate.phase == DesktopUpdate.Phase.CHECKING -> "checking…"
+                latest == null -> "not checked yet"
+                Updater.isNewer(latest, DesktopUpdate.installed) -> "${latest.removePrefix("v")} available"
+                else -> "${latest.removePrefix("v")}, up to date"
+            } + (DesktopUpdate.error?.let { " · $it" } ?: "")) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(DesktopUpdate.installed, fontSize = 13.sp, color = Muted)
+                    Chip("Check now", small = true) {
+                        scope.launch {
+                            DesktopUpdate.check(p, force = true)
+                            if (DesktopUpdate.phase == DesktopUpdate.Phase.AVAILABLE) { p.updateSkip = null; DesktopUpdate.skip = null }
+                        }
                     }
                 }
             }

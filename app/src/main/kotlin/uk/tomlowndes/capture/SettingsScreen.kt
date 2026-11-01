@@ -1,5 +1,6 @@
 package uk.tomlowndes.capture
 
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -73,6 +76,9 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var editingKey by remember { mutableStateOf(false) }
     var ghMasked by remember { mutableStateOf(secrets.githubToken?.let { "••••" + it.takeLast(4) }) }
     var editingGh by remember { mutableStateOf(false) }
+    var checks by remember { mutableStateOf(prefs.updateChecks) }
+    val installed = remember { AppUpdate.installed(ctx) }
+    val scope = rememberCoroutineScope()
     if (editingGh) {
         var draft by remember { mutableStateOf("") }
         AlertDialog(
@@ -151,10 +157,44 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             "Claude model id for brain dumps. ${Sorting.MODEL} is the default. If Claude says that model was rejected, put the current id here.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp)
         )
+        SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+
+        Text("", Modifier.padding(top = 8.dp))
+        GroupLabel("Updates")
+        SettingRow("Check for updates on launch") { AppSwitch(checks) { checks = it; prefs.updateChecks = it } }
         SettingRow("GitHub token", ghMasked ?: "Not set") {
             TextButton(onClick = { editingGh = true }) { Text(if (ghMasked == null) "Add" else "Change", color = Primary) }
         }
-        SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+        Text(
+            "Read-only, for the private repo. Also shows GitHub activity on projects. Make one at github.com › Settings › Developer settings › Fine-grained tokens: repo ObsidianCapture only, Contents read-only.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
+        )
+        TextButton(onClick = {
+            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/personal-access-tokens/new"))) }
+        }) { Text("Open GitHub", color = Primary) }
+        SettingRow("Installed") { Text(installed, color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+        SettingRow("Latest") {
+            val rel = AppUpdate.release
+            val latest = rel?.version ?: prefs.updateLatest?.removePrefix("v")
+            val newer = latest != null && Updater.isNewer(latest, installed)
+            Text(
+                when {
+                    AppUpdate.phase == AppUpdate.Phase.CHECKING -> "Checking…"
+                    latest == null -> "—"
+                    newer -> "$latest available"
+                    else -> "$latest · up to date"
+                },
+                color = if (newer) Green else Muted, modifier = Modifier.padding(end = 12.dp)
+            )
+        }
+        SettingRow("Last checked") { Text(checkedAgo(prefs.updateCheckedAt), color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+        AppUpdate.error?.let { Text(it, fontSize = 12.sp, color = Amber, modifier = Modifier.padding(bottom = 4.dp)) }
+        TextButton(onClick = {
+            scope.launch {
+                AppUpdate.check(ctx, force = true)
+                if (AppUpdate.phase == AppUpdate.Phase.AVAILABLE) prefs.updateSkip = null
+            }
+        }, modifier = Modifier.fillMaxWidth()) { Text("Check now", color = Primary) }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Vault")
@@ -170,5 +210,17 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }
         }
         Text("", Modifier.padding(bottom = 16.dp))
+    }
+}
+
+/** "2 min ago" for Settings › Updates. */
+private fun checkedAgo(at: Long): String {
+    if (at <= 0) return "Never"
+    val min = (System.currentTimeMillis() - at) / 60_000
+    return when {
+        min < 1 -> "Just now"
+        min < 60 -> "$min min ago"
+        min < 24 * 60 -> "${min / 60} h ago"
+        else -> "${min / (24 * 60)} days ago"
     }
 }

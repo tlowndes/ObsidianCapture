@@ -48,6 +48,24 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("evening_min", 21 * 60)
         set(v) { p.edit().putInt("evening_min", v).apply() }
 
+    /** In-app updater: check GitHub for a new release when the app opens. */
+    var updateChecks: Boolean
+        get() = p.getBoolean("update_checks", true)
+        set(v) { p.edit().putBoolean("update_checks", v).apply() }
+
+    /** The release tag Later was pressed on; its banner stays hidden until a newer one comes out. */
+    var updateSkip: String?
+        get() = p.getString("update_skip", null)
+        set(v) { p.edit().putString("update_skip", v).apply() }
+
+    /** When GitHub was last asked, and the latest tag it gave. */
+    var updateCheckedAt: Long
+        get() = p.getLong("update_checked_at", 0)
+        set(v) { p.edit().putLong("update_checked_at", v).apply() }
+    var updateLatest: String?
+        get() = p.getString("update_latest", null)
+        set(v) { p.edit().putString("update_latest", v).apply() }
+
     /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
     var energy: Energy
         get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())
