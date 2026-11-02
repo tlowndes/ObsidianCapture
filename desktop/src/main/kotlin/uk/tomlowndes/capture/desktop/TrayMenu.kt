@@ -161,13 +161,13 @@ private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Uni
                 Spacer(Modifier.width(9.dp))
                 Text("Flight Deck", color = Muted, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
             }
-            MenuRow("Quick capture", ::plusIcon, keys = hotkeyLabel.split(" + "), onClick = onQuick)
-            MenuRow("Open Flight Deck", ::windowIcon, onClick = onOpen)
+            MenuRow("Quick capture", DrawScope::plusIcon, keys = hotkeyLabel.split(" + "), onClick = onQuick)
+            MenuRow("Open Flight Deck", DrawScope::windowIcon, onClick = onOpen)
             Box(Modifier.fillMaxWidth().height(SEP_H.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
             }
-            MenuRow("Settings", ::gearIcon, onClick = onSettings)
-            MenuRow("Quit", ::powerIcon, quiet = true, onClick = onQuit)
+            MenuRow("Settings", DrawScope::gearIcon, onClick = onSettings)
+            MenuRow("Quit", DrawScope::powerIcon, quiet = true, onClick = onQuit)
         }
     }
 }
