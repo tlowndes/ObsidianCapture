@@ -108,7 +108,18 @@ fun SettingsPane(state: AppState) {
             } + (DesktopUpdate.error?.let { " · $it" } ?: "")) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(DesktopUpdate.installed, fontSize = 13.sp, color = Muted)
-                    Chip("Check now", small = true) {
+                    val newer = latest != null && Updater.isNewer(latest, DesktopUpdate.installed)
+                    when (DesktopUpdate.phase) {
+                        DesktopUpdate.Phase.DOWNLOADING -> {
+                            val t = DesktopUpdate.total
+                            Text(if (t > 0) "Downloading ${(DesktopUpdate.done * 100 / t).toInt()}%" else "Downloading…", fontSize = 13.sp, color = Muted)
+                        }
+                        DesktopUpdate.Phase.READY -> PrimaryButton("Restart and install") { DesktopUpdate.restartAndInstall() }
+                        DesktopUpdate.Phase.CHECKING -> {}
+                        else -> if (newer) PrimaryButton("Update") { scope.launch { DesktopUpdate.update(p) } }
+                    }
+                    val busy = DesktopUpdate.phase == DesktopUpdate.Phase.DOWNLOADING || DesktopUpdate.phase == DesktopUpdate.Phase.READY
+                    if (!busy) Chip("Check now", small = true) {
                         scope.launch {
                             DesktopUpdate.check(p, force = true)
                             if (DesktopUpdate.phase == DesktopUpdate.Phase.AVAILABLE) { p.updateSkip = null; DesktopUpdate.skip = null }

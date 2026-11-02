@@ -89,6 +89,14 @@ object DesktopUpdate {
         }
     }
 
+    /** Settings' Update button: checks first if this run hasn't, then downloads the MSI. */
+    suspend fun update(prefs: DesktopPrefs) {
+        if (release == null || phase == Phase.IDLE) check(prefs, force = true)
+        if (phase != Phase.AVAILABLE) return
+        prefs.updateSkip = null; skip = null
+        download(prefs)
+    }
+
     fun later(prefs: DesktopPrefs) {
         val tag = release?.tag ?: return
         prefs.updateSkip = tag
