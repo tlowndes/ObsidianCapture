@@ -2,6 +2,9 @@ package uk.tomlowndes.capture.desktop
 
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
@@ -12,11 +15,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.sun.jna.Native
 import com.sun.jna.platform.win32.WinDef
@@ -52,7 +53,6 @@ fun main(args: Array<String>) {
     }
 
     application {
-        val tray = rememberTrayState()
         val icon = painterResource("icon.png")
 
         // The global shortcut: registered again whenever it's changed in Settings.
@@ -63,18 +63,20 @@ fun main(args: Array<String>) {
             onDispose { hk?.stop() }
         }
 
-        Tray(
-            icon = icon, state = tray, tooltip = "Flight Deck",
-            onAction = { state.windowVisible = true },
-            menu = {
-                Item("Quick capture  ($hotkeyLabel)", onClick = { state.quickVisible = true })
-                Item("Open Flight Deck", onClick = { state.windowVisible = true })
-                Separator()
-                Item("Settings", onClick = { state.tab = Tab.SETTINGS; state.windowVisible = true })
-                Item("Quit", onClick = ::exitApplication)
+        // Our own tray icon and styled right-click menu (tray-menu-v1), not the plain Windows one.
+        var menuAt by remember { mutableStateOf<java.awt.Point?>(null) }
+        AppTray(state) { at -> menuAt = at }
+        menuAt?.let { at ->
+            androidx.compose.runtime.key(at) {
+                TrayMenuWindow(
+                    at, icon, hotkeyLabel, onClose = { menuAt = null },
+                    onQuick = { state.quickVisible = true },
+                    onOpen = { state.windowVisible = true },
+                    onSettings = { state.tab = Tab.SETTINGS; state.windowVisible = true },
+                    onQuit = ::exitApplication,
+                )
             }
-        )
-        LaunchedEffect(Unit) { state.notify = { title, body -> tray.sendNotification(androidx.compose.ui.window.Notification(title, body)) } }
+        }
 
         val winState = rememberWindowState(size = DpSize(1280.dp, 820.dp), position = WindowPosition(Alignment.Center))
         Window(
