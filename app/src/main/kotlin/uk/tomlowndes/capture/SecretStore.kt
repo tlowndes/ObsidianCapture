@@ -30,6 +30,13 @@ class SecretStore(ctx: Context) {
             if (v.isNullOrBlank()) p.edit().remove(GH_KEY).apply() else p.edit().putString(GH_KEY, encrypt(v.trim())).apply()
         }
 
+    /** Bearer token for the Jarvis voice server on the Oracle box. Stored the same way as the Claude key. */
+    var jarvisToken: String?
+        get() = p.getString(JARVIS_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
+        set(v) {
+            if (v.isNullOrBlank()) p.edit().remove(JARVIS_KEY).apply() else p.edit().putString(JARVIS_KEY, encrypt(v.trim())).apply()
+        }
+
     /** "sk-ant-…a1b2" for showing in Settings. */
     fun maskedKey(): String? = claudeKey?.let { k -> if (k.length <= 10) "••••" else k.take(7) + "…" + k.takeLast(4) }
 
@@ -61,6 +68,7 @@ class SecretStore(ctx: Context) {
     private companion object {
         const val KEY = "claude_key"
         const val GH_KEY = "github_token"
+        const val JARVIS_KEY = "jarvis_token"
         const val ALIAS = "flight-deck-claude"
         const val TRANSFORM = "AES/GCM/NoPadding"
     }

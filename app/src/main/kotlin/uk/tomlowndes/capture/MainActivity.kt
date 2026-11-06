@@ -52,11 +52,11 @@ import kotlinx.coroutines.withContext
 enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS }
 
 enum class Tab(val label: String, val icon: String) {
-    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
+    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), JARVIS("Jarvis", "🎙"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
 
     companion object {
         /** The bottom bar. Read later lives inside Vault now, so READ has no button of its own. */
-        val NAV = listOf(DECK, CAPTURE, TASKS, VAULT, PROJECTS)
+        val NAV = listOf(DECK, CAPTURE, JARVIS, TASKS, VAULT, PROJECTS)
     }
 }
 
@@ -238,6 +238,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
                 ) { settings = true }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
+                tab == Tab.JARVIS -> JarvisScreen(prefs, snack) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null }) { t, m -> startFocus(t.text, t.raw, t.path, m) }
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ },
@@ -265,8 +266,8 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
         ) {
             Tab.NAV.forEach { t ->
                 val on = t == selected
-                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
+                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
                     Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)

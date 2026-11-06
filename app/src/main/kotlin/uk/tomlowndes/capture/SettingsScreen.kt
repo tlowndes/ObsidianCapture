@@ -76,6 +76,11 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var editingKey by remember { mutableStateOf(false) }
     var ghMasked by remember { mutableStateOf(secrets.githubToken?.let { "••••" + it.takeLast(4) }) }
     var editingGh by remember { mutableStateOf(false) }
+    var jvMasked by remember { mutableStateOf(secrets.jarvisToken?.let { "••••" + it.takeLast(4) }) }
+    var editingJv by remember { mutableStateOf(false) }
+    var jvSpeak by remember { mutableStateOf(prefs.jarvisSpeak) }
+    var jvPing by remember { mutableStateOf<Jarvis.Ping?>(null) }
+    var jvTesting by remember { mutableStateOf(false) }
     var checks by remember { mutableStateOf(prefs.updateChecks) }
     val installed = remember { AppUpdate.installed(ctx) }
     val scope = rememberCoroutineScope()
@@ -100,6 +105,30 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                     if (ghMasked != null) { secrets.githubToken = null; ghMasked = null }
                     editingGh = false
                 }) { Text(if (ghMasked != null) "Remove" else "Cancel", color = Muted) }
+            }
+        )
+    }
+    if (editingJv) {
+        var draft by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingJv = false }, containerColor = Surface1,
+            title = { Text("Jarvis token") },
+            text = {
+                OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
+                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("Bearer token from the Oracle box") })
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    secrets.jarvisToken = draft
+                    jvMasked = secrets.jarvisToken?.let { "••••" + it.takeLast(4) }
+                    editingJv = false; jvPing = null
+                }, enabled = draft.isNotBlank()) { Text("Save", color = Primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (jvMasked != null) { secrets.jarvisToken = null; jvMasked = null }
+                    editingJv = false
+                }) { Text(if (jvMasked != null) "Remove" else "Cancel", color = Muted) }
             }
         )
     }
@@ -158,6 +187,27 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp)
         )
         SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+
+        Text("", Modifier.padding(top = 8.dp))
+        GroupLabel("Jarvis")
+        PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
+        Text(
+            "Tailscale name of the Oracle box, like oracle.tail1234.ts.net:8443. Only works with Tailscale on. Type demo to try the tab without a server.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
+        )
+        SettingRow("Token", jvMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingJv = true }) { Text(if (jvMasked == null) "Add" else "Change", color = Primary) }
+        }
+        SettingRow("Test connection", jvPing?.message ?: if (jvTesting) "Checking…" else null) {
+            TextButton(onClick = {
+                jvTesting = true; jvPing = null
+                scope.launch {
+                    jvPing = withContext(Dispatchers.IO) { Jarvis.ping(prefs.jarvisAddress, secrets.jarvisToken.orEmpty()) }
+                    jvTesting = false
+                }
+            }, enabled = !jvTesting) { Text("Test", color = Primary) }
+        }
+        SettingRow("Play replies aloud") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Updates")

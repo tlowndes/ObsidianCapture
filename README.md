@@ -68,6 +68,19 @@ Three modes, and it reopens on the last one used:
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
 - **Brain dump**: type or dictate (UK speech recognition). **Sort it** sends the text to Claude with the tags already in use, and queues it on the phone until you save. Nothing is written until **Check and save**. You can drop items there. Tasks go to Quick Task, ideas become projects with `type: idea`, and any leftover note goes to the inbox. The model is `claude-haiku-5-5` unless Settings has another id. If Claude rejects that model, Sort it says so and you can paste a current id. Save writes the tasks, the ideas and the note together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again. If the phone is offline the dump stays queued and sorts on the next try. This needs the Claude API key from Settings.
 
+### Jarvis
+
+Hold the big button to talk, let go to send (slide off to cancel). The app records OGG/Opus and posts it, with the
+worker picked top right (Jarvis, Coding, Obsidian, Research, Odd jobs) and a bearer token, to `POST /voice` on the
+Oracle box over Tailscale. That server hands it to the Claude CLI and answers with what it heard, the reply and an
+`audio_url`, which the app fetches with the same token and plays. A Done line shows when `GET /done` reports a
+finished background job. Address and token are in Settings › Jarvis; the token is kept in Android secure storage,
+never in the vault or the repo. Type `demo` as the address to try the tab with no server.
+
+To test against something real before the Oracle side is ready, run the fake server on a PC that's on the tailnet:
+`python tools/fake-jarvis/fake_jarvis.py --token test-token`, then `tailscale serve --bg 8765`, and put that PC's
+`*.ts.net` name and `test-token` into Settings › Jarvis. It plays your own recording back.
+
 ### Tasks
 
 Every open `#task` in the vault: Quick Task first, then the rest. Groups are Overdue, Today, This week (tomorrow included) and Later (undated included). Filter by the tags you use most, by Work (`#work`, `#jobs`) or Personal, by 15 minutes or under, or by search. Tick, reschedule or remove, each with Undo. Today's rows can start a Focus timer. The due-date sheet also sets or clears the `⏱` estimate.
