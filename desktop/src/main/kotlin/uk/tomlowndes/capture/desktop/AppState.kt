@@ -55,6 +55,9 @@ class AppState(val prefs: DesktopPrefs) {
     var overdue by mutableIntStateOf(0)
     var activeProjects by mutableIntStateOf(0)
     var unread by mutableIntStateOf(0)
+    /** Tags for the sidebar under Tasks (Work, Personal, then the most used), and the one the Tasks pane is filtered by. */
+    var tagCounts by mutableStateOf<List<Pair<String, Int>>>(emptyList())
+    var taskTag by mutableStateOf<String?>(null)
 
     fun setVault(dir: File) {
         prefs.vault = dir

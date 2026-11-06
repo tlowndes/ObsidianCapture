@@ -34,7 +34,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * One task line as Flight Deck draws it: optional work/personal edge, tick box, text with its first tag, then
+ * One task line as Flight Deck draws it: optional work/personal edge, tick box, text with up to two tags, then
  * [trailing] (a due pill or ▶ 15m).
  */
 @Composable
@@ -56,9 +56,10 @@ internal fun TaskLine(
             buildAnnotatedString {
                 append(TaskViews.plainText(t))
                 if (t.recurrence != null) append(" ↻")
-                TaskViews.tags(t).firstOrNull()?.let { tag ->
-                    withStyle(SpanStyle(color = if (tag == "#bill") Amber else Purple, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) {
-                        append(" $tag")
+                // Up to two tags, coloured like the Tag row: Work amber, Personal green, the rest purple.
+                TaskViews.tags(t).take(2).forEach { tag ->
+                    withStyle(SpanStyle(color = tagColour(tag).first, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) {
+                        append(" ${if (Tags.kind(tag) == TagKind.OTHER) tag else tag.removePrefix("#")}")
                     }
                 }
                 Deck.minutes(t)?.let { m ->

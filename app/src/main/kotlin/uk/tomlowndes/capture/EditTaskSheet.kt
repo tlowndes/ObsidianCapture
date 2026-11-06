@@ -31,11 +31,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
-/** Edit the wording, due date, estimate and recurrence of a task already in the vault. */
+/** Edit the wording, due date, estimate, recurrence and tags of a task already in the vault. Tags live in the wording. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EditTaskSheet(
     t: TaskItem,
+    tags: TagData,
     onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
@@ -72,6 +73,7 @@ internal fun EditTaskSheet(
                 }
             }
             RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
+            TagRow(tags, Tags.inText(text)) { tag -> text = Tags.toggle(text, tag) }
             Text(
                 "Remove task", color = Warn, fontSize = 14.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).clickable(onClick = onRemove).padding(vertical = 8.dp)

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.tomlowndes.capture.ReadNote
+import uk.tomlowndes.capture.Tags
 import java.io.File
 import java.time.LocalDate
 import javax.swing.JFileChooser
@@ -69,12 +71,13 @@ fun MainWindow(state: AppState) {
     LaunchedEffect(state.vault, state.changes) {
         val today = LocalDate.now()
         state.io("Couldn't read the vault") {
+            val tasks = state.writer()?.listTasks().orEmpty()
             Triple(
-                state.writer()?.listTasks()?.count { t -> t.due?.isBefore(today) == true } ?: 0,
+                tasks.count { t -> t.due?.isBefore(today) == true } to Tags.filterCounts(tasks, 6),
                 state.ideaStore()?.list()?.count { it.status.lowercase() == "active" } ?: 0,
                 state.readStore()?.inbox()?.let { ReadNote.unread(it).first } ?: 0
             )
-        }?.let { (o, i, u) -> state.overdue = o; state.activeProjects = i; state.unread = u }
+        }?.let { (o, i, u) -> state.overdue = o.first; state.tagCounts = o.second; state.activeProjects = i; state.unread = u }
     }
 }
 
@@ -97,6 +100,7 @@ private fun Sidebar(state: AppState) {
         }
         NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
+        TagNav(state)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
@@ -116,6 +120,31 @@ private fun Sidebar(state: AppState) {
             )
         }
     }
+}
+
+/** TAGS under Tasks: Work, Personal and the most used tags, with counts. A click filters the Tasks pane. */
+@Composable
+private fun TagNav(state: AppState) {
+    val tags = state.tagCounts.filter { it.second > 0 }
+    if (tags.isEmpty()) return
+    Text("TAGS", fontSize = 10.5.sp, letterSpacing = 1.3.sp, color = Faint, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp))
+    tags.forEach { (tag, n) ->
+        val on = state.tab == Tab.TASKS && state.taskTag == tag
+        val (fg, _) = tagColour(tag)
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 1.dp).clip(RoundedCornerShape(10.dp)).background(if (on) PrimaryTint else Color.Transparent)
+                .hand().clickable { state.taskTag = if (on) null else tag; state.tab = Tab.TASKS }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(8.dp).clip(CircleShape).background(fg)) }
+            Text(Tags.label(tag), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted,
+                modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$n", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold)
+        }
+    }
+    Box(Modifier.height(8.dp))
 }
 
 @Composable

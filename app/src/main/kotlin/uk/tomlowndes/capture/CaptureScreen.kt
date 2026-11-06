@@ -352,6 +352,20 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     var repeat by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    // Tags picked on the Tag row; ones typed as #word in the box count too.
+    var picked by remember { mutableStateOf<List<String>>(emptyList()) }
+    val tagData = rememberTagData(vault)
+    // A link is saved as typed, so only the chips tag it.
+    val typedTags = if (link) emptyList() else Tags.inText(text)
+    val onTags = (picked + typedTags).distinct()
+
+    fun toggleTag(tag: String) {
+        when {
+            tag in typedTags -> text = Tags.remove(text, tag)
+            tag in picked -> picked = picked - tag
+            else -> picked = picked + tag
+        }
+    }
 
     fun submit() {
         val value = text.trim()
@@ -363,22 +377,25 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         // A repeating task needs a first date for the series to count from.
         val wasDue = due ?: if (wasRule != null) LocalDate.now() else null
         val wasMin = minutes
+        val wasTags = picked.filter { it !in typedTags }
+        val wasTyped = typedTags
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     if (link) {
                         val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
-                        ReadLater.save(ctx, uri, url, null)
-                    } else { VaultWriter(ctx, uri).addTask(value + (wasMin?.let { " ⏱ ${it}m" } ?: "") + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString()); true }
+                        ReadLater.save(ctx, uri, url, null, wasTags)
+                    } else { VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString()); true }
                 }
             }
             busy = false
             r.onSuccess { full ->
-                history.add(0, Added(link, value,
-                    if (link) (if (full) "Read later · full page" else "Read later · link only")
+                val tagNote = (wasTags + wasTyped).distinct().joinToString("") { " · ${Tags.label(it)}" }
+                history.add(0, Added(link, if (link) value else Tags.strip(value).ifBlank { value },
+                    (if (link) (if (full) "Read later · full page" else "Read later · link only")
                     else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "") +
-                        (wasRule?.let { " · ↻ $it" } ?: "")))
-                text = ""; due = null; minutes = null; repeat = null
+                        (wasRule?.let { " · ↻ $it" } ?: "")) + tagNote))
+                text = ""; due = null; minutes = null; repeat = null; picked = emptyList()
                 snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
             }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
@@ -406,6 +423,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         }
         RepeatPicker(repeat, due) { repeat = it }
     }
+    TagRow(tagData, onTags, ::toggleTag)
     Text(
         if (link) "Save link" else "Add task", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
         modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
