@@ -100,8 +100,9 @@ fun TasksPane(state: AppState) {
 
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     val tag = state.taskTag
+    val note = state.taskNote
     val shown = tasks.orEmpty().filter {
-        (tag == null || Tags.matches(it, tag)) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
+        (note == null || it.path == note) && (tag == null || Tags.matches(it, tag)) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
@@ -110,6 +111,7 @@ fun TasksPane(state: AppState) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     H1("Tasks" + (tag?.let { " · ${Tags.label(it)}" } ?: ""))
                     if (tag != null) Chip("✕ Clear filter", small = true, color = Muted) { state.taskTag = null }
+                    if (note != null) Chip("✕ " + note.substringAfterLast('/').removeSuffix(".md"), small = true, color = Muted) { state.taskNote = null }
                 }
                 Sub(
                     if (tasks == null) "Reading the vault…"

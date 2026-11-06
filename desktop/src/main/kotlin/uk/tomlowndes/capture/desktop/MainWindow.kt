@@ -50,6 +50,7 @@ fun MainWindow(state: AppState) {
                 Tab.DECK -> DeckPane(state)
                 Tab.TASKS -> TasksPane(state)
                 Tab.PROJECTS -> ProjectsPane(state)
+                Tab.VAULT -> VaultPane(state)
                 Tab.READ -> ReadPane(state)
                 Tab.FIND -> FindPane(state)
                 Tab.SETTINGS -> SettingsPane(state)
@@ -102,6 +103,7 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
         TagNav(state)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
+        NavItem(state, Tab.VAULT, "🗂", "Vault")
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
         NavItem(state, Tab.FIND, "🔍", "Find a note") { Text("Ctrl K", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
@@ -134,7 +136,7 @@ private fun TagNav(state: AppState) {
         val (fg, _) = tagColour(tag)
         Row(
             Modifier.fillMaxWidth().padding(bottom = 1.dp).clip(RoundedCornerShape(10.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                .hand().clickable { state.taskTag = if (on) null else tag; state.tab = Tab.TASKS }
+                .hand().clickable { state.taskTag = if (on) null else tag; state.taskNote = null; state.tab = Tab.TASKS }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -152,7 +154,7 @@ private fun NavItem(state: AppState, tab: Tab, icon: String, name: String, trail
     val on = state.tab == tab
     Row(
         Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
-            .hand().clickable { state.tab = tab }.padding(horizontal = 12.dp, vertical = 10.dp),
+            .hand().clickable { if (tab == Tab.TASKS && state.tab != Tab.TASKS) state.taskNote = null; state.tab = tab }.padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(icon, fontSize = 15.sp, color = if (on) Primary else Muted, modifier = Modifier.width(20.dp))
