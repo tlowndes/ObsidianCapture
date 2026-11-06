@@ -21,6 +21,14 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("ideas_by_updated", true)
         set(v) { p.edit().putBoolean("ideas_by_updated", v).apply() }
 
+    /** Tasks tab: the tag and side filters last used, so they stay on between visits. */
+    var tasksTag: String?
+        get() = p.getString("tasks_tag", null)
+        set(v) { p.edit().putString("tasks_tag", v).apply() }
+    var tasksFilter: String?
+        get() = p.getString("tasks_filter", null)
+        set(v) { p.edit().putString("tasks_filter", v).apply() }
+
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
         get() = p.getBoolean("recurring", true)

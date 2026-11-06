@@ -25,26 +25,30 @@ object ReadLater {
 
     /**
      * Blocking (network + file IO): call from a background dispatcher. Returns true if the full page was saved.
-     * [prefetched] is the page from an earlier [peek], so it isn't downloaded twice.
+     * [prefetched] is the page from an earlier [peek], so it isn't downloaded twice. [tags] go on the note's first line.
      */
-    fun save(vault: Vault, url: String, sharedTitle: String?, prefetched: Article? = null): Boolean {
+    fun save(vault: Vault, url: String, sharedTitle: String?, prefetched: Article? = null, tags: List<String> = emptyList()): Boolean {
         val article = prefetched ?: runCatching { fetch(url) }.getOrNull()
         val name = noteName(article, sharedTitle)
             ?: "Article " + SimpleDateFormat("yyyy-MM-dd HHmmss", Locale.UK).format(Date())
-        VaultWriter(vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp()))
+        VaultWriter(vault).addNote(name, note(url, sharedTitle, article, ReadStore.stamp(), tags))
         return article != null
     }
 
     /** The page, for a preview before saving; null if it can't be fetched or read. Blocking. */
     fun peek(url: String): Article? = runCatching { fetch(url) }.getOrNull()
 
-    /** The whole note: frontmatter the Read tab uses, then the same layout as the read-it-later plugin. */
-    fun note(url: String, sharedTitle: String?, article: Article?, saved: String): String {
+    /**
+     * The whole note: frontmatter the Read tab uses, then the same layout as the read-it-later plugin.
+     * [tags] (`#work`) follow the plugin's links on the first line, as plain Obsidian tags.
+     */
+    fun note(url: String, sharedTitle: String?, article: Article?, saved: String, tags: List<String> = emptyList()): String {
+        val tagText = tags.mapNotNull { Tags.norm(it) }.distinct().joinToString("") { " $it" }
         val label = article?.title?.takeIf { it.isNotBlank() } ?: sharedTitle?.takeIf { it.isNotBlank() && it != url } ?: url
         val body = when {
-            article == null -> "[[ReadItLater]] [[Article]]\n\n[$label]($url)\n"
-            article.video -> "[[ReadItLater]] [[Youtube]]\n\n# [${article.title}]($url)\n\n![]($url)\n"
-            else -> "[[ReadItLater]] [[Article]]\n\n# [${article.title}]($url)\n\n${article.markdown}\n"
+            article == null -> "[[ReadItLater]] [[Article]]$tagText\n\n[$label]($url)\n"
+            article.video -> "[[ReadItLater]] [[Youtube]]$tagText\n\n# [${article.title}]($url)\n\n![]($url)\n"
+            else -> "[[ReadItLater]] [[Article]]$tagText\n\n# [${article.title}]($url)\n\n${article.markdown}\n"
         }
         return "---\nstatus: unread\nsaved: $saved\n---\n\n" + body
     }

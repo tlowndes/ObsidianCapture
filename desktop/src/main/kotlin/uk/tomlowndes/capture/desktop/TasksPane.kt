@@ -45,6 +45,8 @@ import uk.tomlowndes.capture.Bucket
 import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.TaskGroups
 import uk.tomlowndes.capture.TaskItem
+import uk.tomlowndes.capture.TaskViews
+import uk.tomlowndes.capture.Tags
 import uk.tomlowndes.capture.TaskRules
 import uk.tomlowndes.capture.VaultTasks
 import java.time.LocalDate
@@ -57,9 +59,13 @@ fun TasksPane(state: AppState) {
     var tasks by remember { mutableStateOf<List<TaskItem>?>(null) }
     var byDue by remember { mutableStateOf(state.prefs.sortByDue) }
     var filter by remember { mutableStateOf("") }
+    var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
 
     fun reload() {
-        scope.launch { state.io("Couldn't read tasks") { state.writer()?.listTasks() }?.let { tasks = it } }
+        scope.launch {
+            state.io("Couldn't read tasks") { state.writer()?.listTasks() }?.let { tasks = it; state.tagCounts = Tags.filterCounts(it, 6) }
+            state.vault?.let { v -> state.io { Tags.loadPinned(v) }?.let { pinned = it } }
+        }
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
 
@@ -93,13 +99,24 @@ fun TasksPane(state: AppState) {
     }
 
     var editing by remember { mutableStateOf<TaskItem?>(null) }
-    val shown = tasks.orEmpty().filter { filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true) }
+    val tag = state.taskTag
+    val shown = tasks.orEmpty().filter {
+        (tag == null || Tags.matches(it, tag)) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                H1("Tasks")
-                Sub(if (tasks == null) "Reading the vault…" else "Whole vault · ${tasks!!.size} open", Modifier.padding(top = 2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    H1("Tasks" + (tag?.let { " · ${Tags.label(it)}" } ?: ""))
+                    if (tag != null) Chip("✕ Clear filter", small = true, color = Muted) { state.taskTag = null }
+                }
+                Sub(
+                    if (tasks == null) "Reading the vault…"
+                    else if (tag != null) "${shown.size} open · ${if (Tags.kind(tag) == uk.tomlowndes.capture.TagKind.OTHER) "tagged $tag" else Tags.label(tag).lowercase() + " side"}"
+                    else "Whole vault · ${tasks!!.size} open",
+                    Modifier.padding(top = 2.dp)
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Chip("By due date", byDue) { byDue = true; state.prefs.sortByDue = true }
@@ -133,7 +150,7 @@ fun TasksPane(state: AppState) {
         }
     }
     editing?.let { t ->
-        EditTaskDialog(t, onSave = { text, due, rule, minutes -> editing = null; edit(t, text, due, rule, minutes) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
+        EditTaskDialog(t, pinned, onSave = { text, due, rule, minutes -> editing = null; edit(t, text, due, rule, minutes) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
     }
 }
 
@@ -213,9 +230,10 @@ private fun TaskRow(
             Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, Primary, CircleShape).hand().clickable { onTick(t) })
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    t.text, fontSize = 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    Tags.strip(t.text).ifBlank { t.text }, fontSize = 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).hand().clickable { onEdit(t) }
                 )
+                TaskViews.tags(t).take(3).forEach { TagMini(it) }
                 t.recurrence?.let { Text("🔁 $it", fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp), maxLines = 1) }
                 if (t.path != VaultTasks.QUICK_TASK) Text(VaultTasks.noteName(t.path), fontSize = 11.sp, color = LinkBlue,
                     modifier = Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)

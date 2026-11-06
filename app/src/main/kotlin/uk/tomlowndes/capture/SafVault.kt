@@ -218,8 +218,8 @@ fun ReadStore(ctx: Context, tree: Uri) = ReadStore(SafVault(ctx, tree)) { Widget
 
 fun IdeaStore(ctx: Context, tree: Uri, prefs: AppPrefs) = IdeaStore(SafVault(ctx, tree), prefs)
 
-fun ReadLater.save(ctx: Context, tree: Uri, url: String, sharedTitle: String?): Boolean =
-    save(SafVault(ctx, tree), url, sharedTitle).also { Widgets.readChanged(ctx) }
+fun ReadLater.save(ctx: Context, tree: Uri, url: String, sharedTitle: String?, tags: List<String> = emptyList()): Boolean =
+    save(SafVault(ctx, tree), url, sharedTitle, tags = tags).also { Widgets.readChanged(ctx) }
 
 /** Image file name -> content Uri for everything in the images folder. */
 fun IdeaStore.imageUris(): Map<String, Uri> = imageIndex().mapValues { it.value as Uri }

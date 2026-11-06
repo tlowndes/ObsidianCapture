@@ -53,8 +53,11 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
     val tasks = remember { mutableStateListOf<TaskItem>() }
     var loaded by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
-    var tag by remember { mutableStateOf<String?>(null) }
-    var filter by remember { mutableStateOf<TaskFilter?>(null) }
+    var tag by remember { mutableStateOf(prefs.tasksTag) }
+    var filter by remember { mutableStateOf(TaskFilter.values().firstOrNull { it.name == prefs.tasksFilter }) }
+    fun pickTag(t: String?) { tag = t; prefs.tasksTag = t }
+    fun pickFilter(f: TaskFilter?) { filter = f; prefs.tasksFilter = f?.name }
+    val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
@@ -142,13 +145,21 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
         )
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            AppChip(tag == null, { tag = null }, { Text("All") })
-            TaskViews.topTags(tasks).forEach { t -> AppChip(tag == t, { tag = if (tag == t) null else t }, { Text(t) }) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(TaskFilter.WORK to "Work", TaskFilter.PERSONAL to "Personal", TaskFilter.SHORT to "≤ ${TaskViews.SHORT_MIN} min")
-                .forEach { (f, label) -> AppChip(filter == f, { filter = if (filter == f) null else f }, { Text(label) }) }
+        // All, Work and Personal (with counts), the most used other tags, then short tasks.
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppChip(tag == null && filter == null, { pickTag(null); pickFilter(null) }, { Text("All") })
+            listOf(TaskFilter.WORK to Tags.WORK, TaskFilter.PERSONAL to Tags.PERSONAL).forEach { (f, chipTag) ->
+                val n = tasks.count { TaskViews.matches(it, null, f) }
+                TagChip(chipTag, filter == f, onClick = { pickFilter(if (filter == f) null else f) }, count = n)
+            }
+            TaskViews.topTags(tasks, 8).filter { it !in Tags.BUILT_IN }.forEach { t ->
+                TagChip(t, tag == t, onClick = { pickTag(if (tag == t) null else t) }, count = tasks.count { t in TaskViews.tags(it) })
+            }
+            AppChip(filter == TaskFilter.SHORT, { pickFilter(if (filter == TaskFilter.SHORT) null else TaskFilter.SHORT) },
+                { Text("≤ ${TaskViews.SHORT_MIN} min") })
         }
 
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
@@ -177,7 +188,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
 
     editing?.let { t ->
         EditTaskSheet(
-            t,
+            t, tagData,
             onSave = { text, due, rule, minutes -> editing = null; save(t, text, due, rule, minutes) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }

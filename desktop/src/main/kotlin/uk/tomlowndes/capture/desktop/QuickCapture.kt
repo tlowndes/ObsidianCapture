@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -57,6 +58,7 @@ import uk.tomlowndes.capture.Article
 import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.ReadLater
 import uk.tomlowndes.capture.ReadStore
+import uk.tomlowndes.capture.Tags
 import uk.tomlowndes.capture.TaskRules
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
@@ -95,7 +97,7 @@ fun QuickCaptureWindow(state: AppState, icon: Painter) {
         CaptureTheme {
             QuickCapture(state, ::close) { side, tall ->
                 // Grows to the right for the Custom… or date panel, and down for the task chips.
-                winState.size = DpSize((width + if (side) 420 else 0).dp, (if (side) 560 else if (tall) 400 else 300).dp)
+                winState.size = DpSize((width + if (side) 420 else 0).dp, (if (side) 600 else if (tall) 500 else 380).dp)
             }
         }
     }
@@ -114,12 +116,47 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     var minutes by remember { mutableStateOf<Int?>(null) }
     var repeat by remember { mutableStateOf<String?>(null) }
     var side by remember { mutableStateOf<Side?>(null) }
+    // Tags from the Tag row; in Task mode a #word typed in the box counts too.
+    var picked by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
+    var known by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     val today = LocalDate.now()
     val text = value.text.trim()
+    val typedTags = if (link) emptyList() else Tags.inText(value.text)
+    val onTags = (picked + typedTags).distinct()
+    val typing = if (link) null else Tags.typing(value.text, value.selection.end)
+    val suggestions = typing?.let { (_, part) ->
+        val pool = (known + (Tags.BUILT_IN + pinned).filter { p -> known.none { it.first == p } }.map { it to 0 })
+        Tags.suggest(part, pool, 5).map { it.first }
+    }.orEmpty()
     val (body, typed) = DateWords.split(text, today)
     // A repeating task needs a first date for the series to count from.
     val due = picked ?: typed ?: if (repeat != null) today else null
     LaunchedEffect(side, link) { resize(side != null && !link, !link) }
+
+    LaunchedEffect(state.vault) {
+        val v = state.vault ?: return@LaunchedEffect
+        state.io { Tags.loadPinned(v) to Tags.counts(state.writer()!!.listTasks().map { it.raw }) }?.let { (p, k) -> pinned = p; known = k }
+    }
+
+    fun setText(t: String) { value = TextFieldValue(t, TextRange(t.length)) }
+
+    fun toggleTag(tag: String) {
+        when {
+            tag in typedTags -> setText(Tags.remove(value.text, tag) + " ")
+            tag in picked -> picked = picked - tag
+            else -> picked = picked + tag
+        }
+        focus.requestFocus()
+    }
+
+    /** Finishes the #word being typed with [tag]. */
+    fun completeTag(tag: String) {
+        val (range, _) = typing ?: return
+        val (out, cursor) = Tags.complete(value.text, range, tag)
+        value = TextFieldValue(out, TextRange(cursor))
+        focus.requestFocus()
+    }
 
     LaunchedEffect(Unit) {
         // Opened with a link on the clipboard: start in Link mode with it filled in, selected so typing replaces it.
@@ -147,13 +184,15 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 val vault = state.vault!!
                 val got = preview?.takeIf { previewFor == text }
                 close()
-                val full = state.io("Couldn't save the link") { ReadLater.save(vault, text, null, got) }
-                if (full != null) state.notify("Saved to Read later", if (full) (got?.title ?: text) else "Saved the link only (couldn't fetch the page)")
+                val tags = picked
+                val full = state.io("Couldn't save the link") { ReadLater.save(vault, text, null, got, tags) }
+                if (full != null) state.notify("Saved to Read later", (if (full) (got?.title ?: text) else "Saved the link only (couldn't fetch the page)") +
+                    tags.joinToString("") { " · ${Tags.label(it)}" })
             } else {
-                val line = body + (minutes?.let { " ⏱ ${it}m" } ?: "") + (repeat?.let { " 🔁 $it" } ?: "")
+                val line = Tags.withTags(body, picked) + (minutes?.let { " ⏱ ${it}m" } ?: "") + (repeat?.let { " 🔁 $it" } ?: "")
                 val ok = state.io("Couldn't add the task") { state.writer()!!.addTask(line, due?.toString()) } != null
                 close()
-                if (ok) state.notify("Added to Quick Task", body + (due?.let { " · due ${dueLabel(it)}" } ?: "") + (repeat?.let { " · 🔁 $it" } ?: ""))
+                if (ok) state.notify("Added to Quick Task", Tags.strip(body).ifBlank { body } + onTags.joinToString("") { " · ${Tags.label(it)}" } + (due?.let { " · due ${dueLabel(it)}" } ?: "") + (repeat?.let { " · 🔁 $it" } ?: ""))
             }
             state.changed()
         }
@@ -179,16 +218,36 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 BasicTextField(
                     value, { value = it }, singleLine = true, cursorBrush = SolidColor(Primary),
                     textStyle = TextStyle(color = if (link) LinkBlue else TextMain, fontSize = 17.sp),
-                    modifier = Modifier.weight(1f).focusRequester(focus).onKeys(
-                        enter = ::save,
-                        tab = { link = !link }
-                    ),
+                    modifier = Modifier.weight(1f).focusRequester(focus)
+                        .onPreviewKeyEvent { e ->
+                            // Alt+W and Alt+P toggle Work and Personal.
+                            if (e.type != KeyEventType.KeyDown || !e.isAltPressed) return@onPreviewKeyEvent false
+                            when (e.key) {
+                                Key.W -> { toggleTag(Tags.WORK); true }
+                                Key.P -> { toggleTag(Tags.PERSONAL); true }
+                                else -> false
+                            }
+                        }
+                        .onKeys(
+                            enter = ::save,
+                            // Tab finishes a #tag being typed; otherwise it switches Task and Link.
+                            tab = { if (suggestions.isNotEmpty()) completeTag(suggestions.first()) else link = !link }
+                        ),
                     decorationBox = { inner ->
                         Box { if (value.text.isEmpty()) Text(if (link) "Paste a link…" else "Add a task… (end with a date like “fri”)", color = Muted, fontSize = 17.sp); inner() }
                     }
                 )
                 if (!link && typed != null && picked == null) Text("📅 " + dayChip(typed), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextMain,
                     modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(Surface2).padding(horizontal = 9.dp, vertical = 4.dp))
+            }
+            if (suggestions.isNotEmpty()) Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                suggestions.forEachIndexed { i, tag ->
+                    TagChip(tag, selected = i == 0) { completeTag(tag) }
+                    if (i == 0) Kbd("Tab")
+                }
             }
             if (!link) TaskOptions(
                 due, picked, minutes, repeat, side,
@@ -198,6 +257,17 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 onRepeat = { r -> repeat = r; if (side == Side.REPEAT) side = null; focus.requestFocus() },
                 onCustom = { side = if (side == Side.REPEAT) null else Side.REPEAT },
             )
+            Column(Modifier.padding(top = 12.dp)) {
+                GroupLabel("Tag")
+                Box(Modifier.padding(top = 6.dp)) {
+                    TagRow(pinned, onTags, ::toggleTag) {
+                        // ＋ Tag starts a #word in the box; the suggestions above take it from there.
+                        if (link) state.say("New tags are pinned from the phone's ＋ Tag")
+                        else setText(value.text.trimEnd().let { if (it.isEmpty()) "#" else "$it #" })
+                        focus.requestFocus()
+                    }
+                }
+            }
             if (link && isBareUrl(text)) Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp)).background(Surface1).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically
@@ -211,7 +281,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (link) "Saves the page as a full article note" else "Saves to ⚡ Quick Task · Tab switches to Link",
+                    if (link) "Saves the page as a full article note" else "Saves to ⚡ Quick Task · Tab switches to Link · Alt W / Alt P tag it",
                     fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {

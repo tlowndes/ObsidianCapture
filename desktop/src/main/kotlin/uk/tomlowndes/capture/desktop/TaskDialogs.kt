@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import uk.tomlowndes.capture.Deck
 import uk.tomlowndes.capture.RepeatSpec
 import uk.tomlowndes.capture.TaskItem
+import uk.tomlowndes.capture.Tags
 import uk.tomlowndes.capture.TaskRules
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -59,10 +60,11 @@ fun RepeatDialog(current: String?, onPick: (String?) -> Unit, onDismiss: () -> U
     }
 }
 
-/** Change the wording, due date, estimate and recurrence of a task already in the vault. */
+/** Change the wording, due date, estimate, recurrence and tags of a task already in the vault. Tags live in the wording. */
 @Composable
 fun EditTaskDialog(
     t: TaskItem,
+    pinned: List<String>,
     onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
@@ -92,6 +94,10 @@ fun EditTaskDialog(
             }
             SmallLabel("Repeat")
             RepeatEditor(repeat) { repeat = it }
+            SmallLabel("Tag", Modifier.padding(top = 8.dp))
+            TagRow(pinned, Tags.inText(text), onToggle = { tag -> text = Tags.toggle(text, tag) }) {
+                text = text.trimEnd().let { if (it.isEmpty()) "#" else "$it #" }
+            }
         }
         DialogButtons(onDismiss, onDelete = onRemove) {
             PrimaryButton("Save", enabled = text.isNotBlank()) { onSave(text.trim(), due, repeat, minutes) }
