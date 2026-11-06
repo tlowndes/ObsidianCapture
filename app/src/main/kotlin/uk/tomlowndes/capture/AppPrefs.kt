@@ -131,6 +131,17 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("asked_notif", false)
         set(v) { p.edit().putBoolean("asked_notif", v).apply() }
 
+    /** Vault tab: show 99 folders, sort folders A–Z instead of newest first, and the last few searches. */
+    var vaultShowHidden: Boolean
+        get() = p.getBoolean("vault_show_hidden", false)
+        set(v) { p.edit().putBoolean("vault_show_hidden", v).apply() }
+    var vaultByName: Boolean
+        get() = p.getBoolean("vault_by_name", false)
+        set(v) { p.edit().putBoolean("vault_by_name", v).apply() }
+    var vaultSearches: List<String>
+        get() = p.getString("vault_searches", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
+        set(v) { p.edit().putString("vault_searches", v.joinToString("\u0001")).apply() }
+
     /** Reader text size in sp, and serif (true) or sans body text. */
     var readerSize: Float
         get() = p.getFloat("reader_size", 16.5f)

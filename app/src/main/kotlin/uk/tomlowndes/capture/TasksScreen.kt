@@ -47,7 +47,10 @@ import java.time.LocalDate
 
 /** Tasks tab: every open `#task` in the vault, filtered by tag, side or length, grouped by when it's due. */
 @Composable
-fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartFocus: (TaskItem, Int) -> Unit) {
+fun TasksScreen(
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, note: String? = null, onClearNote: () -> Unit = {},
+    onStartFocus: (TaskItem, Int) -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val tasks = remember { mutableStateListOf<TaskItem>() }
@@ -124,7 +127,7 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
     }
 
     val today = LocalDate.now()
-    val shown = tasks.filter { TaskViews.matches(it, tag, filter, query) }
+    val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) }
     val groups = TaskViews.groups(shown, today)
 
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
@@ -150,6 +153,8 @@ fun TasksScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onStartF
             Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
         ) {
+            // From a note in Vault: just that note's tasks until the chip is tapped.
+            if (note != null) AppChip(true, onClearNote, { Text("✕ " + VaultTasks.noteName(note)) })
             AppChip(tag == null && filter == null, { pickTag(null); pickFilter(null) }, { Text("All") })
             listOf(TaskFilter.WORK to Tags.WORK, TaskFilter.PERSONAL to Tags.PERSONAL).forEach { (f, chipTag) ->
                 val n = tasks.count { TaskViews.matches(it, null, f) }

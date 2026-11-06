@@ -52,7 +52,12 @@ import kotlinx.coroutines.withContext
 enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS }
 
 enum class Tab(val label: String, val icon: String) {
-    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), PROJECTS("Projects", "💡")
+    DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
+
+    companion object {
+        /** The bottom bar. Read later lives inside Vault now, so READ has no button of its own. */
+        val NAV = listOf(DECK, CAPTURE, TASKS, VAULT, PROJECTS)
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -154,6 +159,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     }
     var openIdea by remember { mutableStateOf<String?>(null) }
     var openArticle by remember { mutableStateOf<ReadRef?>(null) }
+    /** Tasks filtered to one note (from a note in Vault), and whether Vault is in quick edit (no bottom bar). */
+    var tasksNote by remember { mutableStateOf<String?>(null) }
+    var vaultEditing by remember { mutableStateOf(false) }
+    var unread by remember { mutableStateOf(0) }
     val snack = remember { SnackbarHostState() }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
@@ -185,22 +194,34 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null) {
+    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null || tab == Tab.READ) {
         when {
             sub != null -> sub = null
             cards -> cards = false
             settings -> settings = false
             search -> search = false
             openArticle != null -> openArticle = null
+            tab == Tab.READ -> tab = Tab.VAULT
             else -> openIdea = null
         }
     }
 
-    val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null)
+    LaunchedEffect(vault, tab) {
+        val uri = vault ?: return@LaunchedEffect
+        if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first } }
+            .onSuccess { unread = it }
+    }
+
+    val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null) || (tab == Tab.VAULT && vaultEditing)
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
-        bottomBar = { if (!hideNav) NavBar(if (settings || search || sub != null) null else tab) { tab = it; settings = false; cards = false; search = false; sub = null } }
+        bottomBar = {
+            if (!hideNav) NavBar(if (settings || search || sub != null) null else if (tab == Tab.READ) Tab.VAULT else tab) {
+                if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
+                tab = it; settings = false; cards = false; search = false; sub = null
+            }
+        }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
@@ -217,9 +238,18 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
                 ) { settings = true }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
-                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack) { t, m -> startFocus(t.text, t.raw, t.path, m) }
+                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null }) { t, m -> startFocus(t.text, t.raw, t.path, m) }
+                tab == Tab.VAULT -> VaultScreen(
+                    vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ },
+                    onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }
+                )
                 tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
-                else -> ReadScreen(vault, prefs, snack, openArticle) { openArticle = it }
+                else -> Column(Modifier.fillMaxSize()) {
+                    // Read later opens from Vault; this takes you back there.
+                    if (openArticle == null) Text("‹ Vault", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { tab = Tab.VAULT }.padding(start = 18.dp, top = 10.dp, end = 18.dp))
+                    Box(Modifier.weight(1f)) { ReadScreen(vault, prefs, snack, openArticle) { openArticle = it } }
+                }
             }
         }
     }
@@ -233,7 +263,7 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
             Modifier.fillMaxWidth().navigationBarsPadding().height(66.dp),
             horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically
         ) {
-            Tab.values().forEach { t ->
+            Tab.NAV.forEach { t ->
                 val on = t == selected
                 Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {

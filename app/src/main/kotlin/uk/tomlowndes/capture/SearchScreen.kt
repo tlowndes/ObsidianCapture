@@ -104,7 +104,7 @@ fun SearchScreen(vault: Uri?, snack: SnackbarHostState, onClose: () -> Unit) {
 }
 
 @Composable
-private fun AddToNoteDialog(note: VaultNote, onDismiss: () -> Unit, onAdd: (String, Boolean, LocalDate?) -> Unit) {
+internal fun AddToNoteDialog(note: VaultNote, onDismiss: () -> Unit, onAdd: (String, Boolean, LocalDate?) -> Unit) {
     var asTask by remember { mutableStateOf(true) }
     var text by remember { mutableStateOf("") }
     var due by remember { mutableStateOf<LocalDate?>(null) }

@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, PROJECTS, READ, FIND, SETTINGS }
+enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -58,6 +58,10 @@ class AppState(val prefs: DesktopPrefs) {
     /** Tags for the sidebar under Tasks (Work, Personal, then the most used), and the one the Tasks pane is filtered by. */
     var tagCounts by mutableStateOf<List<Pair<String, Int>>>(emptyList())
     var taskTag by mutableStateOf<String?>(null)
+    /** Tasks pane filtered to one note's tasks (from a note in Vault). */
+    var taskNote by mutableStateOf<String?>(null)
+    /** The note open in the Vault pane. */
+    var vaultNote by mutableStateOf<String?>(null)
 
     fun setVault(dir: File) {
         prefs.vault = dir
