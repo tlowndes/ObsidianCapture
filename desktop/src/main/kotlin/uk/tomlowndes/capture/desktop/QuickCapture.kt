@@ -117,13 +117,13 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     var repeat by remember { mutableStateOf<String?>(null) }
     var side by remember { mutableStateOf<Side?>(null) }
     // Tags from the Tag row; in Task mode a #word typed in the box counts too.
-    var picked by remember { mutableStateOf<List<String>>(emptyList()) }
+    var chosenTags by remember { mutableStateOf<List<String>>(emptyList()) }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
     var known by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     val today = LocalDate.now()
     val text = value.text.trim()
     val typedTags = if (link) emptyList() else Tags.inText(value.text)
-    val onTags = (picked + typedTags).distinct()
+    val onTags = (chosenTags + typedTags).distinct()
     val typing = if (link) null else Tags.typing(value.text, value.selection.end)
     val suggestions = typing?.let { (_, part) ->
         val pool = (known + (Tags.BUILT_IN + pinned).filter { p -> known.none { it.first == p } }.map { it to 0 })
@@ -144,8 +144,8 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     fun toggleTag(tag: String) {
         when {
             tag in typedTags -> setText(Tags.remove(value.text, tag) + " ")
-            tag in picked -> picked = picked - tag
-            else -> picked = picked + tag
+            tag in chosenTags -> chosenTags = chosenTags - tag
+            else -> chosenTags = chosenTags + tag
         }
         focus.requestFocus()
     }
@@ -184,12 +184,12 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 val vault = state.vault!!
                 val got = preview?.takeIf { previewFor == text }
                 close()
-                val tags = picked
+                val tags = chosenTags
                 val full = state.io("Couldn't save the link") { ReadLater.save(vault, text, null, got, tags) }
                 if (full != null) state.notify("Saved to Read later", (if (full) (got?.title ?: text) else "Saved the link only (couldn't fetch the page)") +
                     tags.joinToString("") { " · ${Tags.label(it)}" })
             } else {
-                val line = Tags.withTags(body, picked) + (minutes?.let { " ⏱ ${it}m" } ?: "") + (repeat?.let { " 🔁 $it" } ?: "")
+                val line = Tags.withTags(body, chosenTags) + (minutes?.let { " ⏱ ${it}m" } ?: "") + (repeat?.let { " 🔁 $it" } ?: "")
                 val ok = state.io("Couldn't add the task") { state.writer()!!.addTask(line, due?.toString()) } != null
                 close()
                 if (ok) state.notify("Added to Quick Task", Tags.strip(body).ifBlank { body } + onTags.joinToString("") { " · ${Tags.label(it)}" } + (due?.let { " · due ${dueLabel(it)}" } ?: "") + (repeat?.let { " · 🔁 $it" } ?: ""))
