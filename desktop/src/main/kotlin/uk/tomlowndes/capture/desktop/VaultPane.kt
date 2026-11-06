@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -61,7 +63,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import uk.tomlowndes.capture.DataViews
+import uk.tomlowndes.capture.QueryCell
+import uk.tomlowndes.capture.QueryTask
+import uk.tomlowndes.capture.QueryView
 import uk.tomlowndes.capture.MdBlock
 import uk.tomlowndes.capture.MdBlocks
 import uk.tomlowndes.capture.NoteChunk
@@ -259,6 +267,15 @@ private fun NoteView(
         state.io("Couldn't save") { NoteEdit.edit(state.vault!!, path, block) }?.let { landed(it, msg) }
     }
 
+    /** A tick on a Tasks or Dataview card: written to the task's own note, which may not be this one. */
+    fun tickQuery(qt: QueryTask) = scope.launch {
+        val v = state.vault ?: return@launch
+        val msg = if (qt.done) "Unticked" else "Ticked · ${qt.note}"
+        state.io("Couldn't save") { DataViews.toggle(v, qt) to (v.entry(qt.path)?.modified ?: System.currentTimeMillis()) }?.let { (txt, mod) ->
+            if (qt.path == path) landed(txt, msg) else { onSaved(NoteIndex.info(qt.path, mod, txt)); state.say(msg) }
+        }
+    }
+
     fun startEdit(range: IntRange) {
         val t = text ?: return
         val ls = NoteText.lines(t)
@@ -335,7 +352,11 @@ private fun NoteView(
             shown.forEach { c ->
                 if (edit != null && c.lines.first >= edit.first && c.lines.last <= edit.last) {
                     if (!placed) { placed = true; Editor(draft, known, { draft = it }, ::save) { editing = null } }
-                } else Chunk(c, lines, body, onEdit = { startEdit(c.lines) },
+                } else if (c.kind == NoteChunk.Kind.CODE && DataViews.of(c.text) != null) QueryCard(
+                    c.text, all, path, onEdit = { startEdit(c.lines) }, onOpen = onOpen, onTick = { tickQuery(it) },
+                    onAllTasks = { state.taskNote = null; state.taskTag = null; state.tab = Tab.TASKS },
+                    onObsidian = { state.openInObsidian(path) }
+                ) else Chunk(c, lines, body, onEdit = { startEdit(c.lines) },
                     onLink = { l -> VaultBrowse.resolve(all, l, path)?.let { onOpen(it.path) } ?: state.say("No note called $l yet") },
                     onUrl = { state.browse(it) },
                     onTick = { i ->
@@ -561,6 +582,154 @@ private fun Chunk(c: NoteChunk, lines: List<String>, body: TextStyle, onEdit: ()
                     is MdBlock.Image -> Text("🖼 " + b.src.substringAfterLast('/'), fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 4.dp))
                     MdBlock.Rule -> Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Outline))
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- query blocks
+
+/** "today", "yesterday", "tomorrow" or "5 Nov". */
+private fun dayWord(d: LocalDate, today: LocalDate): String = when (d) {
+    today -> "today"
+    today.minusDays(1) -> "yesterday"
+    today.plusDays(1) -> "tomorrow"
+    else -> DataViews.shortDate(d, today)
+}
+
+/**
+ * A ```tasks or ```dataview block, run against the vault index ([DataViews]) and shown as a card. Ticks write to
+ * the task's own note; ✎ edits the query. Blocks the app can't run get a card with Open in Obsidian.
+ */
+@Composable
+private fun QueryCard(
+    chunk: String, all: List<NoteInfo>, path: String,
+    onEdit: () -> Unit, onOpen: (String) -> Unit, onTick: (QueryTask) -> Unit, onAllTasks: () -> Unit, onObsidian: () -> Unit,
+) {
+    val q = remember(chunk) { DataViews.of(chunk) } ?: return
+    var view by remember(chunk) { mutableStateOf<QueryView?>(null) }
+    var showCode by remember(chunk) { mutableStateOf(false) }
+    val ready = remember(all) { all.any { it.text.isNotEmpty() } }
+    LaunchedEffect(chunk, all) {
+        if (ready || q.first == "dataviewjs") view = withContext(Dispatchers.Default) { DataViews.run(q.first, q.second, all, path) }
+    }
+    val today = remember { LocalDate.now() }
+    val v = view
+    val shape = RoundedCornerShape(14.dp)
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(shape).background(Surface1).border(1.dp, Outline, shape)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(v?.kind ?: q.first.uppercase(), fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, color = Primary,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(PrimaryTint).padding(horizontal = 6.dp, vertical = 1.dp))
+            Text(v?.title ?: "", fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp).weight(1f))
+            val count = when (v) {
+                is QueryView.Tasks -> if (v.tasks.size < v.total) "${v.tasks.size} of ${v.total}" else "${v.total}"
+                is QueryView.Table -> "${v.rows.size} row${if (v.rows.size == 1) "" else "s"}"
+                is QueryView.Items -> "${v.items.size}"
+                is QueryView.Unsupported -> if (v.script) "" else if (showCode) "query ▴" else "query ▾"
+                null -> ""
+            }
+            Text(count, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Faint,
+                modifier = if (v is QueryView.Unsupported) Modifier.hand().clickable { showCode = !showCode } else Modifier)
+            Text("✎", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(start = 10.dp).hand().clickable(onClick = onEdit))
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+        when (v) {
+            null -> Sub(if (ready) "Running…" else "Reading the vault…", Modifier.padding(12.dp))
+            is QueryView.Tasks -> {
+                if (v.tasks.isEmpty()) Sub("No matching tasks", Modifier.padding(12.dp))
+                v.tasks.forEachIndexed { i, qt ->
+                    if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+                    QueryTaskRow(qt, today, onTick = { onTick(qt) }, onOpen = { onOpen(qt.path) })
+                }
+                Row(Modifier.fillMaxWidth().background(Color(0xFF131823)).padding(horizontal = 12.dp, vertical = 7.dp)) {
+                    Text(v.footer.ifEmpty { "${v.total} task${if (v.total == 1) "" else "s"}" }, fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f))
+                    Text("All in Tasks ›", fontSize = 12.sp, color = Primary, fontWeight = FontWeight.SemiBold, modifier = Modifier.hand().clickable(onClick = onAllTasks))
+                }
+            }
+            is QueryView.Table -> BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val firstMin = if (v.headers.size > 1) maxWidth * 0.5f else maxWidth
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    v.headers.forEachIndexed { ci, h ->
+                        Column(Modifier.width(IntrinsicSize.Max).then(if (ci == 0) Modifier.widthIn(min = firstMin) else Modifier)) {
+                            Text(h.uppercase(), fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, color = Muted, maxLines = 1,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp))
+                            v.rows.forEach { row ->
+                                Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+                                QueryCellText(row.getOrNull(ci) ?: QueryCell(""), today, onOpen, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp))
+                            }
+                        }
+                    }
+                }
+                if (v.rows.isEmpty()) Sub("No results", Modifier.padding(start = 12.dp, top = 34.dp, bottom = 10.dp))
+            }
+            is QueryView.Items -> Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                if (v.items.isEmpty()) Sub("No results", Modifier.padding(vertical = 6.dp))
+                v.items.forEach { (main, extra) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("•", color = Faint, modifier = Modifier.padding(end = 8.dp))
+                        QueryCellText(main, today, onOpen, Modifier.weight(1f))
+                        if (extra != null) Text(extra.text, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, maxLines = 1,
+                            color = if (extra.date != null && extra.date!! < today) Warn else Faint, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+            is QueryView.Unsupported -> Column(Modifier.padding(12.dp)) {
+                Text(
+                    buildAnnotatedString {
+                        if (v.script) { withStyle(SpanStyle(color = TextMain, fontWeight = FontWeight.Bold)) { append("Runs in Obsidian only. ") }; append(v.reason) }
+                        else withStyle(SpanStyle(color = TextMain)) { append(v.reason) }
+                    },
+                    fontSize = 13.sp, color = Muted, lineHeight = 19.sp
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("↗ Open in Obsidian", small = true) { onObsidian() }
+                    if (v.script) Chip(if (showCode) "Hide code" else "Show code", small = true) { showCode = !showCode }
+                }
+            }
+        }
+        if (showCode) Text(q.second, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp, color = Primary,
+            modifier = Modifier.fillMaxWidth().background(PrimaryTint).padding(horizontal = 12.dp, vertical = 10.dp))
+    }
+}
+
+@Composable
+private fun QueryCellText(c: QueryCell, today: LocalDate, onOpen: (String) -> Unit, modifier: Modifier) {
+    val link = c.link
+    when {
+        link != null -> Text(c.text, fontSize = 14.sp, color = Primary, textDecoration = TextDecoration.Underline, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = modifier.hand().clickable { onOpen(link) })
+        c.date != null -> Text(c.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
+            color = if (c.date!! < today) Warn else Muted, modifier = modifier)
+        else -> Text(c.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = if (c.text == "—") Muted else TextMain, modifier = modifier)
+    }
+}
+
+@Composable
+private fun QueryTaskRow(qt: QueryTask, today: LocalDate, onTick: () -> Unit, onOpen: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier.padding(top = 1.dp, end = 10.dp).size(18.dp).clip(RoundedCornerShape(6.dp))
+                .then(if (qt.done) Modifier.background(TaskGreen) else Modifier.border(1.5.dp, Muted, RoundedCornerShape(6.dp)))
+                .hand().clickable(onClick = onTick),
+            contentAlignment = Alignment.Center
+        ) { if (qt.done) Text("✓", fontSize = 11.sp, color = Color(0xFF0D2A1D), fontWeight = FontWeight.ExtraBold) }
+        Column(Modifier.weight(1f).hand().clickable(onClick = onOpen)) {
+            val s = remember(qt.text) { noteInline(qt.text) }
+            Text(s, fontSize = 14.sp, lineHeight = 20.sp, color = if (qt.done) Muted else TextMain,
+                textDecoration = if (qt.done) TextDecoration.LineThrough else null)
+            val (label, late) = when {
+                qt.due != null -> "due ${dayWord(qt.due!!, today)}" to (!qt.done && qt.due!! <= today)
+                qt.scheduled != null -> "scheduled ${dayWord(qt.scheduled!!, today)}" to false
+                qt.start != null -> "starts ${dayWord(qt.start!!, today)}" to false
+                else -> "" to false
+            }
+            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                val mark = qt.priorityMark
+                val meta = listOf(mark, label).filter { it.isNotEmpty() }.joinToString(" ")
+                if (meta.isNotEmpty()) Text(meta, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = if (late) Warn else Muted)
+                Text((if (meta.isNotEmpty()) " · " else "") + qt.note, fontSize = 11.5.sp, color = Faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
