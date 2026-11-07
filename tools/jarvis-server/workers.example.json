@@ -4,5 +4,6 @@
   "obsidian": { "cwd": "~/vault",    "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it.", "permission_mode": "acceptEdits" },
   "research": { "cwd": "~/research", "prompt": "Research what Tom asks and write up what you find.", "background": true,
                 "allowed_tools": ["WebSearch", "WebFetch", "Write"] },
-  "oddjobs": { "cwd": "~/jarvis",   "prompt": "Help Tom with whatever he asks." }
+  "oddjobs":  { "cwd": "~/jarvis",   "prompt": "Help Tom with whatever he asks. His Obsidian vault is at ~/vault.",
+                "permission_mode": "acceptEdits", "add_dirs": ["~/vault"] }
 }

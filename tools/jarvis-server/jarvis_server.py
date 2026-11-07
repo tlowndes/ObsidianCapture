@@ -46,7 +46,8 @@ DEFAULT_WORKERS = {
     "coding": {"cwd": str(HOME / "code"), "prompt": "You help Tom with code in this folder."},
     "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it."},
     "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True},
-    "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks."},
+    "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks. His Obsidian vault is at ~/vault.",
+                "permission_mode": "acceptEdits", "add_dirs": ["~/vault"]},
 }
 
 SPOKEN = (
@@ -124,6 +125,8 @@ def ask_claude(worker: str, text: str, spoken: bool = True, chat: str = "") -> s
         cmd += ["--permission-mode", w["permission_mode"]]
     if w.get("allowed_tools"):
         cmd += ["--allowedTools", *w["allowed_tools"]]
+    for d in w.get("add_dirs", []):  # extra folders it may edit, e.g. the vault
+        cmd += ["--add-dir", str(Path(d).expanduser())]
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=CONFIG["claude_timeout"])
     out = r.stdout.strip()
     if r.returncode != 0 and not out:

@@ -38,7 +38,7 @@ Check it: `journalctl --user -u jarvis -f` shows what it heard and what each wor
 
 `workers.json` sets each worker's folder (`cwd`), instructions (`prompt`) and permissions. Point `obsidian` at a
 copy of the vault on the box. `claude -p` can't ask before editing, so workers that need to change files get
-`"permission_mode": "acceptEdits"`; `allowed_tools` narrows what a worker may use. `"background": true` makes
+`"permission_mode": "acceptEdits"`; `allowed_tools` narrows what a worker may use; `add_dirs` lists extra folders it may edit (Odd jobs gets `~/vault`). `"background": true` makes
 a worker report on the Done line instead of answering live. Add `--continue` to the service line if you want each
 worker to carry on its last conversation.
 
