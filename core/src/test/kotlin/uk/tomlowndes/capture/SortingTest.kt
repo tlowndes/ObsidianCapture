@@ -37,16 +37,34 @@ class SortingTest {
         assertTrue(Sorting.parse("""{"tasks":[],"ideas":[],"note":null}""").isEmpty)
     }
 
-    @Test fun `the queue keeps raw text and sorted results`() {
-        val q = listOf(QueuedDump(1, "raw one"), QueuedDump(2, "raw two", Sorting.parse(answer)))
-        assertEquals(q, Sorting.queueFromJson(Sorting.queueToJson(q)))
-        assertEquals(emptyList<QueuedDump>(), Sorting.queueFromJson("broken"))
+    @Test fun `a result survives the round trip through JSON`() {
+        val r = Sorting.parse(answer)
+        assertEquals(r, Sorting.fromJson(Sorting.toJson(r)))
+        val n = r.copy(noteTitle = "Portfolio rethink", note = "## Case studies\n- Shorter", transcript = "so the case studies")
+        assertEquals(n, Sorting.fromJson(Sorting.toJson(n)))
+        assertNull(Sorting.fromJson("broken"))
+        assertNull(Sorting.fromJson("""{"tasks":[],"ideas":[],"note":null}"""))
     }
 
-    @Test fun `the user message carries the date and tags`() {
-        val m = Sorting.userMessage(" buy milk ", LocalDate.of(2026, 10, 25), listOf("#home"))
-        assertTrue(m.startsWith("Today is Sunday 2026-10-25. Tags in use: #home."))
-        assertTrue(m.endsWith("Brain dump:\nbuy milk"))
+    @Test fun `a tidied note is read with a safe title`() {
+        val r = Sorting.parse("""{"tasks":[],"ideas":[],"note":{"title":"Plans: 2027 / [draft]?","markdown":"Lead with the outcome."},"transcript":"um lead with"}""")
+        assertEquals("Plans 2027 draft", r.noteTitle)
+        assertEquals("Lead with the outcome.", r.note)
+        assertEquals("um lead with", r.transcript)
+        assertNull(Sorting.parse("""{"tasks":[],"ideas":[],"note":{"title":"Empty","markdown":" "}}""").noteTitle)
+    }
+
+    @Test fun `a tidied note is saved as its own file with the transcript folded`() {
+        val (w, ideas) = stores()
+        val r = SortResult(emptyList(), emptyList(), "Short summary.\n\n## Case studies\n- Too long", "Portfolio rethink", "right so\nthe case studies")
+        Sorting.save(r, w, ideas, LocalDate.of(2026, 11, 7))
+        Sorting.save(r, w, ideas, LocalDate.of(2026, 11, 7))
+        val f = File(tmp.root, "01 - Inbox/Portfolio rethink.md")
+        assertEquals(
+            "---\ncreated: 2026-11-07\nsource: jarvis\n---\n\nShort summary.\n\n## Case studies\n- Too long\n\n> [!quote]- Transcript\n> right so\n> the case studies\n",
+            f.readText()
+        )
+        assertFalse(File(tmp.root, "01 - Inbox/Portfolio rethink (1).md").exists())
     }
 
     @Test fun `saving writes tasks, an idea project and an inbox note`() {

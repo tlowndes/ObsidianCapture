@@ -55,8 +55,11 @@ enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
 
     companion object {
-        /** The bottom bar. Read later lives inside Vault now, so READ has no button of its own. */
-        val NAV = listOf(DECK, CAPTURE, TASKS, VAULT, PROJECTS)
+        /**
+         * The bottom bar. Read later and Projects open from chips in Vault, so they have no button of their own,
+         * and Jarvis is a mode inside Capture.
+         */
+        val NAV = listOf(DECK, CAPTURE, TASKS, VAULT)
     }
 }
 
@@ -88,7 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Shared text that isn't just a link (a Gemini reply, a note) lands in the Capture box ready for Sort it.
+     * Shared text that isn't just a link (a Gemini reply, a note) lands in Capture › Jarvis, ready to send.
      * Returns false for a link, which still goes to Read It Later.
      */
     private fun toCapture(i: Intent): Boolean {
@@ -194,15 +197,15 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 
-    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null || tab == Tab.READ) {
+    BackHandler(enabled = sub != null || cards || settings || search || openIdea != null || openArticle != null || tab == Tab.READ || tab == Tab.PROJECTS) {
         when {
             sub != null -> sub = null
             cards -> cards = false
             settings -> settings = false
             search -> search = false
             openArticle != null -> openArticle = null
-            tab == Tab.READ -> tab = Tab.VAULT
-            else -> openIdea = null
+            openIdea != null -> openIdea = null
+            else -> tab = Tab.VAULT
         }
     }
 
@@ -217,7 +220,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (settings || search || sub != null) null else if (tab == Tab.READ) Tab.VAULT else tab) {
+            if (!hideNav) NavBar(if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -237,13 +240,18 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack)
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null }) { t, m -> startFocus(t.text, t.raw, t.path, m) }
                 tab == Tab.VAULT -> VaultScreen(
-                    vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ },
+                    vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
                     onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }
                 )
-                tab == Tab.PROJECTS -> IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it }
+                tab == Tab.PROJECTS -> Column(Modifier.fillMaxSize()) {
+                    // Projects opens from Vault (or the Deck card); this takes you back there.
+                    if (openIdea == null) Text("‹ Vault", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { tab = Tab.VAULT }.padding(start = 18.dp, top = 10.dp, end = 18.dp))
+                    Box(Modifier.weight(1f)) { IdeasScreen(vault, prefs, snack, openIdea) { openIdea = it } }
+                }
                 else -> Column(Modifier.fillMaxSize()) {
                     // Read later opens from Vault; this takes you back there.
                     if (openArticle == null) Text("‹ Vault", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
@@ -265,8 +273,8 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
         ) {
             Tab.NAV.forEach { t ->
                 val on = t == selected
-                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 14.dp, vertical = 3.dp)) {
+                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
                     Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)

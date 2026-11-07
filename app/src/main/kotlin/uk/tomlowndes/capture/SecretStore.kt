@@ -11,27 +11,30 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * The Claude API key, encrypted with a key that lives in the Android Keystore and never leaves the phone.
+ * Tokens (GitHub, Jarvis), encrypted with a key that lives in the Android Keystore and never leaves the phone.
  * Only the encrypted bytes are kept in the app's preferences.
  */
 class SecretStore(ctx: Context) {
     private val p = ctx.applicationContext.getSharedPreferences("secrets", Context.MODE_PRIVATE)
 
-    var claudeKey: String?
-        get() = p.getString(KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
-        set(v) {
-            if (v.isNullOrBlank()) p.edit().remove(KEY).apply() else p.edit().putString(KEY, encrypt(v.trim())).apply()
-        }
+    init {
+        // Brain dumps are sorted on the Jarvis server now, so an old Claude API key isn't kept on the phone.
+        if (p.contains(KEY)) p.edit().remove(KEY).apply()
+    }
 
-    /** GitHub token for the repo line on a project. Stored the same way as the Claude key. */
+    /** GitHub token for the repo line on a project. Encrypted like the others. */
     var githubToken: String?
         get() = p.getString(GH_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
         set(v) {
             if (v.isNullOrBlank()) p.edit().remove(GH_KEY).apply() else p.edit().putString(GH_KEY, encrypt(v.trim())).apply()
         }
 
-    /** "sk-ant-…a1b2" for showing in Settings. */
-    fun maskedKey(): String? = claudeKey?.let { k -> if (k.length <= 10) "••••" else k.take(7) + "…" + k.takeLast(4) }
+    /** Bearer token for the Jarvis voice server on the Oracle box. Encrypted like the others. */
+    var jarvisToken: String?
+        get() = p.getString(JARVIS_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
+        set(v) {
+            if (v.isNullOrBlank()) p.edit().remove(JARVIS_KEY).apply() else p.edit().putString(JARVIS_KEY, encrypt(v.trim())).apply()
+        }
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -61,6 +64,7 @@ class SecretStore(ctx: Context) {
     private companion object {
         const val KEY = "claude_key"
         const val GH_KEY = "github_token"
+        const val JARVIS_KEY = "jarvis_token"
         const val ALIAS = "flight-deck-claude"
         const val TRANSFORM = "AES/GCM/NoPadding"
     }

@@ -1,16 +1,7 @@
 package uk.tomlowndes.capture
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,9 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -62,7 +53,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,194 +61,59 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Capture: one box, typed or dictated. "Sort it" keeps the dump in the queue, asks Claude Haiku to split it
- * into tasks, project ideas and a note, then shows Check and save. Nothing reaches the vault until Save.
+ * Capture: Task, Read later, or Jarvis (talk or type). When Jarvis sorts a ramble into tasks, ideas or a tidied
+ * note, it waits in [AppPrefs.jarvisFound] until Check and save. Nothing reaches the vault until Save.
  */
 @Composable
-fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
+fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val secrets = remember { SecretStore(ctx) }
-    var text by remember { mutableStateOf(prefs.draft("capture")) }
-    var queue by remember { mutableStateOf(prefs.captureQueue) }
-    var sorting by remember { mutableStateOf(false) }
-    var offline by remember { mutableStateOf(false) }
-    var checking by remember { mutableStateOf<QueuedDump?>(null) }
-    var recording by remember { mutableStateOf(false) }
-    var partial by remember { mutableStateOf("") }
-    var mode by remember { mutableIntStateOf(prefs.captureMode) }
+    var mode by remember { mutableIntStateOf(prefs.captureMode.coerceIn(0, 2)) }
+    var found by remember { mutableStateOf(prefs.jarvisFound) }
+    var checking by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
 
-    fun setQueue(q: List<QueuedDump>) { queue = q; prefs.captureQueue = q }
-    fun setText(t: String) { text = t; prefs.setDraft("capture", t) }
+    fun setFound(r: SortResult?) { found = r; prefs.jarvisFound = r }
 
-    /** Sorts every queued dump that hasn't been sorted yet; stops at the first sign of no signal. */
-    suspend fun sortQueued(openFirst: Boolean) {
-        val key = secrets.claudeKey ?: return
-        val tags = vault?.let { uri ->
-            withContext(Dispatchers.IO) { runCatching { TaskViews.topTags(VaultWriter(ctx, uri).listTasks(), 10) }.getOrNull() }
-        }.orEmpty()
-        sorting = true
-        for (d in queue.filter { it.sorted == null }) {
-            val r = withContext(Dispatchers.IO) { runCatching { SortClient.sort(key, d.text, tags, model = prefs.sortModel) } }
-            r.onSuccess { res ->
-                offline = false
-                val done = d.copy(sorted = res)
-                setQueue(queue.map { if (it.id == d.id) done else it })
-                if (openFirst && checking == null) checking = done
-            }.onFailure { e ->
-                when (e) {
-                    is OfflineException -> offline = true
-                    is ModelRejectedException -> snack.showSnackbar(e.message ?: "That model was rejected")
-                    else -> snack.showSnackbar("Couldn't sort: ${e.message}")
-                }
-            }
-            if (r.isFailure) break
-        }
-        sorting = false
+    val pill: @Composable () -> Unit = {
+        PillSwitch(listOf("Task", "Read later", "Jarvis"), mode) { mode = it; prefs.captureMode = it }
     }
 
-    LaunchedEffect(Unit) { if (queue.any { it.sorted == null }) sortQueued(openFirst = false) }
-
-    fun sortIt() {
-        val dump = text.trim()
-        if (dump.isEmpty() || sorting) return
-        setQueue(queue + QueuedDump(System.currentTimeMillis(), dump))
-        setText("")
-        if (secrets.claudeKey == null) {
-            scope.launch { snack.showSnackbar("No Claude API key · Settings") }
-            return
-        }
-        scope.launch { sortQueued(openFirst = true) }
-    }
-
-    // ---- dictation ----
-    val recognizer = remember { if (SpeechRecognizer.isRecognitionAvailable(ctx)) SpeechRecognizer.createSpeechRecognizer(ctx) else null }
-    DisposableEffect(recognizer) { onDispose { recognizer?.destroy() } }
-    fun startListening() {
-        val r = recognizer ?: run { scope.launch { snack.showSnackbar("Dictation isn't available on this phone") }; return }
-        r.setRecognitionListener(object : RecognitionListener {
-            override fun onPartialResults(b: Bundle?) {
-                partial = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-            }
-            override fun onResults(b: Bundle?) {
-                val said = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                if (said.isNotBlank()) setText(listOf(text.trim(), said.trim()).filter { it.isNotEmpty() }.joinToString(" "))
-                partial = ""; recording = false
-            }
-            override fun onError(error: Int) { partial = ""; recording = false }
-            override fun onReadyForSpeech(p: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(v: Float) {}
-            override fun onBufferReceived(b: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onEvent(t: Int, b: Bundle?) {}
-        })
-        r.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.UK.toLanguageTag())
-        })
-        recording = true
-    }
-    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) startListening() }
-    fun mic() {
-        if (recording) { recognizer?.stopListening(); return }
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
-        else askMic.launch(Manifest.permission.RECORD_AUDIO)
-    }
-
-    checking?.let { d ->
-        BackHandler { checking = null }
+    val f = found
+    if (checking && f != null) {
+        BackHandler { checking = false }
         CheckAndSave(
-            d.sorted ?: SortResult(emptyList(), emptyList(), null),
-            onBack = { checking = null },
-            onDiscard = { setQueue(queue.filter { it.id != d.id }); checking = null },
+            f,
+            onBack = { checking = false },
+            onDiscard = { setFound(null); checking = false },
             onSave = { r ->
                 val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return@CheckAndSave }
+                if (saving) return@CheckAndSave
+                saving = true
                 scope.launch {
                     withContext(Dispatchers.IO) { runCatching { Sorting.save(r, VaultWriter(ctx, uri), IdeaStore(ctx, uri, prefs)) } }
-                        .onSuccess { setQueue(queue.filter { it.id != d.id }); checking = null; snack.showSnackbar("Saved") }
+                        .onSuccess { setFound(null); checking = false; snack.showSnackbar(if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved") }
                         .onFailure { snack.showSnackbar("Failed: ${it.message}") }
+                    saving = false
                 }
             }
         )
         return
     }
 
+    if (mode == 2) {
+        JarvisScreen(prefs, snack, onOpenSettings, title = "Capture", header = pill, found = found,
+            onFound = { setFound(it) }, onCheck = { checking = true })
+        return
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Capture", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-            Text(
-                "Queue ${queue.size}", fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                color = if (offline && queue.isNotEmpty()) Amber else Primary,
-                modifier = Modifier.clip(CircleShape).background(if (offline && queue.isNotEmpty()) AmberTint else PrimaryTint)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            )
         }
-        if (offline && queue.isNotEmpty()) {
-            Text("⚠ Offline · Queue ${queue.size}", color = Amber, fontSize = 13.sp, modifier = Modifier.padding(bottom = 10.dp))
-        }
-
-        PillSwitch(listOf("Task", "Read later", "Brain dump"), mode) { mode = it; prefs.captureMode = it }
+        pill()
         Box(Modifier.height(14.dp))
-        if (mode < 2) QuickAdd(vault, link = mode == 1, snack = snack) else {
-            Box {
-                OutlinedTextField(
-                    value = text, onValueChange = { setText(it) },
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-                    placeholder = { Text("Type or tap the mic") }, minLines = 5,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    colors = fieldColors()
-                )
-                Box(
-                    Modifier.align(Alignment.BottomEnd).padding(10.dp).size(44.dp).clip(CircleShape)
-                        .background(if (recording) Warn else Primary).clickable { mic() },
-                    contentAlignment = Alignment.Center
-                ) { Text(if (recording) "■" else "●", color = OnPrimary, fontSize = 16.sp) }
-            }
-            if (recording) {
-                Text("RECORDING", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Warn,
-                    modifier = Modifier.padding(top = 10.dp))
-                if (partial.isNotBlank()) Text(partial, fontSize = 14.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
-            }
-
-            Text(
-                if (sorting) "Sorting…" else "Sort it", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                color = OnPrimary,
-                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
-                    .background(if (text.isBlank() || sorting) Primary.copy(alpha = 0.4f) else Primary)
-                    .clickable(enabled = text.isNotBlank() && !sorting) { sortIt() }.padding(vertical = 14.dp)
-            )
-            if (offline && queue.any { it.sorted == null }) {
-                Text("Sorting on the next signal · Saved in the queue", fontSize = 12.sp, color = Muted, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            }
-
-            if (queue.isNotEmpty()) {
-                Box(Modifier.height(16.dp))
-                GroupLabel("Queue")
-                ListCard(Modifier.padding(top = 6.dp)) {
-                    queue.forEachIndexed { i, d ->
-                        if (i > 0) HorizontalDivider(color = Outline)
-                        Row(
-                            Modifier.fillMaxWidth().clickable(enabled = d.sorted != null) { checking = d }.padding(horizontal = 16.dp, vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(d.text, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text(if (d.sorted != null) "check ›" else "queued", fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                color = if (d.sorted != null) Primary else Muted)
-                        }
-                    }
-                }
-                if (queue.any { it.sorted == null } && !sorting) {
-                    Text("Sort now", color = Primary, fontSize = 13.sp, modifier = Modifier.clickable { scope.launch { sortQueued(openFirst = false) } }.padding(vertical = 6.dp))
-                }
-            }
-        }
+        QuickAdd(vault, link = mode == 1, snack = snack)
         Box(Modifier.height(16.dp))
     }
 }
@@ -266,10 +121,31 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState) {
 @Composable
 private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -> Unit, onSave: (SortResult) -> Unit) {
     var r by remember(result) { mutableStateOf(result) }
+    var editing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
             Text("Check and save", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        val title = r.noteTitle
+        r.note?.let { note ->
+            if (title != null) {
+                GroupLabel("Note")
+                NoteCard(title, note, onEdit = { editing = true }, onRemove = { r = r.copy(note = null, noteTitle = null) })
+            } else {
+                GroupLabel("Note")
+                ListCard(Modifier.padding(top = 6.dp)) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(note, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+                        Text("✕", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable { r = r.copy(note = null) }.padding(start = 10.dp))
+                    }
+                }
+            }
+        }
+        if (editing && title != null) EditNoteDialog(title, r.note.orEmpty(), onDismiss = { editing = false }) { t, md ->
+            val body = md.trim().ifEmpty { null }
+            r = r.copy(note = body, noteTitle = if (body == null) null else Sorting.safeTitle(t) ?: title)
+            editing = false
         }
         if (r.tasks.isNotEmpty()) {
             GroupLabel("Tasks · ${r.tasks.size}")
@@ -293,15 +169,6 @@ private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -
                 }
             }
         }
-        r.note?.let { note ->
-            GroupLabel("Note")
-            ListCard(Modifier.padding(top = 6.dp)) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(note, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-                    Text("✕", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable { r = r.copy(note = null) }.padding(start = 10.dp))
-                }
-            }
-        }
         if (r.isEmpty) Text("Nothing left to save", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Discard", color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center,
@@ -311,6 +178,61 @@ private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -
                     .clickable(enabled = !r.isEmpty) { onSave(r) }.padding(vertical = 13.dp))
         }
     }
+}
+
+/** A tidied note from a ramble: title, the start of the note, where it will be saved, and Edit. */
+@Composable
+private fun NoteCard(title: String, markdown: String, onEdit: () -> Unit, onRemove: () -> Unit) {
+    var all by remember { mutableStateOf(false) }
+    val lines = markdown.lines()
+    val long = lines.size > 12
+    Column(
+        Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)
+            .border(1.dp, Outline, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("✕", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onRemove).padding(start = 10.dp))
+        }
+        (if (long && !all) lines.take(12) else lines).forEach { l ->
+            val t = l.trimEnd()
+            when {
+                t.isBlank() -> Box(Modifier.height(4.dp))
+                t.startsWith("#") -> Text(t.trimStart('#').trim(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                t.trimStart().startsWith("- ") || t.trimStart().startsWith("* ") ->
+                    Text("• " + t.trimStart().drop(2), fontSize = 12.5.sp, color = Muted, lineHeight = 18.sp, modifier = Modifier.padding(start = 6.dp))
+                else -> Text(t, fontSize = 12.5.sp, color = Muted, lineHeight = 18.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        if (long) Text(if (all) "Show less" else "Show all", fontSize = 12.5.sp, color = Primary,
+            modifier = Modifier.clickable { all = !all }.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("→ ${VaultWriter.INBOX}/$title.md", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("Edit ✎", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                modifier = Modifier.clickable(onClick = onEdit).padding(start = 10.dp))
+        }
+        Text("Your own words are kept, folded at the bottom of the note.", fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun EditNoteDialog(title: String, markdown: String, onDismiss: () -> Unit, onDone: (String, String) -> Unit) {
+    var t by remember { mutableStateOf(title) }
+    var md by remember { mutableStateOf(markdown) }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface1,
+        title = { Text("Edit note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(t, { t = it }, singleLine = true, label = { Text("Title") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(md, { md = it }, minLines = 8, maxLines = 16, colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(t, md) }, enabled = t.isNotBlank()) { Text("Done", color = Primary) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Muted) } }
+    )
 }
 
 private fun dueChip(d: LocalDate): String {
