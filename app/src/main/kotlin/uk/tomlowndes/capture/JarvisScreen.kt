@@ -150,6 +150,7 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
     var hasAudio by remember { mutableStateOf(false) }
     var pos by remember { mutableFloatStateOf(0f) }
     var durMs by remember { mutableLongStateOf(0L) }
+    var speed by remember { mutableFloatStateOf(prefs.jarvisSpeed) }
     DisposableEffect(Unit) {
         onDispose {
             player[0]?.release(); player[0] = null
@@ -172,7 +173,7 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
             p.prepare()
             durMs = p.duration.toLong()
             p.setOnCompletionListener { playing = false; pos = 1f }
-            if (start) p.start()
+            if (start) { p.start(); setSpeed(p, speed) }
             player[0] = p; hasAudio = true; playing = start; pos = 0f
         }.onFailure { p.release(); hasAudio = false }
     }
@@ -192,7 +193,7 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
                     if (demo) {
                         Jarvis.demoReply(w.id, seconds) to f
                     } else {
-                        val r = Jarvis.send(address, token, f, w.id)
+                        val r = Jarvis.send(address, token, f, w.id, prefs.jarvisVoice)
                         val audio = r.audioUrl?.let { u ->
                             File(ctx.cacheDir, "jarvis-reply.ogg").also { out -> Jarvis.fetchAudio(address, token, u, out) }
                         }
@@ -416,7 +417,7 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
                             Modifier.size(32.dp).clip(CircleShape).background(PrimaryTint).clickable {
                                 val p = player[0] ?: return@clickable
                                 if (playing) { p.pause(); playing = false }
-                                else { if (pos >= 1f) p.seekTo(0); p.start(); playing = true }
+                                else { if (pos >= 1f) p.seekTo(0); p.start(); setSpeed(p, speed); playing = true }
                             },
                             contentAlignment = Alignment.Center
                         ) { Text(if (playing) "❚❚" else "▶", fontSize = 12.sp, color = Primary) }
@@ -424,6 +425,13 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
                             Box(Modifier.fillMaxWidth(pos.coerceIn(0f, 1f)).height(4.dp).background(Primary))
                         }
                         Text("${mmss((durMs * pos).toLong())} / ${mmss(durMs)}", fontSize = 12.5.sp, color = Muted)
+                        Text(
+                            Jarvis.speedLabel(speed), fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                            modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable {
+                                speed = Jarvis.nextSpeed(speed); prefs.jarvisSpeed = speed
+                                player[0]?.let { if (playing) setSpeed(it, speed) }
+                            }.padding(horizontal = 9.dp, vertical = 3.dp)
+                        )
                     }
                 }
             }
@@ -489,7 +497,87 @@ fun JarvisScreen(prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -
     }
 }
 
+/** Speed changes only while playing: on a paused player Android would start it. */
+internal fun setSpeed(p: MediaPlayer, speed: Float) {
+    runCatching { p.playbackParams = p.playbackParams.setSpeed(speed) }
+}
+
 private fun hhmm(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm", Locale.UK))
 
 private fun mmss(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
+
+/**
+ * Settings › Jarvis › Voice. Lists the server's voices (GET /voices); ▶ plays a voice's sample when the server has one.
+ * [onPick] gets the id ("" for the server's default) and a label for the row.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun JarvisVoiceSheet(prefs: AppPrefs, onPick: (String, String) -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val address = remember { prefs.jarvisAddress }
+    val token = remember { SecretStore(ctx).jarvisToken.orEmpty() }
+    var voices by remember { mutableStateOf<List<Jarvis.Voice>?>(null) }
+    var failed by remember { mutableStateOf<String?>(null) }
+    var sampling by remember { mutableStateOf<String?>(null) }
+    val player = remember { arrayOfNulls<MediaPlayer>(1) }
+    DisposableEffect(Unit) { onDispose { player[0]?.release(); player[0] = null } }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { runCatching { Jarvis.voices(address, token) } }
+            .onSuccess { voices = it }
+            .onFailure { voices = emptyList(); failed = "Couldn't load the voices: ${it.message ?: "no answer"}" }
+    }
+    fun sample(v: Jarvis.Voice) {
+        val url = v.sampleUrl ?: return
+        sampling = v.id
+        scope.launch {
+            val f = File(ctx.cacheDir, "jarvis-sample.ogg")
+            val ok = withContext(Dispatchers.IO) { runCatching { Jarvis.fetchAudio(address, token, url, f) }.isSuccess }
+            if (ok) {
+                player[0]?.release()
+                player[0] = MediaPlayer().apply {
+                    runCatching {
+                        setDataSource(f.absolutePath); prepare(); start(); setSpeed(this, prefs.jarvisSpeed)
+                        setOnCompletionListener { sampling = null }
+                    }.onFailure { sampling = null }
+                }
+            } else {
+                sampling = null
+            }
+        }
+    }
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text("Jarvis voice", fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+            val list = voices
+            if (list == null) Text("Loading…", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp))
+            val rows = list.orEmpty() + Jarvis.Voice("", "Server default", "Whatever the server is set to", null)
+            if (list != null) rows.forEach { v ->
+                val on = v.id == prefs.jarvisVoice
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(v.id, if (v.id.isEmpty()) "" else v.label) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    RadioButton(
+                        selected = on, onClick = { onPick(v.id, if (v.id.isEmpty()) "" else v.label) },
+                        colors = RadioButtonDefaults.colors(selectedColor = Primary, unselectedColor = Muted)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(v.label, fontSize = 15.sp)
+                        if (v.detail.isNotBlank()) Text(v.detail, fontSize = 12.sp, color = Muted)
+                    }
+                    if (v.sampleUrl != null) Box(
+                        Modifier.size(30.dp).clip(CircleShape).background(PrimaryTint).clickable { sample(v) },
+                        contentAlignment = Alignment.Center
+                    ) { Text(if (sampling == v.id) "…" else "▶", fontSize = 11.sp, color = Primary) }
+                }
+            }
+            failed?.let { Text(it, fontSize = 12.5.sp, color = Warn, modifier = Modifier.padding(top = 6.dp)) }
+            if (list != null && list.isEmpty() && failed == null)
+                Text("Your server doesn't list its voices yet, so it uses its own default.", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+            else Text("The list comes from your server. ▶ plays a short sample.", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}

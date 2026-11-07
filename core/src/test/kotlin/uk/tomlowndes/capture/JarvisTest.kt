@@ -56,7 +56,7 @@ class JarvisTest {
         val rec = File.createTempFile("rec", ".ogg").apply { writeBytes("OPUSDATA".toByteArray()) }
         val out = File.createTempFile("reply", ".ogg")
         try {
-            val r = Jarvis.send("$url/voice", "tok-1", rec, "obsidian")
+            val r = Jarvis.send("$url/voice", "tok-1", rec, "obsidian", voice = "en_GB-alan-medium")
             assertEquals("add milk", r.transcript)
             assertEquals("Added.", r.reply)
             Jarvis.fetchAudio(url, "tok-1", r.audioUrl!!, out)
@@ -69,6 +69,7 @@ class JarvisTest {
             val body = String(post.body)
             assertTrue(body.contains("name=\"worker\"\r\n\r\nobsidian\r\n"))
             assertTrue(body.contains("name=\"file\"; filename=\"${rec.name}\"\r\nContent-Type: audio/ogg\r\n\r\nOPUSDATA\r\n"))
+            assertTrue(body.contains("name=\"voice\"\r\n\r\nen_GB-alan-medium\r\n"))
             assertEquals("Bearer tok-1", hits[1].auth)
         } finally {
             s.stop(0); rec.delete(); out.delete()
@@ -113,5 +114,50 @@ class JarvisTest {
         assertTrue(Jarvis.ping("demo", "").ok)
         assertTrue(Jarvis.demoReply("research", 3.25).reply.contains("Research got your 3.3 second"))
         assertEquals("jarvis", Jarvis.worker("unknown").id)
+    }
+
+    @Test fun `no voice means no voice field`() {
+        val bodies = mutableListOf<String>()
+        val (s, url) = server { h -> bodies += String(h.body); 200 to """{"transcript":"","reply":"ok"}""".toByteArray() }
+        val rec = File.createTempFile("rec", ".ogg")
+        try {
+            Jarvis.send(url, "t", rec, "jarvis", voice = "")
+            assertFalse(bodies[0].contains("name=\"voice\""))
+        } finally {
+            s.stop(0); rec.delete()
+        }
+    }
+
+    @Test fun `voices are read from objects or plain ids, and a 404 is none`() {
+        val (s, url) = server { h ->
+            if (h.path == "/voices") 200 to """[{"id":"en_GB-alan-medium","label":"Alan","detail":"UK, male","sample_url":"/voices/en_GB-alan-medium/sample.ogg"},"en_GB-jenny","",{"label":"no id"}]""".toByteArray()
+            else 404 to ByteArray(0)
+        }
+        try {
+            assertEquals(
+                listOf(
+                    Jarvis.Voice("en_GB-alan-medium", "Alan", "UK, male", "/voices/en_GB-alan-medium/sample.ogg"),
+                    Jarvis.Voice("en_GB-jenny", "en_GB-jenny", "", null),
+                ),
+                Jarvis.voices(url, "t")
+            )
+        } finally {
+            s.stop(0)
+        }
+        val (s2, url2) = server { 404 to ByteArray(0) }
+        try {
+            assertEquals(emptyList<Jarvis.Voice>(), Jarvis.voices(url2, "t"))
+        } finally {
+            s2.stop(0)
+        }
+    }
+
+    @Test fun `speeds step round and read nicely`() {
+        assertEquals("1×", Jarvis.speedLabel(1f))
+        assertEquals("1.25×", Jarvis.speedLabel(1.25f))
+        assertEquals("0.75×", Jarvis.speedLabel(0.75f))
+        assertEquals(1.25f, Jarvis.nextSpeed(1f))
+        assertEquals(0.75f, Jarvis.nextSpeed(2f))
+        assertEquals(1f, Jarvis.nextSpeed(0.9f))
     }
 }

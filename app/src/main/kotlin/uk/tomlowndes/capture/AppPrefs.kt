@@ -166,6 +166,17 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisSpeak: Boolean
         get() = p.getBoolean("jarvis_speak", true)
         set(v) { p.edit().putBoolean("jarvis_speak", v).apply() }
+    /** Voice id sent with each recording ("" = the server's default) and its label for Settings. */
+    var jarvisVoice: String
+        get() = p.getString("jarvis_voice", "").orEmpty()
+        set(v) { p.edit().putString("jarvis_voice", v).apply() }
+    var jarvisVoiceLabel: String
+        get() = p.getString("jarvis_voice_label", "").orEmpty()
+        set(v) { p.edit().putString("jarvis_voice_label", v).apply() }
+    /** Reply playback speed, done on the phone. */
+    var jarvisSpeed: Float
+        get() = p.getFloat("jarvis_speed", 1f)
+        set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** The last exchange, shown until you talk again: heard, reply, epoch millis. */
     var jarvisLast: Triple<String, String, Long>?
         get() = p.getString("jarvis_last_reply", null)?.let {

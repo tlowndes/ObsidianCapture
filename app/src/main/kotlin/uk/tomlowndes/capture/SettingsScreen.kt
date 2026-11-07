@@ -81,6 +81,12 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var jvSpeak by remember { mutableStateOf(prefs.jarvisSpeak) }
     var jvPing by remember { mutableStateOf<Jarvis.Ping?>(null) }
     var jvTesting by remember { mutableStateOf(false) }
+    var jvVoiceLabel by remember { mutableStateOf(prefs.jarvisVoiceLabel) }
+    var jvPickVoice by remember { mutableStateOf(false) }
+    var jvSpeed by remember { mutableStateOf(prefs.jarvisSpeed) }
+    if (jvPickVoice) JarvisVoiceSheet(prefs, onPick = { id, label ->
+        prefs.jarvisVoice = id; prefs.jarvisVoiceLabel = label; jvVoiceLabel = label; jvPickVoice = false
+    }) { jvPickVoice = false }
     var checks by remember { mutableStateOf(prefs.updateChecks) }
     val installed = remember { AppUpdate.installed(ctx) }
     val scope = rememberCoroutineScope()
@@ -208,6 +214,13 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }, enabled = !jvTesting) { Text("Test", color = Primary) }
         }
         SettingRow("Play replies aloud") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
+        SettingRow("Voice", "Made on the server. Tap to hear each one.") {
+            TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
+        }
+        Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
+            jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
+        }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Updates")

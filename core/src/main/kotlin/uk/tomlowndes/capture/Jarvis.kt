@@ -16,6 +16,8 @@ import java.util.UUID
  *                      → {"transcript": "...", "reply": "...", "audio_url": "/audio/<id>.ogg", "done": [...]?}
  *  GET  {base}/audio/<id>.ogg  same token
  *  GET  {base}/done    optional: background jobs that finished, [{"id","title","detail"}]. 404 means "not offered".
+ *  GET  {base}/voices  optional: [{"id","label","detail","sample_url"}] (or plain ids). The picked id goes back as
+ *                      the multipart field "voice"; no field means the server's default.
  *
  * The address "demo" never touches the network: canned replies, so the tab can be tried before the server is up.
  * Blocking calls; run them off the main thread. Shared by the Android and desktop apps.
@@ -35,6 +37,9 @@ object Jarvis {
 
     /** A background job the server says has finished. */
     data class Done(val id: String, val title: String, val detail: String)
+
+    /** A voice the server can speak in. [sampleUrl] plays a short sample, when the server offers one. */
+    data class Voice(val id: String, val label: String, val detail: String, val sampleUrl: String?)
 
     data class Reply(val transcript: String, val reply: String, val audioUrl: String?, val done: List<Done> = emptyList())
 
@@ -77,7 +82,7 @@ object Jarvis {
     }
 
     /** Sends one recording. Throws [HttpError] for a non-2xx answer, or an IOException when the box can't be reached. */
-    fun send(address: String, token: String, audio: File, worker: String): Reply {
+    fun send(address: String, token: String, audio: File, worker: String, voice: String? = null): Reply {
         val boundary = "----jarvis" + UUID.randomUUID().toString().replace("-", "")
         val c = open("${base(address)}/voice", token, "POST", timeout = 120_000)
         c.doOutput = true
@@ -90,6 +95,12 @@ object Jarvis {
                 line("Content-Disposition: form-data; name=\"worker\"")
                 line("")
                 line(worker)
+                if (!voice.isNullOrBlank()) {
+                    line("--$boundary")
+                    line("Content-Disposition: form-data; name=\"voice\"")
+                    line("")
+                    line(voice)
+                }
                 line("--$boundary")
                 line("Content-Disposition: form-data; name=\"file\"; filename=\"${audio.name}\"")
                 line("Content-Type: audio/ogg")
@@ -125,6 +136,42 @@ object Jarvis {
             c.disconnect()
         }
     }
+
+    /** The server's voices, or empty when it doesn't offer /voices. */
+    fun voices(address: String, token: String): List<Voice> {
+        if (isDemo(address)) return DEMO_VOICES
+        val c = open("${base(address)}/voices", token, "GET", timeout = 10_000)
+        try {
+            if (c.responseCode == 404) return emptyList()
+            return parseVoices(JSONArray(body(c)))
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    fun parseVoices(a: JSONArray): List<Voice> = (0 until a.length()).mapNotNull { i ->
+        when (val v = a.opt(i)) {
+            is String -> v.takeIf { it.isNotBlank() }?.let { Voice(it, it, "", null) }
+            is JSONObject -> v.optString("id").ifBlank { null }?.let { id ->
+                Voice(id, v.optString("label").ifBlank { id }, v.optString("detail"),
+                    v.optString("sample_url").takeIf { it.isNotBlank() && it != "null" })
+            }
+            else -> null
+        }
+    }
+
+    private val DEMO_VOICES = listOf(
+        Voice("en_GB-alan-medium", "Alan", "UK, male (demo)", null),
+        Voice("en_GB-jenny_dioco-medium", "Jenny", "UK, female (demo)", null),
+    )
+
+    /** Playback speeds offered in Settings and on the reply's speed chip. */
+    val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+
+    fun speedLabel(s: Float): String = (if (s % 1f == 0f) s.toInt().toString() else s.toString().trimEnd('0')) + "×"
+
+    /** The next speed for the chip, wrapping round. */
+    fun nextSpeed(s: Float): Float = SPEEDS.getOrNull(SPEEDS.indexOfFirst { it > s + 0.001f }) ?: SPEEDS[0]
 
     data class Ping(val ok: Boolean, val ms: Long, val message: String)
 

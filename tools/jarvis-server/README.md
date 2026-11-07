@@ -39,6 +39,12 @@ copy of the vault on the box. `claude -p` can't ask before editing, so workers t
 a worker report on the Done line instead of answering live. Add `--continue` to the service line if you want each
 worker to carry on its last conversation.
 
+## Voices
+
+Every Piper `.onnx` voice (with its `.onnx.json`) in `voices/` shows in the app's voice picker, with a sample.
+More UK voices: <https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_GB> (for example `jenny_dioco`,
+`alba`, `northern_english_male`, `southern_english_female`). `--piper-voice` is the default when the app sends none.
+
 ## Options
 
 `--whisper-model` (default `base.en`; `small.en` is more accurate but slower), `--claude-timeout` (seconds,
