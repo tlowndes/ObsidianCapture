@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -350,7 +351,8 @@ fun JarvisScreen(
     val onLock by rememberUpdatedState(::lock)
     val isLocked by rememberUpdatedState(locked)
 
-    Box(Modifier.fillMaxSize()) {
+    // imePadding keeps the type box above the keyboard (the app draws edge to edge, so nothing else moves it).
+    Box(Modifier.fillMaxSize().imePadding()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 150.dp)) {
             ScreenTitle(title) {
                 Row(
