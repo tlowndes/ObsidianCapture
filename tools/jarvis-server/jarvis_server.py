@@ -3,6 +3,8 @@
   POST /voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
                 -> {"transcript", "reply", "audio_url", "sorted"?}
   POST /text    JSON {"text", "worker", "voice"?}: the same, typed instead of spoken
+  Both take an optional "chat" id (a UUID from the app). Each chat is one Claude session: the first message starts
+  it with --session-id, later ones --resume it, so Claude remembers the conversation until the app starts a new chat.
   GET  /audio/<id>.ogg   the spoken reply, same token
   GET  /done    finished background jobs: [{"id", "title", "detail"}]
   GET  /voices  the Piper voices in --voices-dir: [{"id", "label", "detail", "sample_url"}]
@@ -75,6 +77,23 @@ AUDIO_DIR = Path(tempfile.gettempdir()) / "jarvis-audio"
 done = []  # finished background jobs, newest last
 lock = threading.Lock()
 _whisper = None
+CHATS_FILE = Path.home() / ".config" / "jarvis-chats.json"
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def known_chats() -> set:
+    try:
+        return set(json.loads(CHATS_FILE.read_text()))
+    except (OSError, ValueError):
+        return set()
+
+
+def remember_chat(chat: str):
+    with lock:
+        chats = known_chats()
+        chats.add(chat)
+        CHATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CHATS_FILE.write_text(json.dumps(sorted(chats)[-500:]))
 
 
 # ---------- the three steps; tests swap these out ----------
@@ -89,14 +108,17 @@ def transcribe(ogg: Path) -> str:
     return " ".join(s.text.strip() for s in segments).strip()
 
 
-def ask_claude(worker: str, text: str, spoken: bool = True) -> str:
-    """Runs the Claude CLI once, in the worker's folder."""
+def ask_claude(worker: str, text: str, spoken: bool = True, chat: str = "") -> str:
+    """Runs the Claude CLI once, in the worker's folder; in [chat]'s session when there is one."""
     w = CONFIG["workers"][worker]
     cwd = Path(w["cwd"]).expanduser()
     cwd.mkdir(parents=True, exist_ok=True)
     cmd = [CONFIG["claude"], "-p", text, "--output-format", "text",
            "--append-system-prompt", w.get("prompt", "") + (SPOKEN if spoken else "")]
-    if w.get("continue", CONFIG["continue"]):
+    chat = chat.lower() if UUID_RE.match(chat or "") else ""
+    if chat:
+        cmd += ["--resume", chat] if chat in known_chats() else ["--session-id", chat]
+    elif w.get("continue", CONFIG["continue"]):
         cmd.insert(1, "--continue")
     if w.get("permission_mode"):
         cmd += ["--permission-mode", w["permission_mode"]]
@@ -106,6 +128,8 @@ def ask_claude(worker: str, text: str, spoken: bool = True) -> str:
     out = r.stdout.strip()
     if r.returncode != 0 and not out:
         raise RuntimeError(f"claude exited {r.returncode}: {r.stderr.strip()[:300]}")
+    if chat:
+        remember_chat(chat)
     return out
 
 
@@ -290,6 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             heard = str(j.get("text") or "").strip()
             worker = str(j.get("worker") or "jarvis").strip()
             voice = str(j.get("voice") or "").strip()
+            chat = str(j.get("chat") or "").strip()
             if not heard:
                 self.send_json(400, {"error": "no text"})
                 return
@@ -298,6 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             audio = parts.get("file") or parts.get("audio") or b""
             worker = (parts.get("worker") or b"jarvis").decode().strip()
             voice = (parts.get("voice") or b"").decode().strip()
+            chat = (parts.get("chat") or b"").decode().strip()
             if not audio:
                 self.send_json(400, {"error": "no file part"})
                 return
@@ -335,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
             reply = "On it. I'll let you know when it's done."
         else:
             try:
-                reply = ask_claude(worker, heard)
+                reply = ask_claude(worker, heard, chat=chat)
             except subprocess.TimeoutExpired:
                 reply = "That took too long, so I stopped. Try asking Research instead, it works in the background."
             except Exception as e:  # noqa: BLE001

@@ -5,7 +5,8 @@ The other end of the app's Jarvis tab. Runs on the Oracle box, reachable only ov
 For each recording it turns speech into text (faster-whisper), runs `claude -p` in the picked worker's folder,
 turns the reply into speech (Piper) and sends back `{"transcript", "reply", "audio_url"}`. Typed messages come in on
 `POST /text` and get the same answer. A ramble (40 words or more that isn't a question) is sorted instead: the reply
-carries `"sorted"` with tasks, ideas and a tidied note, which the app checks and saves to the vault. Research runs in the
+carries `"sorted"` with tasks, ideas and a tidied note, which the app checks and saves to the vault. Each app chat
+has an id; the server keeps one Claude session per chat (`--session-id`, then `--resume`) so Claude remembers it. Research runs in the
 background: it answers "On it" straight away, saves the write-up to `~/research/jarvis-results/`, and the app's
 Done line shows it when it's finished.
 

@@ -66,7 +66,7 @@ Three modes, and it reopens on the last one used:
 
 - **Task**: adds to Quick Task, with Today / Tomorrow / a picked date, a time estimate (5, 15, 30, 60 or 120 minutes) and a repeat (daily, weekly, monthly, or a custom rule).
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
-- **Jarvis**: hold to talk or type to the Oracle server (below). Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
+- **Jarvis**: a chat with the Oracle server (below): hold to talk or type, and every message and answer stays on screen, with a ▶ on each spoken answer. Each worker keeps its own chat, which Claude remembers until **New chat**. Hold the mic and slide up onto the 🔒 to keep recording hands-free. Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
 
 ### Jarvis
 

@@ -8,7 +8,6 @@ import android.media.MediaRecorder
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +38,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -159,6 +163,8 @@ fun JarvisScreen(
     val ready = demo || (address.isNotBlank() && token.isNotBlank())
 
     var worker by remember { mutableStateOf(Jarvis.worker(prefs.jarvisWorker)) }
+    /** The conversation with [worker]; each worker keeps its own, and the server remembers it by its id. */
+    var chat by remember { mutableStateOf(prefs.jarvisChat(worker.id)) }
     var picking by remember { mutableStateOf(false) }
     var phase by remember { mutableStateOf(Phase.IDLE) }
     var cancelling by remember { mutableStateOf(false) }
@@ -170,23 +176,23 @@ fun JarvisScreen(
     var startedAt by remember { mutableLongStateOf(0L) }
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>() }
-    var last by remember { mutableStateOf(prefs.jarvisLast) }
-    var fresh by remember { mutableStateOf(false) }
     /** The recording that failed to send, kept for Retry. */
     var pending by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf<Jarvis.Done?>(null) }
     var openDone by remember { mutableStateOf<Jarvis.Done?>(null) }
     var typed by remember { mutableStateOf(prefs.draft("capture")) }
-    /** Whether the last message was typed rather than spoken, for the "You typed" label. */
+    /** Whether the message on its way (or that failed) was typed, for the error wording. */
     var wasTyped by remember { mutableStateOf(false) }
     /** Typed text that failed to send, kept for Retry. */
     var pendingText by remember { mutableStateOf<String?>(null) }
+    /** Typed text on its way, shown as a bubble until the answer comes. */
+    var sendingText by remember { mutableStateOf<String?>(null) }
 
-    // Reply audio.
+    // Reply audio: one player, for whichever answer's ▶ was tapped last.
     val player = remember { arrayOfNulls<MediaPlayer>(1) }
+    var loaded by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
-    var hasAudio by remember { mutableStateOf(false) }
     var pos by remember { mutableFloatStateOf(0f) }
     var durMs by remember { mutableLongStateOf(0L) }
     var speed by remember { mutableFloatStateOf(prefs.jarvisSpeed) }
@@ -203,18 +209,43 @@ fun JarvisScreen(
         }
     }
 
-    /** Loads the reply audio; starts it straight away when [start] (Settings › Play replies aloud). */
-    fun play(f: File, start: Boolean) {
-        player[0]?.release()
+    fun setChat(c: Jarvis.Chat) { chat = c; prefs.setJarvisChat(worker.id, c) }
+    fun audioFile(name: String) = File(ctx.cacheDir, name)
+
+    /** Loads and starts one answer's audio. */
+    fun play(name: String) {
+        player[0]?.release(); player[0] = null; playing = false; loaded = null
+        val f = audioFile(name)
+        if (!f.exists()) { scope.launch { snack.showSnackbar("That reply's audio has been cleared") }; return }
         val p = MediaPlayer()
         runCatching {
             p.setDataSource(f.absolutePath)
             p.prepare()
             durMs = p.duration.toLong()
             p.setOnCompletionListener { playing = false; pos = 1f }
-            if (start) { p.start(); setSpeed(p, speed) }
-            player[0] = p; hasAudio = true; playing = start; pos = 0f
-        }.onFailure { p.release(); hasAudio = false }
+            p.start(); setSpeed(p, speed)
+            player[0] = p; loaded = name; playing = true; pos = 0f
+        }.onFailure { p.release() }
+    }
+
+    fun toggle(name: String) {
+        val p = player[0]
+        if (p == null || loaded != name) { play(name); return }
+        if (playing) { p.pause(); playing = false }
+        else { if (pos >= 1f) p.seekTo(0); p.start(); setSpeed(p, speed); playing = true }
+    }
+
+    fun pauseAudio() { runCatching { if (playing) player[0]?.pause() }; playing = false }
+
+    fun newChat() {
+        pauseAudio(); player[0]?.release(); player[0] = null; loaded = null
+        chat.messages.mapNotNull { it.audio }.forEach { audioFile(it).delete() }
+        setChat(Jarvis.Chat.new()); error = null
+    }
+
+    fun pickWorker(w: Jarvis.Worker) {
+        worker = w; prefs.jarvisWorker = w.id; picking = false
+        pauseAudio(); chat = prefs.jarvisChat(w.id)
     }
 
     fun markDone(list: List<Jarvis.Done>) {
@@ -229,36 +260,47 @@ fun JarvisScreen(
         else -> "Can't reach Jarvis. Is Tailscale on?"
     }
 
-    fun answered(r: Jarvis.Reply, audio: File?, w: Jarvis.Worker) {
+    /** Adds what was said and the answer to [w]'s chat (it may not be the one on screen any more). */
+    fun answered(r: Jarvis.Reply, audio: File?, w: Jarvis.Worker, said: String, spoken: Boolean) {
         val now = System.currentTimeMillis()
-        last = Triple(r.transcript, r.reply, now); prefs.jarvisLast = last
-        fresh = true
+        val add = listOfNotNull(
+            Jarvis.ChatMsg(true, said, now, spoken = spoken).takeIf { said.isNotBlank() },
+            Jarvis.ChatMsg(false, r.reply, now + 1, audio = audio?.name),
+        )
+        val onScreen = w.id == worker.id
+        val base = if (onScreen) chat else prefs.jarvisChat(w.id)
+        val all = base.messages + add
+        all.dropLast(Jarvis.CHAT_KEEP).mapNotNull { it.audio }.forEach { audioFile(it).delete() }
+        val c = base.copy(messages = all.takeLast(Jarvis.CHAT_KEEP))
+        if (onScreen) setChat(c) else prefs.setJarvisChat(w.id, c)
         markDone(r.done)
         r.sorted?.let(onFound)
         if (demo && w.id == "research") markDone(listOf(Jarvis.Done("demo-$now", "Research finished (demo)", "This is what a finished background job looks like.")))
-        if (audio != null) { play(audio, prefs.jarvisSpeak) } else { player[0]?.release(); player[0] = null; hasAudio = false }
+        if (audio != null && onScreen && prefs.jarvisSpeak) play(audio.name)
     }
 
     fun fetch(r: Jarvis.Reply): File? = r.audioUrl?.let { u ->
-        File(ctx.cacheDir, "jarvis-reply.ogg").also { out -> Jarvis.fetchAudio(address, token, u, out) }
+        File(ctx.cacheDir, "jarvis-reply-${System.currentTimeMillis()}.ogg").also { out -> Jarvis.fetchAudio(address, token, u, out) }
     }
 
     fun send(f: File) {
         phase = Phase.SENDING; error = null; wasTyped = false
         val w = worker
+        val id = chat.id
         val seconds = elapsed / 1000.0
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    // Demo plays your own recording back, so it's kept as the "reply" audio.
                     if (demo) Jarvis.demoReply(w.id, seconds) to f
-                    else Jarvis.send(address, token, f, w.id, prefs.jarvisVoice).let { r -> r to fetch(r) }
+                    else Jarvis.send(address, token, f, w.id, prefs.jarvisVoice, chat = id).let { r -> r to fetch(r) }
                 }
             }
             phase = Phase.IDLE
             result.onSuccess { (r, audio) ->
                 if (!demo) f.delete()
                 pending = null
-                answered(r, audio, w)
+                answered(r, audio, w, r.transcript, spoken = true)
             }.onFailure { e -> pending = f; error = failed(e) }
         }
     }
@@ -267,21 +309,23 @@ fun JarvisScreen(
         val t = text.trim()
         if (t.isEmpty() || phase != Phase.IDLE) return
         if (!ready) { onOpenSettings(); return }
-        phase = Phase.SENDING; error = null; wasTyped = true
-        runCatching { if (playing) player[0]?.pause() }; playing = false
+        phase = Phase.SENDING; error = null; wasTyped = true; sendingText = t
+        typed = ""; prefs.setDraft("capture", "")
+        pauseAudio()
         val w = worker
+        val id = chat.id
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     if (demo) Jarvis.demoText(w.id, t) to null
-                    else Jarvis.sendText(address, token, t, w.id, prefs.jarvisVoice).let { r -> r to fetch(r) }
+                    else Jarvis.sendText(address, token, t, w.id, prefs.jarvisVoice, chat = id).let { r -> r to fetch(r) }
                 }
             }
             phase = Phase.IDLE
+            sendingText = null
             result.onSuccess { (r, audio) ->
                 pendingText = null
-                typed = ""; prefs.setDraft("capture", "")
-                answered(r.copy(transcript = r.transcript.ifBlank { t }), audio, w)
+                answered(r, audio, w, t, spoken = false)
             }.onFailure { e -> pendingText = t; error = failed(e) }
         }
     }
@@ -296,7 +340,7 @@ fun JarvisScreen(
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             askMic.launch(Manifest.permission.RECORD_AUDIO); return false
         }
-        runCatching { if (playing) player[0]?.pause() }; playing = false
+        pauseAudio()
         return runCatching { recorder.start() }.onFailure {
             scope.launch { snack.showSnackbar("Couldn't start the microphone") }
         }.isSuccess.also { ok ->
@@ -351,9 +395,105 @@ fun JarvisScreen(
     val onLock by rememberUpdatedState(::lock)
     val isLocked by rememberUpdatedState(locked)
 
+    /**
+     * Hold to talk: let go to send, slide sideways or down off the button to cancel, slide up past [lockAt] (above the
+     * button's top) onto the 🔒 to keep recording hands-free. While locked, a tap sends.
+     */
+    fun Modifier.micGesture(lockAt: Dp): Modifier = pointerInput(lockAt) {
+        awaitEachGesture {
+            val down = awaitFirstDown()
+            down.consume()
+            if (isLocked) {
+                while (true) {
+                    val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!c.pressed) { c.consume(); break }
+                }
+                onFinish(true)
+                return@awaitEachGesture
+            }
+            if (!onBegin()) return@awaitEachGesture
+            val slop = 60f
+            val lockY = -lockAt.toPx()
+            var inside = true
+            var toLock = false
+            while (true) {
+                val ev = awaitPointerEvent()
+                val c = ev.changes.firstOrNull { it.id == down.id } ?: break
+                val p = c.position
+                val inX = p.x > -slop && p.x < size.width + slop
+                toLock = p.y < lockY && inX
+                // Up towards the lock isn't cancelling; sideways or down off the button is.
+                inside = inX && p.y < size.height + slop
+                cancelling = !inside
+                locking = toLock
+                if (!c.pressed) { c.consume(); break }
+            }
+            if (toLock) onLock() else onFinish(inside)
+        }
+    }
+
+    val rec = phase == Phase.RECORDING
+    val inChat = chat.messages.isNotEmpty()
+
+    @Composable
+    fun LockPill(modifier: Modifier) {
+        Column(
+            modifier.zIndex(1f).width(52.dp).clip(CircleShape)
+                .background(if (locking) PrimaryTint else Surface1).border(1.dp, if (locking) Primary else Outline, CircleShape)
+                .padding(vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("🔒", fontSize = 17.sp)
+            Text(if (locking) "Lock" else "▲", fontSize = 11.sp, color = if (locking) Primary else Muted)
+        }
+    }
+
+    /** Timer, level bars, and the hint or (locked) Cancel / Send. */
+    @Composable
+    fun RecordingPanel() {
+        Text(
+            "%d:%02d".format(elapsed / 60_000, (elapsed / 1000) % 60),
+            fontSize = 22.sp, fontFamily = FontFamily.Monospace, color = RecRed,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp), textAlign = TextAlign.Center
+        )
+        Row(
+            Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically
+        ) {
+            levels.forEach { l -> Box(Modifier.width(5.dp).height((6 + 28 * l).dp).clip(RoundedCornerShape(3.dp)).background(RecRed)) }
+        }
+        if (locked) {
+            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("✕ Cancel", color = Muted, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape)
+                        .clickable { finish(false) }.padding(vertical = 14.dp))
+                Text("↑ Send to ${worker.label}", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(CircleShape).background(Primary)
+                        .clickable { finish(true) }.padding(vertical = 14.dp))
+            }
+            Text("🔒 Locked · keep talking. Sends on its own at 10:00.", fontSize = 12.5.sp, color = Muted,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center)
+        } else Text(
+            when {
+                cancelling -> "Let go to cancel"
+                locking -> "Let go to lock"
+                else -> "Let go to send · Slide up to lock\nSlide sideways to cancel"
+            },
+            fontSize = 13.sp, color = if (locking) Primary else Muted, lineHeight = 19.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = TextAlign.Center
+        )
+    }
+
+    val scroll = rememberScrollState()
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    // New messages, the typing dots, and the keyboard opening all keep the latest message in view.
+    LaunchedEffect(chat.messages.size, sendingText, phase, found, error, imeBottom) {
+        if (inChat || sendingText != null) scroll.animateScrollTo(scroll.maxValue)
+    }
+
     // imePadding keeps the type box above the keyboard (the app draws edge to edge, so nothing else moves it).
     Box(Modifier.fillMaxSize().imePadding()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 150.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(scroll).padding(bottom = if (rec && inChat) 300.dp else 150.dp)) {
             ScreenTitle(title) {
                 Row(
                     Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
@@ -366,144 +506,121 @@ fun JarvisScreen(
             }
             Box(Modifier.padding(top = 12.dp)) { header() }
 
-            val small = fresh && phase == Phase.IDLE
-            val micSize by animateDpAsState(if (small) 72.dp else 170.dp, label = "mic")
-            val rec = phase == Phase.RECORDING
-            Box(Modifier.fillMaxWidth().padding(top = if (small) 12.dp else 34.dp), contentAlignment = Alignment.Center) {
-                if (rec && !locked) Column(
-                    Modifier.align(Alignment.TopCenter).offset(y = (-36).dp).zIndex(1f).width(52.dp).clip(CircleShape)
-                        .background(if (locking) PrimaryTint else Surface1).border(1.dp, if (locking) Primary else Outline, CircleShape)
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("🔒", fontSize = 17.sp)
-                    Text(if (locking) "Lock" else "▲", fontSize = 11.sp, color = if (locking) Primary else Muted)
-                }
-                Box(
-                    Modifier.size(micSize + if (rec) 60.dp else 28.dp).clip(CircleShape).background(if (rec) RecRing2 else Color.Transparent),
-                    contentAlignment = Alignment.Center
-                ) {
+            if (!inChat) {
+                // A new chat: the big button.
+                val micSize = 170.dp
+                Box(Modifier.fillMaxWidth().padding(top = 34.dp), contentAlignment = Alignment.Center) {
+                    if (rec && !locked) LockPill(Modifier.align(Alignment.TopCenter).offset(y = (-36).dp))
                     Box(
-                        Modifier.size(micSize + 28.dp).clip(CircleShape).background(
-                            when { rec -> RecRing1; phase == Phase.SENDING -> Surface1; else -> MicRing }
-                        ),
+                        Modifier.size(micSize + if (rec) 60.dp else 28.dp).clip(CircleShape).background(if (rec) RecRing2 else Color.Transparent),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
-                            Modifier.size(micSize).clip(CircleShape)
-                                .background(
-                                    when {
-                                        rec && cancelling -> Surface2
-                                        rec && locking -> RecRed.copy(alpha = 0.8f)
-                                        rec -> RecRed
-                                        phase == Phase.SENDING -> Surface2
-                                        else -> Primary
-                                    }
-                                )
-                                .pointerInput(Unit) {
-                                    awaitEachGesture {
-                                        val down = awaitFirstDown()
-                                        down.consume()
-                                        // Locked: a tap on the button sends, like the Send button.
-                                        if (isLocked) {
-                                            while (true) {
-                                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                                                if (!c.pressed) { c.consume(); break }
-                                            }
-                                            onFinish(true)
-                                            return@awaitEachGesture
-                                        }
-                                        if (!onBegin()) return@awaitEachGesture
-                                        val slop = 60f
-                                        val lockAt = -28.dp.toPx()
-                                        var inside = true
-                                        var toLock = false
-                                        while (true) {
-                                            val ev = awaitPointerEvent()
-                                            val c = ev.changes.firstOrNull { it.id == down.id } ?: break
-                                            val p = c.position
-                                            toLock = p.y < lockAt && p.x > -slop && p.x < size.width + slop
-                                            // Up towards the lock isn't cancelling; sideways or down off the button is.
-                                            inside = toLock || (p.x > -slop && p.y > -slop && p.x < size.width + slop && p.y < size.height + slop) ||
-                                                (p.y < 0 && p.x > -slop && p.x < size.width + slop)
-                                            cancelling = !inside
-                                            locking = toLock
-                                            if (!c.pressed) { c.consume(); break }
-                                        }
-                                        if (toLock) onLock() else onFinish(inside)
-                                    }
-                                },
+                            Modifier.size(micSize + 28.dp).clip(CircleShape).background(
+                                when { rec -> RecRing1; phase == Phase.SENDING -> Surface1; else -> MicRing }
+                            ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    when { rec -> "●"; phase == Phase.SENDING -> "…"; else -> "🎙" },
-                                    fontSize = if (small) 24.sp else 46.sp,
-                                    color = if (rec) Color(0xFF2A0F0E) else OnPrimary
-                                )
-                                if (!small) Text(
-                                    when {
-                                        rec && cancelling -> "Let go to cancel"
-                                        rec && locking -> "Let go to lock"
-                                        rec && locked -> "Tap to send"
-                                        rec -> "Recording"
-                                        phase == Phase.SENDING -> "Sending"
-                                        else -> "Hold to talk"
-                                    },
-                                    fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                                    color = when { rec && cancelling -> Muted; rec -> Color(0xFF2A0F0E); phase == Phase.SENDING -> Muted; else -> OnPrimary }
-                                )
+                            Box(
+                                Modifier.size(micSize).clip(CircleShape)
+                                    .background(
+                                        when {
+                                            rec && cancelling -> Surface2
+                                            rec && locking -> RecRed.copy(alpha = 0.8f)
+                                            rec -> RecRed
+                                            phase == Phase.SENDING -> Surface2
+                                            else -> Primary
+                                        }
+                                    )
+                                    .micGesture(28.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        when { rec -> "●"; phase == Phase.SENDING -> "…"; else -> "🎙" },
+                                        fontSize = 46.sp, color = if (rec) Color(0xFF2A0F0E) else OnPrimary
+                                    )
+                                    Text(
+                                        when {
+                                            rec && cancelling -> "Let go to cancel"
+                                            rec && locking -> "Let go to lock"
+                                            rec && locked -> "Tap to send"
+                                            rec -> "Recording"
+                                            phase == Phase.SENDING -> "Sending"
+                                            else -> "Hold to talk"
+                                        },
+                                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                        color = when { rec && cancelling -> Muted; rec -> Color(0xFF2A0F0E); phase == Phase.SENDING -> Muted; else -> OnPrimary }
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-
-            when {
-                phase == Phase.RECORDING -> {
-                    Text(
-                        "%d:%02d".format(elapsed / 60_000, (elapsed / 1000) % 60),
-                        fontSize = 22.sp, fontFamily = FontFamily.Monospace, color = RecRed,
-                        modifier = Modifier.fillMaxWidth().padding(top = 20.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Row(
-                        Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        levels.forEach { l -> Box(Modifier.width(5.dp).height((6 + 28 * l).dp).clip(RoundedCornerShape(3.dp)).background(RecRed)) }
-                    }
-                    if (locked) {
-                        Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("✕ Cancel", color = Muted, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape)
-                                    .clickable { finish(false) }.padding(vertical = 14.dp))
-                            Text("↑ Send to ${worker.label}", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.weight(1f).clip(CircleShape).background(Primary)
-                                    .clickable { finish(true) }.padding(vertical = 14.dp))
-                        }
-                        Text(
-                            "🔒 Locked · keep talking. Sends on its own at 10:00.",
-                            fontSize = 12.5.sp, color = Muted,
-                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    } else Text(
-                        when {
-                            cancelling -> "Let go to cancel"
-                            locking -> "Let go to lock"
-                            else -> "Let go to send · Slide up to lock\nSlide sideways to cancel"
-                        },
-                        fontSize = 13.sp, color = if (locking) Primary else Muted, lineHeight = 19.sp,
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-                !fresh -> Text(
+                if (rec) RecordingPanel()
+                else if (sendingText == null) Text(
                     if (ready) "Ask anything, or ramble and Jarvis sorts it.\nHold to talk, or type below."
                     else "Add the Jarvis address and token in Settings first.",
                     fontSize = 13.sp, color = Muted, lineHeight = 19.sp,
                     modifier = Modifier.fillMaxWidth().padding(top = 26.dp).let { if (ready) it else it.clickable(onClick = onOpenSettings) },
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Chat · ${worker.label} · ${chat.messages.size} messages".uppercase(Locale.UK),
+                        fontSize = 10.5.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Color(0xFF5C6478),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "＋ New chat", fontSize = 12.5.sp, color = if (phase == Phase.IDLE) Primary else Muted,
+                        modifier = Modifier.clip(CircleShape).border(1.dp, NextBorder, CircleShape)
+                            .clickable(enabled = phase == Phase.IDLE) { newChat() }.padding(horizontal = 11.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
+            if (inChat || sendingText != null) Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                chat.messages.forEach { m ->
+                    if (m.mine) MineBubble(m.text, (if (m.spoken) "🎙 spoken" else "⌨ typed") + " · " + hhmm(m.at))
+                    else Column(
+                        Modifier.padding(end = 36.dp).clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).background(Surface1)
+                            .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
+                    ) {
+                        Text(worker.label.uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
+                        Text(m.text, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
+                        m.audio?.let { a ->
+                            val here = loaded == a
+                            Row(
+                                Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    Modifier.size(28.dp).clip(CircleShape).background(PrimaryTint).clickable { toggle(a) },
+                                    contentAlignment = Alignment.Center
+                                ) { Text(if (here && playing) "❚❚" else "▶", fontSize = 11.sp, color = Primary) }
+                                if (here) {
+                                    Box(Modifier.width(90.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface2)) {
+                                        Box(Modifier.fillMaxWidth(pos.coerceIn(0f, 1f)).height(4.dp).background(Primary))
+                                    }
+                                    Text("${mmss((durMs * pos).toLong())} / ${mmss(durMs)}", fontSize = 11.5.sp, color = Muted)
+                                    Text(
+                                        Jarvis.speedLabel(speed), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                                        modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable {
+                                            speed = Jarvis.nextSpeed(speed); prefs.jarvisSpeed = speed
+                                            player[0]?.let { if (playing) setSpeed(it, speed) }
+                                        }.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                } else Text("Play · ${Jarvis.speedLabel(speed)}", fontSize = 11.5.sp, color = Muted)
+                            }
+                        }
+                    }
+                }
+                sendingText?.let { MineBubble(it, "⌨ typed · sending") }
+                if (phase == Phase.SENDING) Text(
+                    "• • •", fontSize = 16.sp, color = Muted, letterSpacing = 3.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(18.dp))
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
 
@@ -524,49 +641,6 @@ fun JarvisScreen(
                 }
             }
 
-            if (phase != Phase.RECORDING) last?.let { (heard, reply, at) ->
-                Column(Modifier.padding(top = if (fresh) 20.dp else 36.dp, start = 6.dp, end = 6.dp)) {
-                    Text(
-                        (if (fresh) (if (wasTyped) "You typed" else "Heard") else "Last time · " + hhmm(at)).uppercase(Locale.UK),
-                        fontSize = 10.5.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Color(0xFF5C6478)
-                    )
-                    if (heard.isNotBlank()) Text("“$heard”", fontSize = 12.5.sp, color = Muted, lineHeight = 18.sp, modifier = Modifier.padding(top = 3.dp))
-                }
-                Column(
-                    Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(18.dp)).background(Surface1)
-                        .border(1.dp, Outline, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    if (fresh) Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(worker.label.uppercase(Locale.UK), fontSize = 10.5.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
-                        Text(hhmm(at), fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted)
-                    }
-                    Text(reply, fontSize = if (fresh) 15.5.sp else 14.sp, lineHeight = if (fresh) 23.sp else 20.sp, color = if (fresh) TextMain else Muted)
-                    if (fresh && hasAudio) Row(
-                        Modifier.fillMaxWidth().padding(top = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            Modifier.size(32.dp).clip(CircleShape).background(PrimaryTint).clickable {
-                                val p = player[0] ?: return@clickable
-                                if (playing) { p.pause(); playing = false }
-                                else { if (pos >= 1f) p.seekTo(0); p.start(); setSpeed(p, speed); playing = true }
-                            },
-                            contentAlignment = Alignment.Center
-                        ) { Text(if (playing) "❚❚" else "▶", fontSize = 12.sp, color = Primary) }
-                        Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface2)) {
-                            Box(Modifier.fillMaxWidth(pos.coerceIn(0f, 1f)).height(4.dp).background(Primary))
-                        }
-                        Text("${mmss((durMs * pos).toLong())} / ${mmss(durMs)}", fontSize = 12.5.sp, color = Muted)
-                        Text(
-                            Jarvis.speedLabel(speed), fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Primary,
-                            modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable {
-                                speed = Jarvis.nextSpeed(speed); prefs.jarvisSpeed = speed
-                                player[0]?.let { if (playing) setSpeed(it, speed) }
-                            }.padding(horizontal = 9.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
             found?.let { r ->
                 Row(
                     Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(16.dp)).background(PrimaryTint)
@@ -583,48 +657,84 @@ fun JarvisScreen(
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Bg).padding(horizontal = 18.dp, vertical = 10.dp)) {
+            // In a chat the mic is the small button by the box, so its timer and Send / Cancel sit here.
+            if (rec && inChat) Column(Modifier.padding(bottom = if (locked) 8.dp else 64.dp)) { RecordingPanel() }
             done?.let { d ->
-            Row(
-                Modifier.padding(bottom = 8.dp).fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp)).background(DoneBg).border(1.dp, DoneBorder, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Box(Modifier.size(24.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
-                    Text("✓", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0B2117))
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(d.title, fontSize = 13.sp)
-                    if (d.detail.isNotBlank()) Text(d.detail, fontSize = 11.5.sp, color = Muted, maxLines = 1)
-                }
-                Text("Open", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Green, modifier = Modifier.clickable { openDone = d })
-                Text("✕", fontSize = 13.sp, color = Muted, modifier = Modifier.clickable { done = null }.padding(start = 4.dp))
-            }
-        }
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(24.dp))
-                    .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("⌨️", fontSize = 15.sp)
-                BasicTextField(
-                    typed, { typed = it; prefs.setDraft("capture", it) },
-                    modifier = Modifier.weight(1f).padding(vertical = 10.dp),
-                    textStyle = TextStyle(color = TextMain, fontSize = 15.sp),
-                    cursorBrush = SolidColor(Primary), maxLines = 5,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { sendText(typed) }),
-                    decorationBox = { field ->
-                        if (typed.isEmpty()) Text("Type to ${worker.label}…", color = Muted, fontSize = 15.sp)
-                        field()
+                Row(
+                    Modifier.padding(bottom = 8.dp).fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp)).background(DoneBg).border(1.dp, DoneBorder, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(Modifier.size(24.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
+                        Text("✓", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0B2117))
                     }
-                )
-                val canSend = typed.isNotBlank() && phase == Phase.IDLE
-                Box(
-                    Modifier.size(36.dp).clip(CircleShape).background(if (canSend) Primary else Surface2)
-                        .clickable(enabled = canSend) { sendText(typed) },
-                    contentAlignment = Alignment.Center
-                ) { Text("↑", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (canSend) OnPrimary else Muted) }
+                    Column(Modifier.weight(1f)) {
+                        Text(d.title, fontSize = 13.sp)
+                        if (d.detail.isNotBlank()) Text(d.detail, fontSize = 11.5.sp, color = Muted, maxLines = 1)
+                    }
+                    Text("Open", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Green, modifier = Modifier.clickable { openDone = d })
+                    Text("✕", fontSize = 13.sp, color = Muted, modifier = Modifier.clickable { done = null }.padding(start = 4.dp))
+                }
+            }
+            Box {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(24.dp))
+                            .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (!inChat) Text("⌨️", fontSize = 15.sp)
+                        BasicTextField(
+                            typed, { typed = it; prefs.setDraft("capture", it) },
+                            modifier = Modifier.weight(1f).padding(vertical = 10.dp),
+                            textStyle = TextStyle(color = TextMain, fontSize = 15.sp),
+                            cursorBrush = SolidColor(Primary), maxLines = 5,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { sendText(typed) }),
+                            decorationBox = { field ->
+                                if (typed.isEmpty()) Text(if (inChat) "Message ${worker.label}…" else "Type to ${worker.label}…", color = Muted, fontSize = 15.sp)
+                                field()
+                            }
+                        )
+                        if (!inChat) {
+                            val canSend = typed.isNotBlank() && phase == Phase.IDLE
+                            Box(
+                                Modifier.size(36.dp).clip(CircleShape).background(if (canSend) Primary else Surface2)
+                                    .clickable(enabled = canSend) { sendText(typed) },
+                                contentAlignment = Alignment.Center
+                            ) { Text("↑", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (canSend) OnPrimary else Muted) }
+                        }
+                    }
+                    if (inChat) {
+                        if (typed.isNotBlank() && !rec) {
+                            val canSend = phase == Phase.IDLE
+                            Box(
+                                Modifier.size(46.dp).clip(CircleShape).background(if (canSend) Primary else Surface2)
+                                    .clickable(enabled = canSend) { sendText(typed) },
+                                contentAlignment = Alignment.Center
+                            ) { Text("↑", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (canSend) OnPrimary else Muted) }
+                        } else Box(
+                            Modifier.size(46.dp).clip(CircleShape)
+                                .background(
+                                    when {
+                                        rec && cancelling -> Surface2
+                                        rec -> RecRed
+                                        phase == Phase.SENDING -> Surface2
+                                        else -> Primary
+                                    }
+                                )
+                                .micGesture(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                when { rec -> "●"; phase == Phase.SENDING -> "…"; else -> "🎙" },
+                                fontSize = 18.sp, color = if (rec) Color(0xFF2A0F0E) else OnPrimary
+                            )
+                        }
+                    }
+                }
+                if (inChat && rec && !locked) LockPill(Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-64).dp))
             }
         }
     }
@@ -645,7 +755,7 @@ fun JarvisScreen(
                 Text("Talk to", fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                 Jarvis.WORKERS.forEach { w ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { worker = w; prefs.jarvisWorker = w.id; picking = false }.padding(vertical = 10.dp),
+                        Modifier.fillMaxWidth().clickable { pickWorker(w) }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Surface2), contentAlignment = Alignment.Center) {
@@ -656,13 +766,13 @@ fun JarvisScreen(
                             Text(w.blurb, fontSize = 12.sp, color = Muted)
                         }
                         RadioButton(
-                            selected = w.id == worker.id, onClick = { worker = w; prefs.jarvisWorker = w.id; picking = false },
+                            selected = w.id == worker.id, onClick = { pickWorker(w) },
                             colors = RadioButtonDefaults.colors(selectedColor = Primary, unselectedColor = Muted)
                         )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("Remembers your last pick.", fontSize = 12.5.sp, color = Muted)
+                Text("Each one keeps its own chat. Remembers your last pick.", fontSize = 12.5.sp, color = Muted)
             }
         }
     }
@@ -675,6 +785,21 @@ internal fun setSpeed(p: MediaPlayer, speed: Float) {
 
 private fun hhmm(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm", Locale.UK))
+
+/** One of Tom's messages: right-aligned, with how it was sent and when. */
+@Composable
+private fun MineBubble(text: String, caption: String) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Column(
+            Modifier.padding(start = 48.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(Primary)
+                .padding(horizontal = 13.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            Text(text, fontSize = 14.5.sp, lineHeight = 21.sp, color = OnPrimary)
+            Text(caption, fontSize = 10.5.sp, color = OnPrimary.copy(alpha = 0.7f), modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+}
 
 private fun foundLabel(r: SortResult): String = listOfNotNull(
     if (r.note != null) "1 note" else null,
