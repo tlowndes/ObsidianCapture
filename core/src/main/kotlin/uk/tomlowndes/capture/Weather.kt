@@ -14,7 +14,11 @@ data class DayPart(val name: String, val icon: String, val temp: Int, val rain: 
  */
 data class WeatherSummary(
     val high: Int, val low: Int, val headline: String, val detail: String,
-    val tip: String? = null, val parts: List<DayPart> = emptyList()
+    val tip: String? = null, val parts: List<DayPart> = emptyList(),
+    /** True after today's sunset, when the card shows tomorrow instead. */
+    val tomorrow: Boolean = false,
+    /** "Tonight: 6°, drizzle easing by 21:00." Only set when [tomorrow] is. */
+    val tonight: String? = null
 )
 
 /** Today's forecast from Open-Meteo (free, no key), written up from the hourly data like the morning email. */
@@ -22,19 +26,23 @@ object Weather {
     fun url(lat: Double, lon: Double) =
         "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f".format(java.util.Locale.ROOT, lat, lon) +
             "&hourly=temperature_2m,precipitation_probability,weather_code,cloud_cover" +
-            "&daily=temperature_2m_max,temperature_2m_min,sunset,weather_code&timezone=auto&forecast_days=1"
+            "&daily=temperature_2m_max,temperature_2m_min,sunset,weather_code&timezone=auto&forecast_days=2"
 
     private data class Hour(val at: LocalDateTime, val rain: Int, val cloud: Int, val code: Int, val temp: Double?)
 
     private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
+    /** Today's write-up; after today's sunset, tomorrow's (when the forecast has it) plus a line for tonight. */
     fun summary(json: String, now: LocalDateTime): WeatherSummary {
         val o = JSONObject(json)
         val daily = o.getJSONObject("daily")
-        val hi = Math.round(daily.getJSONArray("temperature_2m_max").getDouble(0)).toInt()
-        val lo = Math.round(daily.getJSONArray("temperature_2m_min").getDouble(0)).toInt()
-        val sunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(0))
-        val dayCode = daily.getJSONArray("weather_code").optInt(0, 3)
+        val todaySunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(0))
+        val next = !now.isBefore(todaySunset) && daily.getJSONArray("sunset").length() > 1
+        val d = if (next) 1 else 0
+        val hi = Math.round(daily.getJSONArray("temperature_2m_max").getDouble(d)).toInt()
+        val lo = Math.round(daily.getJSONArray("temperature_2m_min").getDouble(d)).toInt()
+        val sunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(d))
+        val dayCode = daily.getJSONArray("weather_code").optInt(d, 3)
 
         val h = o.getJSONObject("hourly")
         val times = h.getJSONArray("time")
@@ -46,21 +54,45 @@ object Weather {
                 temps?.optDouble(i)?.takeIf { !it.isNaN() }
             )
         }
-        val daylight = hours.filter { it.at.toLocalTime() >= LocalTime.of(7, 0) && it.at.isBefore(sunset) }
-        val ahead = daylight.filter { !it.at.isBefore(now.withMinute(0).withSecond(0).withNano(0)) }
+        val day = sunset.toLocalDate()
+        val tonight = if (next) tonightLine(hours.filter { it.at.toLocalDate() == now.toLocalDate() && it.at.hour >= now.hour }) else null
+        // For tomorrow, write it up as if the day hadn't started yet.
+        val from = if (next) day.atStartOfDay() else now
+        val dayHours = hours.filter { it.at.toLocalDate() == day }
+        val daylight = dayHours.filter { it.at.toLocalTime() >= LocalTime.of(7, 0) && it.at.isBefore(sunset) }
+        val ahead = daylight.filter { !it.at.isBefore(from.withMinute(0).withSecond(0).withNano(0)) }
 
         val parts = listOf("MORNING" to 7..11, "AFTERNOON" to 12..16, "EVENING" to 17..21).mapNotNull { (name, range) ->
-            val hs = hours.filter { it.at.hour in range }
+            val hs = dayHours.filter { it.at.hour in range }
             if (hs.isEmpty()) null else part(name, hs, sunset)
         }
 
         val sentences = mutableListOf<String>()
-        val story = rainStory(ahead, now)
+        val story = rainStory(ahead, from)
         val sun = sunLine(daylight, dayCode)
         listOfNotNull(story, sun).joinToString(", ").takeIf { it.isNotEmpty() }?.let { sentences += it.replaceFirstChar { c -> c.uppercase() } + "." }
         sentences += "Sunset ${sunset.format(HM)}."
 
-        return WeatherSummary(hi, lo, headline(daylight, ahead, dayCode, now), sentences.joinToString(" "), tip(ahead, now, sunset), parts)
+        return WeatherSummary(
+            hi, lo, headline(daylight, ahead, dayCode, from), sentences.joinToString(" "), tip(ahead, from, sunset), parts,
+            tomorrow = next, tonight = tonight
+        )
+    }
+
+    /** "Tonight: 6°, drizzle easing by 21:00." from the hours left before midnight. */
+    private fun tonightLine(hs: List<Hour>): String? {
+        if (hs.isEmpty()) return null
+        val low = hs.mapNotNull { it.temp }.minOrNull()?.let { "${Math.round(it)}°, " } ?: ""
+        val peak = hs.maxOf { it.rain }
+        val wetWord = if (hs.any { it.code in 51..57 } && hs.none { it.code in 61..67 || it.code in 80..82 }) "drizzle" else "rain"
+        val lastWet = hs.indexOfLast { it.rain >= 30 }
+        val rest = when {
+            peak < 20 -> "dry"
+            lastWet in 0 until hs.size - 1 && hs[0].rain >= 30 -> "$wetWord easing by ${hs[lastWet].at.plusHours(1).format(HM)}"
+            peak >= 50 -> "$wetWord likely ($peak%)"
+            else -> "chance of showers ($peak%)"
+        }
+        return "Tonight: $low$rest."
     }
 
     private fun headline(daylight: List<Hour>, ahead: List<Hour>, dayCode: Int, now: LocalDateTime): String {
