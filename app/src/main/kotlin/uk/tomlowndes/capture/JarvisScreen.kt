@@ -44,6 +44,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.AlertDialog
@@ -276,7 +281,8 @@ fun JarvisScreen(
         markDone(r.done)
         r.sorted?.let(onFound)
         if (demo && w.id == "research") markDone(listOf(Jarvis.Done("demo-$now", "Research finished (demo)", "This is what a finished background job looks like.")))
-        if (audio != null && onScreen && prefs.jarvisSpeak) play(audio.name)
+        // Only spoken messages are answered out loud; a typed one gets its ▶ to play by hand.
+        if (audio != null && onScreen && spoken && prefs.jarvisSpeak) play(audio.name)
     }
 
     fun fetch(r: Jarvis.Reply): File? = r.audioUrl?.let { u ->
@@ -588,7 +594,7 @@ fun JarvisScreen(
                             .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
                     ) {
                         Text(worker.label.uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
-                        Text(m.text, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
+                        Text(remember(m.text) { chatMarkdown(m.text) }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
                         m.audio?.let { a ->
                             val here = loaded == a
                             Row(
@@ -785,6 +791,39 @@ internal fun setSpeed(p: MediaPlayer, speed: Float) {
 
 private fun hhmm(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm", Locale.UK))
+
+/** An answer's Markdown as styled text: bold, italic, code, link text, headings in bold, and "- " bullets as "•". */
+internal fun chatMarkdown(md: String): AnnotatedString = buildAnnotatedString {
+    fun inline(p: String) {
+        var at = 0
+        for (m in MdBlocks.INLINE.findAll(p)) {
+            append(p.substring(at, m.range.first))
+            val g = m.groups
+            when {
+                m.value.startsWith("!") -> Unit
+                g[1] != null -> withStyle(SpanStyle(color = Primary)) { append(g[1]!!.value) }
+                g[3] != null || g[4] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline((g[3] ?: g[4])!!.value) }
+                g[5] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Surface2)) { append(g[5]!!.value) }
+                g[6] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(g[6]!!.value) }
+                g[7] != null -> append((g[8] ?: g[7])!!.value)
+                else -> append(m.value)
+            }
+            at = m.range.last + 1
+        }
+        append(p.substring(at))
+    }
+    md.trim().lines().forEachIndexed { i, raw ->
+        if (i > 0) append("\n")
+        val line = raw.trimEnd()
+        val head = Regex("^#{1,6}\\s+(.*)").find(line)
+        val bullet = Regex("^(\\s*)[-*+]\\s+(.*)").find(line)
+        when {
+            head != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline(head.groupValues[1]) }
+            bullet != null -> { append(bullet.groupValues[1] + "• "); inline(bullet.groupValues[2]) }
+            else -> inline(line)
+        }
+    }
+}
 
 /** One of Tom's messages: right-aligned, with how it was sent and when. */
 @Composable

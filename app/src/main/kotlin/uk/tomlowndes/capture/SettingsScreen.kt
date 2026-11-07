@@ -178,7 +178,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                 }
             }, enabled = !jvTesting) { Text("Test", color = Primary) }
         }
-        SettingRow("Play replies aloud") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
+        SettingRow("Play replies aloud", "When you talk. Typed messages stay quiet.") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
         SettingRow("Voice", "Made on the server. Tap to hear each one.") {
             TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
         }
