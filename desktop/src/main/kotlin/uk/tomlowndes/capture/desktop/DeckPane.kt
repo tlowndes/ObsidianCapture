@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -412,7 +413,7 @@ private fun WeatherCard(w: WeatherSummary, showStrip: Boolean, onToggle: () -> U
     DeckCard(border = WeatherBorder, bg = WeatherBg, onClick = onToggle) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MonoLabel("Weather", WeatherLabel)
+                MonoLabel(if (w.tomorrow) "Weather · Tomorrow" else "Weather", WeatherLabel)
                 if (w.parts.isNotEmpty()) Text(if (showStrip) "▴" else "▾", fontSize = 12.sp, color = Muted)
             }
             Text("${w.high}° / ${w.low}° · ${w.headline}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextMain,
@@ -436,6 +437,10 @@ private fun WeatherCard(w: WeatherSummary, showStrip: Boolean, onToggle: () -> U
             }
             Text(w.detail, fontSize = 13.5.sp, color = Muted, lineHeight = 20.sp)
             w.tip?.let { Text(it, fontSize = 13.5.sp, color = TextMain, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp)) }
+            w.tonight?.let {
+                HorizontalDivider(color = WeatherBorder, modifier = Modifier.padding(top = 12.dp, bottom = 10.dp))
+                Text(it, fontSize = 13.sp, color = Muted, lineHeight = 19.sp)
+            }
         }
     }
 }

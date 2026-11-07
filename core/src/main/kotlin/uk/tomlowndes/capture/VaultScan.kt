@@ -9,6 +9,7 @@ import java.io.File
  * [cacheFile], so only notes changed since the last look are read again.
  */
 object VaultScan {
+    private const val VERSION = 2
     private class Cached(val modified: Long, val lines: List<String>)
     private var cache: MutableMap<String, Cached>? = null
 
@@ -22,30 +23,38 @@ object VaultScan {
     }
 
     /** Open `#task` tasks from every scanned note except Quick Task, reading only notes that changed. */
+    fun tasks(v: Vault, cacheFile: File?): List<TaskItem> = scan(v, cacheFile).first
+
+    /** Open tasks and ticked `#task` tasks from every scanned note except Quick Task, in one pass. */
     @Synchronized
-    fun tasks(v: Vault, cacheFile: File?): List<TaskItem> {
+    fun scan(v: Vault, cacheFile: File?): Pair<List<TaskItem>, List<TickedTask>> {
         val templates = templateFolders(v)
         val notes = v.notes { VaultTasks.skipped(it, templates) }
             .filter { it.path != VaultTasks.QUICK_TASK && !VaultTasks.skipped(it.path, templates) }
         val known = cache ?: load(cacheFile)
         val fresh = mutableMapOf<String, Cached>()
         val out = mutableListOf<TaskItem>()
+        val done = mutableListOf<TickedTask>()
         for (n in notes) {
             val hit = known[n.path]?.takeIf { it.modified == n.modified && n.modified != 0L }
             val entry = hit ?: runCatching {
                 val lines = VaultIo.read(v, n.path).split("\n")
-                Cached(n.modified, VaultTasks.parseNote(lines, n.path).map { it.raw })
+                Cached(n.modified, VaultTasks.taskLines(lines))
             }.getOrNull() ?: continue
             fresh[n.path] = entry
             entry.lines.mapNotNullTo(out) { TaskNote.parse(it)?.copy(path = n.path) }
+            entry.lines.mapNotNullTo(done) { TaskNote.parseDone(it)?.copy(path = n.path) }
         }
         cache = fresh
         save(cacheFile, fresh)
-        return out
+        return out to done
     }
 
     private fun load(f: File?): MutableMap<String, Cached> = runCatching {
-        val o = JSONObject(f!!.readText())
+        val top = JSONObject(f!!.readText())
+        // v2 also keeps ticked lines; an older cache is dropped and the vault read again once.
+        if (top.optInt("v") != VERSION) return mutableMapOf()
+        val o = top.getJSONObject("notes")
         o.keys().asSequence().associateWith { k ->
             val e = o.getJSONObject(k)
             val ls = e.getJSONArray("t")
@@ -59,7 +68,7 @@ object VaultScan {
             val o = JSONObject()
             map.forEach { (k, v) -> o.put(k, JSONObject().put("m", v.modified).put("t", JSONArray(v.lines))) }
             f.parentFile?.mkdirs()
-            f.writeText(o.toString())
+            f.writeText(JSONObject().put("v", VERSION).put("notes", o).toString())
         }
     }
 }

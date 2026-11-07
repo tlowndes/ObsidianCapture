@@ -342,7 +342,7 @@ private fun WeatherCard(w: WeatherSummary, travel: TravelLine?, showStrip: Boole
     DeckCard(border = WeatherBorder, bg = WeatherBg, modifier = Modifier.clickable(onClick = onToggle)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(if (travel != null) "WEATHER & TRAVEL" else "WEATHER", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
+                Text((if (travel != null) "WEATHER & TRAVEL" else "WEATHER") + if (w.tomorrow) " · TOMORROW" else "", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = WeatherLabel)
                 if (w.parts.isNotEmpty()) Text(if (showStrip) "▴" else "▾", fontSize = 12.sp, color = Muted)
             }
             Text("${w.high}° / ${w.low}° · ${w.headline}", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
@@ -364,6 +364,10 @@ private fun WeatherCard(w: WeatherSummary, travel: TravelLine?, showStrip: Boole
             }
             Text(w.detail, fontSize = 13.sp, color = Muted, lineHeight = 19.sp)
             w.tip?.let { Text(it, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp)) }
+            w.tonight?.let {
+                HorizontalDivider(color = WeatherBorder, modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
+                Text(it, fontSize = 12.5.sp, color = Muted, lineHeight = 18.sp)
+            }
             if (travel != null) {
                 HorizontalDivider(color = WeatherBorder, modifier = Modifier.padding(top = 12.dp, bottom = 10.dp))
                 val hm = DateTimeFormatter.ofPattern("HH:mm")

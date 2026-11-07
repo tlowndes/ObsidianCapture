@@ -57,6 +57,15 @@ object TaskViews {
                 .takeIf { it.isNotEmpty() }?.let { g to it }
         }
 
+    /**
+     * The [max] most recently ticked of [done]. [stamps] holds the moment the app ticked a line (done line ->
+     * epoch millis); other lines count from the start of their ✅ day. Ties keep [done]'s order.
+     */
+    fun recentDone(done: List<TickedTask>, stamps: Map<String, Long>, max: Int = 5): List<TickedTask> =
+        done.sortedByDescending { d ->
+            stamps[d.raw] ?: d.done?.atStartOfDay(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: Long.MIN_VALUE
+        }.take(max)
+
     fun bill(t: TaskItem): Bill {
         val amount = AMOUNT.find(t.raw)?.groupValues?.get(1)?.replace(',', '.')?.let { runCatching { BigDecimal(it) }.getOrNull() }
         val name = plainText(t).replace(AMOUNT, "").replace(Regex("\\s+"), " ").trim()
