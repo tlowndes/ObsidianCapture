@@ -1,7 +1,7 @@
 """A stand-in for the Jarvis voice server, so the app's Jarvis tab can be tested before the Oracle box is ready.
 
 Speaks the same contract as the real one:
-  POST /voice   multipart: audio (OGG/Opus), worker; header Authorization: Bearer <token>
+  POST /voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
                 -> {"transcript", "reply", "audio_url"}
   GET  /audio/<id>.ogg   same token; plays your own recording back
   GET  /done    finished background jobs (a fake one appears 20 s after you talk to Research)
@@ -87,10 +87,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         parts = multipart(body, self.headers.get("Content-Type", ""))
-        rec = parts.get("audio") or b""
+        rec = parts.get("file") or parts.get("audio") or b""
         worker = (parts.get("worker") or b"jarvis").decode().strip()
         if not rec:
-            self.send_json(400, {"error": "no audio part"})
+            self.send_json(400, {"error": "no file part"})
             return
         aid = uuid.uuid4().hex[:12]
         audio[aid] = rec

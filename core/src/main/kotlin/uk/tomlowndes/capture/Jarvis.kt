@@ -12,7 +12,7 @@ import java.util.UUID
  * Talks to the Jarvis voice server on the Oracle box (reached over Tailscale only). The server hands each
  * request to the Claude CLI and sends back what it heard, the reply, and the reply as audio.
  *
- *  POST {base}/voice   multipart: audio (OGG/Opus file), worker; header Authorization: Bearer <token>
+ *  POST {base}/voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
  *                      → {"transcript": "...", "reply": "...", "audio_url": "/audio/<id>.ogg", "done": [...]?}
  *  GET  {base}/audio/<id>.ogg  same token
  *  GET  {base}/done    optional: background jobs that finished, [{"id","title","detail"}]. 404 means "not offered".
@@ -91,7 +91,7 @@ object Jarvis {
                 line("")
                 line(worker)
                 line("--$boundary")
-                line("Content-Disposition: form-data; name=\"audio\"; filename=\"${audio.name}\"")
+                line("Content-Disposition: form-data; name=\"file\"; filename=\"${audio.name}\"")
                 line("Content-Type: audio/ogg")
                 line("")
                 audio.inputStream().use { it.copyTo(out) }

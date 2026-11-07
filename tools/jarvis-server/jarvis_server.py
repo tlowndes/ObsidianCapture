@@ -1,6 +1,6 @@
 """Jarvis voice server for the Oracle box: the other end of the app's Jarvis tab.
 
-  POST /voice   multipart: audio (OGG/Opus), worker; header Authorization: Bearer <token>
+  POST /voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
                 -> {"transcript", "reply", "audio_url"}
   GET  /audio/<id>.ogg   the spoken reply, same token
   GET  /done    finished background jobs: [{"id", "title", "detail"}]
@@ -173,10 +173,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(413, {"error": "recording too big"})
             return
         parts = multipart(self.rfile.read(length), self.headers.get("Content-Type", ""))
-        audio = parts.get("audio") or b""
+        audio = parts.get("file") or parts.get("audio") or b""
         worker = (parts.get("worker") or b"jarvis").decode().strip()
         if not audio:
-            self.send_json(400, {"error": "no audio part"})
+            self.send_json(400, {"error": "no file part"})
             return
         if worker not in CONFIG["workers"]:
             worker = "jarvis"

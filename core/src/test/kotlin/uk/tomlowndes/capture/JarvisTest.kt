@@ -68,7 +68,7 @@ class JarvisTest {
             assertTrue(post.type!!.startsWith("multipart/form-data; boundary="))
             val body = String(post.body)
             assertTrue(body.contains("name=\"worker\"\r\n\r\nobsidian\r\n"))
-            assertTrue(body.contains("name=\"audio\"; filename=\"${rec.name}\"\r\nContent-Type: audio/ogg\r\n\r\nOPUSDATA\r\n"))
+            assertTrue(body.contains("name=\"file\"; filename=\"${rec.name}\"\r\nContent-Type: audio/ogg\r\n\r\nOPUSDATA\r\n"))
             assertEquals("Bearer tok-1", hits[1].auth)
         } finally {
             s.stop(0); rec.delete(); out.delete()
