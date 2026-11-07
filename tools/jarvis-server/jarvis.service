@@ -1,0 +1,12 @@
+# ~/.config/systemd/user/jarvis.service  (then: systemctl --user enable --now jarvis)
+[Unit]
+Description=Jarvis voice server
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/jarvis.env
+ExecStart=%h/jarvis-server/.venv/bin/python %h/jarvis-server/jarvis_server.py --workers %h/jarvis-server/workers.json --piper-voice %h/jarvis-server/voices/en_GB-alan-medium.onnx --piper %h/jarvis-server/.venv/bin/piper
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

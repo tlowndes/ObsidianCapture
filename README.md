@@ -81,6 +81,8 @@ To test against something real before the Oracle side is ready, run the fake ser
 `python tools/fake-jarvis/fake_jarvis.py --token test-token`, then `tailscale serve --bg 8765`, and put that PC's
 `*.ts.net` name and `test-token` into Settings › Jarvis. It plays your own recording back.
 
+The real server for the Oracle box is in `tools/jarvis-server` (setup steps in its README).
+
 ### Tasks
 
 Every open `#task` in the vault: Quick Task first, then the rest. Groups are Overdue, Today, This week (tomorrow included) and Later (undated included). Filter by the tags you use most, by Work (`#work`, `#jobs`) or Personal, by 15 minutes or under, or by search. Tick, reschedule or remove, each with Undo. Today's rows can start a Focus timer. The due-date sheet also sets or clears the `⏱` estimate.
