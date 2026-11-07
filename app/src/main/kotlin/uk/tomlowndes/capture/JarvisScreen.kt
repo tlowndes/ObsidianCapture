@@ -33,6 +33,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -88,6 +93,9 @@ private val ErrBg = Color(0xFF2A1716)
 private val ErrBorder = Color(0xFF4A2523)
 
 private enum class Phase { IDLE, RECORDING, SENDING }
+
+/** A recording (locked or held) stops and sends itself after ten minutes. */
+private const val MAX_RECORDING_MS = 10 * 60_000L
 
 /** OGG/Opus from the mic into a cache file. */
 private class Recorder(private val ctx: Context) {
@@ -153,6 +161,11 @@ fun JarvisScreen(
     var picking by remember { mutableStateOf(false) }
     var phase by remember { mutableStateOf(Phase.IDLE) }
     var cancelling by remember { mutableStateOf(false) }
+    /** Thumb is over the 🔒 while holding; [locked] once let go there (records hands-free until Send). */
+    var locking by remember { mutableStateOf(false) }
+    var locked by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     var startedAt by remember { mutableLongStateOf(0L) }
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>() }
@@ -286,7 +299,7 @@ fun JarvisScreen(
         return runCatching { recorder.start() }.onFailure {
             scope.launch { snack.showSnackbar("Couldn't start the microphone") }
         }.isSuccess.also { ok ->
-            if (ok) { phase = Phase.RECORDING; cancelling = false; startedAt = System.currentTimeMillis(); elapsed = 0; levels.clear() }
+            if (ok) { phase = Phase.RECORDING; cancelling = false; locking = false; locked = false; startedAt = System.currentTimeMillis(); elapsed = 0; levels.clear() }
         }
     }
 
@@ -294,15 +307,29 @@ fun JarvisScreen(
         if (phase != Phase.RECORDING) return
         elapsed = System.currentTimeMillis() - startedAt
         phase = Phase.IDLE
+        locked = false; locking = false; cancelling = false
         // Short taps are ignored, so a pocket press doesn't send anything.
         if (!keep || elapsed < 500) { recorder.cancel(); return }
         val f = recorder.stop()
         if (f == null) scope.launch { snack.showSnackbar("Nothing was recorded") } else send(f)
     }
 
+    fun lock() {
+        if (phase != Phase.RECORDING) return
+        locked = true; locking = false; cancelling = false
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    // The screen stays on while recording, so a locked ramble isn't cut off by the screen timeout.
+    DisposableEffect(phase) {
+        view.keepScreenOn = phase == Phase.RECORDING
+        onDispose { view.keepScreenOn = false }
+    }
+
     LaunchedEffect(phase) {
         while (phase == Phase.RECORDING) {
             elapsed = System.currentTimeMillis() - startedAt
+            if (elapsed >= MAX_RECORDING_MS) { finish(true); break }
             levels.add(recorder.level())
             while (levels.size > 24) levels.removeAt(0)
             delay(90)
@@ -320,6 +347,8 @@ fun JarvisScreen(
 
     val onBegin by rememberUpdatedState(::begin)
     val onFinish by rememberUpdatedState(::finish)
+    val onLock by rememberUpdatedState(::lock)
+    val isLocked by rememberUpdatedState(locked)
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 150.dp)) {
@@ -339,6 +368,15 @@ fun JarvisScreen(
             val micSize by animateDpAsState(if (small) 72.dp else 170.dp, label = "mic")
             val rec = phase == Phase.RECORDING
             Box(Modifier.fillMaxWidth().padding(top = if (small) 12.dp else 34.dp), contentAlignment = Alignment.Center) {
+                if (rec && !locked) Column(
+                    Modifier.align(Alignment.TopCenter).offset(y = (-36).dp).zIndex(1f).width(52.dp).clip(CircleShape)
+                        .background(if (locking) PrimaryTint else Surface1).border(1.dp, if (locking) Primary else Outline, CircleShape)
+                        .padding(vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("🔒", fontSize = 17.sp)
+                    Text(if (locking) "Lock" else "▲", fontSize = 11.sp, color = if (locking) Primary else Muted)
+                }
                 Box(
                     Modifier.size(micSize + if (rec) 60.dp else 28.dp).clip(CircleShape).background(if (rec) RecRing2 else Color.Transparent),
                     contentAlignment = Alignment.Center
@@ -354,6 +392,7 @@ fun JarvisScreen(
                                 .background(
                                     when {
                                         rec && cancelling -> Surface2
+                                        rec && locking -> RecRed.copy(alpha = 0.8f)
                                         rec -> RecRed
                                         phase == Phase.SENDING -> Surface2
                                         else -> Primary
@@ -363,18 +402,33 @@ fun JarvisScreen(
                                     awaitEachGesture {
                                         val down = awaitFirstDown()
                                         down.consume()
+                                        // Locked: a tap on the button sends, like the Send button.
+                                        if (isLocked) {
+                                            while (true) {
+                                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                                if (!c.pressed) { c.consume(); break }
+                                            }
+                                            onFinish(true)
+                                            return@awaitEachGesture
+                                        }
                                         if (!onBegin()) return@awaitEachGesture
                                         val slop = 60f
+                                        val lockAt = -28.dp.toPx()
                                         var inside = true
+                                        var toLock = false
                                         while (true) {
                                             val ev = awaitPointerEvent()
                                             val c = ev.changes.firstOrNull { it.id == down.id } ?: break
                                             val p = c.position
-                                            inside = p.x > -slop && p.y > -slop && p.x < size.width + slop && p.y < size.height + slop
+                                            toLock = p.y < lockAt && p.x > -slop && p.x < size.width + slop
+                                            // Up towards the lock isn't cancelling; sideways or down off the button is.
+                                            inside = toLock || (p.x > -slop && p.y > -slop && p.x < size.width + slop && p.y < size.height + slop) ||
+                                                (p.y < 0 && p.x > -slop && p.x < size.width + slop)
                                             cancelling = !inside
+                                            locking = toLock
                                             if (!c.pressed) { c.consume(); break }
                                         }
-                                        onFinish(inside)
+                                        if (toLock) onLock() else onFinish(inside)
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -388,6 +442,8 @@ fun JarvisScreen(
                                 if (!small) Text(
                                     when {
                                         rec && cancelling -> "Let go to cancel"
+                                        rec && locking -> "Let go to lock"
+                                        rec && locked -> "Tap to send"
                                         rec -> "Recording"
                                         phase == Phase.SENDING -> "Sending"
                                         else -> "Hold to talk"
@@ -414,9 +470,29 @@ fun JarvisScreen(
                     ) {
                         levels.forEach { l -> Box(Modifier.width(5.dp).height((6 + 28 * l).dp).clip(RoundedCornerShape(3.dp)).background(RecRed)) }
                     }
-                    Text(
-                        if (cancelling) "Let go to cancel" else "Let go to send to ${worker.label}\nSlide away to cancel",
-                        fontSize = 13.sp, color = Muted, lineHeight = 19.sp,
+                    if (locked) {
+                        Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("✕ Cancel", color = Muted, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape)
+                                    .clickable { finish(false) }.padding(vertical = 14.dp))
+                            Text("↑ Send to ${worker.label}", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.weight(1f).clip(CircleShape).background(Primary)
+                                    .clickable { finish(true) }.padding(vertical = 14.dp))
+                        }
+                        Text(
+                            "🔒 Locked · keep talking. Sends on its own at 10:00.",
+                            fontSize = 12.5.sp, color = Muted,
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    } else Text(
+                        when {
+                            cancelling -> "Let go to cancel"
+                            locking -> "Let go to lock"
+                            else -> "Let go to send · Slide up to lock\nSlide sideways to cancel"
+                        },
+                        fontSize = 13.sp, color = if (locking) Primary else Muted, lineHeight = 19.sp,
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
