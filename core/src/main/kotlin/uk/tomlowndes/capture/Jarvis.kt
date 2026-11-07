@@ -14,6 +14,9 @@ import java.util.UUID
  *
  *  POST {base}/voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
  *                      → {"transcript": "...", "reply": "...", "audio_url": "/audio/<id>.ogg", "done": [...]?}
+ *  POST {base}/text    JSON {"text", "worker", "voice"?} → the same reply as /voice (typed instead of spoken)
+ *  Either reply may carry "sorted": {"tasks", "ideas", "note"} (see [Sorting]) when a ramble had things to keep;
+ *  the app shows Check and save for it. "note" may be {"title", "markdown"}: a tidied note of its own.
  *  GET  {base}/audio/<id>.ogg  same token
  *  GET  {base}/done    optional: background jobs that finished, [{"id","title","detail"}]. 404 means "not offered".
  *  GET  {base}/voices  optional: [{"id","label","detail","sample_url"}] (or plain ids). The picked id goes back as
@@ -41,7 +44,13 @@ object Jarvis {
     /** A voice the server can speak in. [sampleUrl] plays a short sample, when the server offers one. */
     data class Voice(val id: String, val label: String, val detail: String, val sampleUrl: String?)
 
-    data class Reply(val transcript: String, val reply: String, val audioUrl: String?, val done: List<Done> = emptyList())
+    data class Reply(
+        val transcript: String,
+        val reply: String,
+        val audioUrl: String?,
+        val done: List<Done> = emptyList(),
+        val sorted: SortResult? = null,
+    )
 
     /** The server answered, but not with 2xx. 401/403 mean the token is wrong. */
     class HttpError(val code: Int, body: String) : Exception("Jarvis returned $code" + if (body.isBlank()) "" else ": ${body.take(200)}")
@@ -72,7 +81,27 @@ object Jarvis {
             reply = o.optString("reply"),
             audioUrl = o.optString("audio_url").takeIf { it.isNotBlank() && it != "null" },
             done = o.optJSONArray("done")?.let(::parseDone).orEmpty(),
+            sorted = o.optJSONObject("sorted")?.let { Sorting.parse(it.toString()) }?.takeIf { !it.isEmpty }?.let { r ->
+                // The raw words go under a tidied note, so nothing said is lost.
+                if (r.transcript == null && r.noteTitle != null) r.copy(transcript = o.optString("transcript").ifBlank { null }) else r
+            },
         )
+    }
+
+    /** Sends typed text instead of a recording. Same answer as [send]. */
+    fun sendText(address: String, token: String, text: String, worker: String, voice: String? = null): Reply {
+        val c = open("${base(address)}/text", token, "POST", timeout = 120_000)
+        c.doOutput = true
+        c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        c.setRequestProperty("Accept", "application/json")
+        try {
+            val json = JSONObject().put("text", text).put("worker", worker)
+            if (!voice.isNullOrBlank()) json.put("voice", voice)
+            c.outputStream.use { it.write(json.toString().toByteArray()) }
+            return parseReply(body(c))
+        } finally {
+            c.disconnect()
+        }
     }
 
     fun parseDone(a: JSONArray): List<Done> = (0 until a.length()).mapNotNull { i ->
@@ -198,12 +227,36 @@ object Jarvis {
     fun demoReply(worker: String, seconds: Double): Reply {
         val w = worker(worker)
         val secs = String.format(java.util.Locale.UK, "%.1f", seconds)
+        val heard = "(Demo) $secs seconds of audio for ${w.label}."
+        val long = seconds >= 15
         return Reply(
-            transcript = "(Demo) $secs seconds of audio for ${w.label}.",
-            reply = "Demo mode: ${w.label} got your $secs second recording. Put the Oracle address in Settings to talk for real. You'll hear your own recording played back now.",
+            transcript = heard,
+            reply = "Demo mode: ${w.label} got your $secs second recording. Put the Oracle address in Settings to talk for real." +
+                if (long) " That was a long one, so here's a demo note to check." else " You'll hear your own recording played back now.",
             audioUrl = null,
+            sorted = if (long) demoSorted(heard) else null,
         )
     }
+
+    /** Demo mode for typed text: a long message (25 words or more) comes back as a demo note to check and save. */
+    fun demoText(worker: String, text: String): Reply {
+        val w = worker(worker)
+        val long = text.trim().split(Regex("\\s+")).size >= 25
+        return Reply(
+            transcript = text.trim(),
+            reply = "Demo mode: ${w.label} got your message." + if (long) " Here's a demo note to check." else " Put the Oracle address in Settings to talk for real.",
+            audioUrl = null,
+            sorted = if (long) demoSorted(text.trim()) else null,
+        )
+    }
+
+    private fun demoSorted(heard: String) = SortResult(
+        tasks = listOf(SortedTask("Try Jarvis for real", null, null)),
+        ideas = emptyList(),
+        note = "Demo mode tidies nothing. On the real server this is your ramble as one tidy note.\n\n## What you said\n- $heard",
+        noteTitle = "Jarvis demo note",
+        transcript = heard,
+    )
 
     private fun open(url: String, token: String, method: String, timeout: Int): HttpURLConnection {
         val c = URL(url).openConnection() as HttpURLConnection

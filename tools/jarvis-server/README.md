@@ -3,7 +3,9 @@
 The other end of the app's Jarvis tab. Runs on the Oracle box, reachable only over Tailscale.
 
 For each recording it turns speech into text (faster-whisper), runs `claude -p` in the picked worker's folder,
-turns the reply into speech (Piper) and sends back `{"transcript", "reply", "audio_url"}`. Research runs in the
+turns the reply into speech (Piper) and sends back `{"transcript", "reply", "audio_url"}`. Typed messages come in on
+`POST /text` and get the same answer. A ramble (40 words or more that isn't a question) is sorted instead: the reply
+carries `"sorted"` with tasks, ideas and a tidied note, which the app checks and saves to the vault. Research runs in the
 background: it answers "On it" straight away, saves the write-up to `~/research/jarvis-results/`, and the app's
 Done line shows it when it's finished.
 
@@ -47,5 +49,5 @@ More UK voices: <https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_GB>
 
 ## Options
 
-`--whisper-model` (default `base.en`; `small.en` is more accurate but slower), `--claude-timeout` (seconds,
+`--ramble-words` (default 40; 0 turns sorting off), `--whisper-model` (default `base.en`; `small.en` is more accurate but slower), `--claude-timeout` (seconds,
 default 120), `--port` (default 8765). Without `--piper-voice` it still works, with text-only replies.

@@ -14,7 +14,7 @@ android {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
         targetSdk = 35
-        versionCode = 12
+        versionCode = 13
         versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
@@ -36,7 +36,6 @@ android {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("com.anthropic:anthropic-java:2.34.0")
     implementation(project(":core"))
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
@@ -54,7 +53,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // The android.jar stub of org.json throws on every call. Put the real library in front of it.
     testImplementation("org.json:json:20240303")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
 tasks.withType<Test>().configureEach {

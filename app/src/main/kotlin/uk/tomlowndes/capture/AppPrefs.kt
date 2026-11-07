@@ -92,21 +92,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
             p.getStringSet("later", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
 
-    /**
-     * Claude model id for Sort it. Blank or missing uses [Sorting.MODEL], so a retired id can be
-     * replaced in Settings without a new build.
-     */
-    var sortModel: String
-        get() = p.getString("sort_model", null)?.trim()?.ifEmpty { null } ?: Sorting.MODEL
-        set(v) {
-            val id = v.trim()
-            p.edit().apply { if (id.isEmpty() || id == Sorting.MODEL) remove("sort_model") else putString("sort_model", id) }.apply()
-        }
-
-    /** Brain dumps waiting to be sorted or saved; raw text is kept until Save. */
-    var captureQueue: List<QueuedDump>
-        get() = Sorting.queueFromJson(p.getString("capture_queue", null))
-        set(v) { p.edit().putString("capture_queue", Sorting.queueToJson(v)).apply() }
+    /** What Jarvis last sorted, waiting for Check and save (null once saved or discarded). */
+    var jarvisFound: SortResult?
+        get() = Sorting.fromJson(p.getString("jarvis_found", null))
+        set(v) { p.edit().apply { if (v == null) remove("jarvis_found") else putString("jarvis_found", Sorting.toJson(v)) }.remove("capture_queue").remove("sort_model").apply() }
 
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean
@@ -122,7 +111,7 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("weekly_min", 19 * 60)
         set(v) { p.edit().putInt("weekly_min", v).apply() }
 
-    /** Capture's switch: 0 Task, 1 Read later, 2 Brain dump. Opens on the last one used. */
+    /** Capture's switch: 0 Task, 1 Read later, 2 Jarvis. Opens on the last one used. */
     var captureMode: Int
         get() = p.getInt("capture_mode", 0)
         set(v) { p.edit().putInt("capture_mode", v).apply() }

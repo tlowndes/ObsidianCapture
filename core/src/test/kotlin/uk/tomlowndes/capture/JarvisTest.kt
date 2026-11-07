@@ -152,6 +152,40 @@ class JarvisTest {
         }
     }
 
+    @Test fun `typed text is posted as JSON and a sorted ramble comes back`() {
+        val hits = mutableListOf<Hit>()
+        val (s, url) = server { h ->
+            hits += h
+            200 to """{"transcript":"so the portfolio","reply":"Tidied.","audio_url":null,
+              "sorted":{"tasks":[{"text":"Book MOT","tag":null,"due":"2026-11-20"}],"ideas":[],
+                        "note":{"title":"Portfolio rethink","markdown":"Lead with the outcome."}}}""".toByteArray()
+        }
+        try {
+            val r = Jarvis.sendText(url, "tok", "so the portfolio", "obsidian", voice = "en_GB-alan-medium")
+            assertEquals("/text", hits[0].path)
+            assertEquals("Bearer tok", hits[0].auth)
+            assertTrue(hits[0].type!!.startsWith("application/json"))
+            val sent = org.json.JSONObject(String(hits[0].body))
+            assertEquals("so the portfolio", sent.getString("text"))
+            assertEquals("obsidian", sent.getString("worker"))
+            assertEquals("en_GB-alan-medium", sent.getString("voice"))
+            val sorted = r.sorted!!
+            assertEquals("Portfolio rethink", sorted.noteTitle)
+            assertEquals("so the portfolio", sorted.transcript) // the reply's transcript goes under the note
+            assertEquals(java.time.LocalDate.of(2026, 11, 20), sorted.tasks.single().due)
+        } finally {
+            s.stop(0)
+        }
+        assertNull(Jarvis.parseReply("""{"transcript":"a","reply":"b","sorted":{"tasks":[],"ideas":[],"note":null}}""").sorted)
+    }
+
+    @Test fun `demo sends back a note for a long ramble only`() {
+        assertNull(Jarvis.demoText("jarvis", "add milk").sorted)
+        assertEquals("Jarvis demo note", Jarvis.demoText("jarvis", (1..30).joinToString(" ") { "word" }).sorted!!.noteTitle)
+        assertNull(Jarvis.demoReply("jarvis", 4.0).sorted)
+        assertTrue(Jarvis.demoReply("jarvis", 40.0).sorted != null)
+    }
+
     @Test fun `speeds step round and read nicely`() {
         assertEquals("1×", Jarvis.speedLabel(1f))
         assertEquals("1.25×", Jarvis.speedLabel(1.25f))

@@ -15,7 +15,7 @@ Defaults below match a vault laid out as `01 - Inbox`, `03 - Projects` and `99 -
 | Quick tasks | `01 - Inbox/⚡ Quick Task.md` | Open tasks under `## Active`, done ones under `## Archive`. A task is `- [ ] #task …`, with optional `📅 YYYY-MM-DD`, `⏱ 15m` and `🔁 every week` (Tasks-plugin markers). |
 | Tasks in other notes | Any other note in the vault | The same `- [ ] … #task` line. Ticked in place. A task added from search goes under the note's `## Tasks`, or at the end if that heading is missing. A plain line goes at the end. |
 | Read It Later | `01 - Inbox/ReadItLater Inbox/` | One note per page, in the same shape as the Obsidian read-it-later plugin: frontmatter `status` (`unread`, `read` or `archived`) and `saved`, then `[[ReadItLater]]` and the article (or just the link if the page could not be fetched). YouTube links are saved as video notes. Archive moves the file to `ReadItLater Inbox/Archive/`. |
-| Brain-dump note | `01 - Inbox/Capture <date>.md` | The leftover sentence from Sort it, when there is one. |
+| Jarvis notes | `01 - Inbox/<Title>.md`, or `01 - Inbox/Capture <date>.md` | A long ramble tidied into one note (frontmatter `created`, `source: jarvis`, then the note, then your own words folded in a `> [!quote]- Transcript` callout). A short leftover line goes to `Capture <date>.md`. |
 | Projects | `03 - Projects/<Title>/<Title>.md` | Frontmatter (`type`, `status`, `created`, `area`, `tags`), a title, `## Summary`, and `## Log` linking to `<Title> - Log.md`. Log entries are newest-first `### ` headings. Photos are embedded as `![[…]]`. |
 | Photos | `99 - Meta/Assets` | JPEG, long side at most 1600 px. |
 | Habits | `99 - Meta/Habits.md` | A habit list, a water goal, and a dated log table. Edit the list in Obsidian. Created with starter habits if it is missing. |
@@ -39,7 +39,7 @@ Every write is a read-modify-write of the part the app owns, so edits made in Ob
 
 ## Android
 
-Five tabs: **Deck**, **Capture**, **Tasks**, **Read**, **Projects**. The gear and the search icon are on Deck. Minimum Android 10.
+Four tabs: **Deck**, **Capture**, **Tasks**, **Vault**. Read later and Projects open from chips at the top of Vault. The gear and the search icon are on Deck. Minimum Android 10.
 
 ### Deck
 
@@ -51,7 +51,7 @@ Cards, in an order you can rearrange, and any of which you can hide, under Setti
 - **Weather & travel**: today's forecast from Open-Meteo, using the phone's coarse location (no API key, cached for an hour). Tap for a Morning / Afternoon / Evening strip. If today's next timed Proton event has a place, a drive time from OpenStreetMap and OSRM is shown, with a leave-by time.
 - **Today**: today's events from the Proton calendars linked in Settings. The one happening now is highlighted. Hidden when there is nothing on.
 - **Bills**: `#bill` tasks due in the next seven days, with a `£` amount when the line has one. Marking one paid ticks the task.
-- **Projects**: the active project, when there is one. Opens the Projects tab.
+- **Projects**: the active project, when there is one. Opens Projects.
 - **Top tasks**: the next dated tasks after the next step. Tick them here.
 - **Habits**: today's ticks, streaks, and a water bar (+250 ml).
 - **Stuck? Pick one.**: on a low-energy day, a few quick items from the stuck menu. Otherwise a row that opens the full screen.
@@ -66,7 +66,7 @@ Three modes, and it reopens on the last one used:
 
 - **Task**: adds to Quick Task, with Today / Tomorrow / a picked date, a time estimate (5, 15, 30, 60 or 120 minutes) and a repeat (daily, weekly, monthly, or a custom rule).
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
-- **Brain dump**: type or dictate (UK speech recognition). **Sort it** sends the text to Claude with the tags already in use, and queues it on the phone until you save. Nothing is written until **Check and save**. You can drop items there. Tasks go to Quick Task, ideas become projects with `type: idea`, and any leftover note goes to the inbox. The model is `claude-haiku-5-5` unless Settings has another id. If Claude rejects that model, Sort it says so and you can paste a current id. Save writes the tasks, the ideas and the note together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again. If the phone is offline the dump stays queued and sorts on the next try. This needs the Claude API key from Settings.
+- **Jarvis**: hold to talk or type to the Oracle server (below). Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
 
 ### Jarvis
 
@@ -75,7 +75,10 @@ worker picked top right (Jarvis, Coding, Obsidian, Research, Odd jobs) and a bea
 Oracle box over Tailscale. That server hands it to the Claude CLI and answers with what it heard, the reply and an
 `audio_url`, which the app fetches with the same token and plays. A Done line shows when `GET /done` reports a
 finished background job. Address and token are in Settings › Jarvis; the token is kept in Android secure storage,
-never in the vault or the repo. Type `demo` as the address to try the tab with no server.
+never in the vault or the repo. Type `demo` as the address to try it with no server (a recording over 15 seconds,
+or typed text of 25 words or more, comes back with a demo note to check). Typed messages go to `POST /text` as JSON
+`{"text", "worker", "voice"}` and get the same reply. Either reply may carry `"sorted": {"tasks", "ideas", "note"}`,
+where `note` is a line or `{"title", "markdown"}`.
 
 To test against something real before the Oracle side is ready, run the fake server on a PC that's on the tailnet:
 `python tools/fake-jarvis/fake_jarvis.py --token test-token`, then `tailscale serve --bg 8765`, and put that PC's
@@ -106,7 +109,7 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 
 ### Share sheet
 
-The app is in the Android share sheet. A shared link, or a link with only a short caption, is fetched and saved to Read It Later, then the app closes. Any other shared text (a note, a reply, a paragraph) is appended to the Capture box and opened on Brain dump, ready for Sort it.
+The app is in the Android share sheet. A shared link, or a link with only a short caption, is fetched and saved to Read It Later, then the app closes. Any other shared text (a note, a reply, a paragraph) is put in Capture › Jarvis's type box, ready to send.
 
 ### Widgets
 
@@ -135,15 +138,14 @@ The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Setti
 - **Find a note**: search, then add a task or a line.
 - **Quick capture**: a small always-on-top window from the global shortcut (Ctrl+Shift+Space by default; the other choices are in Settings). A link on the clipboard opens it in link mode, with a preview of the page. A task can have Today, Tomorrow or a picked date, a time estimate, and a repeat (Daily, Weekly, Monthly, or Custom… in a panel beside it). Escape or a click away dismisses it. Windows keeps Win+Space for switching keyboard language, so the shortcuts leave the Win key alone.
 
-Sort it, the calendar, jobs and reminders are on the phone. Both apps write the same notes, so a task captured on Windows shows up on Deck.
+Jarvis, the calendar, jobs and reminders are on the phone. Both apps write the same notes, so a task captured on Windows shows up on Deck.
 
 ## Setup
 
 1. Install the Android app or the Windows MSI (or run either from a debug build).
 2. Open Settings and pick the vault root, the folder that contains `.obsidian`. On Android the gear is on Deck. Until a vault is picked, Deck shows a banner and capture tells you to pick one.
 3. Optional, Android only, all on the Settings screen:
-   - **Claude API key** (`sk-ant-…`) for Sort it. Stored on the phone, encrypted with the Android Keystore.
-   - **Sort it model**, the Claude model id. Leave it on `claude-haiku-5-5` unless that model is retired.
+   - **Jarvis** address and token (see Jarvis above). The token is encrypted with the Android Keystore.
    - **GitHub token** (`github_pat_…`) for the activity line on a project, stored the same way. Read access to the linked repos is enough.
    - **Proton Calendar.** In Proton Calendar on the web: Settings › Share › Share with anyone, Full view, then paste the `.ics` link. Name it and pick a colour. Links are saved in `99 - Meta/capture-config.json` and fetched read-only. Deck keeps the next seven days and refreshes every 30 minutes while it is open.
    - **Reminders**, the times above.

@@ -72,8 +72,6 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
     val secrets = remember { SecretStore(ctx) }
-    var masked by remember { mutableStateOf(secrets.maskedKey()) }
-    var editingKey by remember { mutableStateOf(false) }
     var ghMasked by remember { mutableStateOf(secrets.githubToken?.let { "••••" + it.takeLast(4) }) }
     var editingGh by remember { mutableStateOf(false) }
     var jvMasked by remember { mutableStateOf(secrets.jarvisToken?.let { "••••" + it.takeLast(4) }) }
@@ -138,27 +136,6 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }
         )
     }
-    if (editingKey) {
-        var draft by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { editingKey = false }, containerColor = Surface1,
-            title = { Text("Claude API key") },
-            text = {
-                OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
-                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("sk-ant-…") })
-            },
-            confirmButton = {
-                TextButton(onClick = { secrets.claudeKey = draft; masked = secrets.maskedKey(); editingKey = false }, enabled = draft.isNotBlank()) {
-                    Text("Save", color = Primary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { if (masked != null) { secrets.claudeKey = null; masked = null }; editingKey = false }) {
-                    Text(if (masked != null) "Remove" else "Cancel", color = Muted)
-                }
-            }
-        )
-    }
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
         cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrNull() }
@@ -181,18 +158,6 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         }
         SettingRow("Weekly review") { TextButton(onClick = onOpenWeekly) { Text("›", color = Muted) } }
         SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
-
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Brain dump AI")
-        SettingRow("Claude API key", masked ?: "Not set") {
-            TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
-        }
-        PathField("Sort it model", prefs.sortModel) { prefs.sortModel = it }
-        Text(
-            "Claude model id for brain dumps. ${Sorting.MODEL} is the default. If Claude says that model was rejected, put the current id here.",
-            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp)
-        )
-        SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Jarvis")

@@ -2,7 +2,7 @@ package uk.tomlowndes.capture
 
 /**
  * What a share-sheet send should do, without the Android intent. A link, or a link with only a short
- * caption, is a page for Read It Later. Anything longer is a brain dump for Sort it.
+ * caption, is a page for Read It Later. Anything longer goes to Capture › Jarvis.
  */
 object ShareIntent {
     private val URL = Regex("https?://\\S+")
