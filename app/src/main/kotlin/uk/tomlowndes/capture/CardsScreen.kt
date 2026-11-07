@@ -41,6 +41,9 @@ import kotlinx.coroutines.withContext
 
 private val ROW = 52.dp
 
+/** Cards the phone Deck no longer shows (Read later and Jobs open from Vault chips instead). Desktop still has them. */
+val PHONE_GONE = listOf(HomeCard.READ_LATER, HomeCard.JOBS)
+
 /** Settings › Cards on home: drag ≡ to reorder, switch cards on and off. Saved to the vault config. */
 @Composable
 fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
@@ -54,6 +57,7 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
         layout = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()) }
+            .let { l -> l.copy(order = l.order.filter { it !in PHONE_GONE } + l.order.filter { it in PHONE_GONE }) }
     }
 
     fun save(l: DeckLayout) {
@@ -68,8 +72,10 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
         ScreenTitle("Cards on home") { TextButton(onClick = onBack) { Text("Close", color = Muted) } }
         val l = layout ?: return@Column
+        // Phone-only cards sit at the end of the order and aren't listed, so drag indices still match.
+        val lastShown = l.order.count { it !in PHONE_GONE } - 1
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surface1)) {
-            l.order.forEachIndexed { i, card -> key(card) {
+            l.order.take(lastShown + 1).forEachIndexed { i, card -> key(card) {
                 if (i > 0) HorizontalDivider(color = Outline)
                 val lifted = dragging == i
                 Row(
@@ -92,7 +98,7 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                                 val from = dragging ?: return@detectDragGestures
                                 offset += drag.y
                                 val to = when {
-                                    offset > rowPx / 2 && from < cur.order.lastIndex -> from + 1
+                                    offset > rowPx / 2 && from < lastShown -> from + 1
                                     offset < -rowPx / 2 && from > 0 -> from - 1
                                     else -> from
                                 }
@@ -109,7 +115,7 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 }
             } }
         }
-        TextButton(onClick = { save(DeckLayout(hidden = l.hidden)) }, modifier = Modifier.padding(top = 8.dp)) {
+        TextButton(onClick = { save(DeckLayout(order = HomeCard.values().filter { it !in PHONE_GONE } + PHONE_GONE, hidden = l.hidden)) }, modifier = Modifier.padding(top = 8.dp)) {
             Text("Reset order", color = Primary)
         }
     }

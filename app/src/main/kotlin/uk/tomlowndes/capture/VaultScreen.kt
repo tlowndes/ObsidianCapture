@@ -121,12 +121,12 @@ internal fun agoLabel(millis: Long, now: Long = System.currentTimeMillis()): Str
 
 /**
  * Vault tab: every note, by folder or by search, rendered to read, with quick edits (tap a block to change it,
- * tick checkboxes, change tags). Read later and Projects sit inside it as chips ([onOpenRead], [onOpenProjects]).
+ * tick checkboxes, change tags). Read later, Projects and Jobs sit inside it as chips ([onOpenRead], [onOpenProjects], [onOpenJobs]).
  */
 @Composable
 fun VaultScreen(
-    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, unread: Int,
-    onOpenRead: () -> Unit, onOpenProjects: () -> Unit, onOpenTasks: (String?) -> Unit, onEditing: (Boolean) -> Unit,
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, unread: Int, jobsOpen: Int,
+    onOpenRead: () -> Unit, onOpenProjects: () -> Unit, onOpenJobs: () -> Unit, onOpenTasks: (String?) -> Unit, onEditing: (Boolean) -> Unit,
 ) {
     val ctx = LocalContext.current
     var notes by remember { mutableStateOf(if (VaultCache.tree == vault) VaultCache.notes else emptyList()) }
@@ -172,10 +172,10 @@ fun VaultScreen(
         folder != null -> FolderScreen(notes, folder!!, prefs, showHidden, onBack = { folder = parentOf(folder!!).takeIf { it.isNotEmpty() } },
             onFolder = { folder = it }, onSearch = { searchIn = folder; startTag = null; searching = true }) { open.add(it) }
         else -> VaultHome(
-            notes, tags, unread, showHidden,
+            notes, tags, unread, jobsOpen, showHidden,
             onSearch = { searchIn = null; startTag = null; searching = true },
             onTag = { searchIn = null; startTag = it; searching = true },
-            onRead = onOpenRead, onProjects = onOpenProjects, onFolder = { folder = it }, onNote = { open.add(it) },
+            onRead = onOpenRead, onProjects = onOpenProjects, onJobs = onOpenJobs, onFolder = { folder = it }, onNote = { open.add(it) },
             onToggleHidden = { showHidden = !showHidden; prefs.vaultShowHidden = showHidden }
         )
     }
@@ -185,8 +185,8 @@ fun VaultScreen(
 
 @Composable
 private fun VaultHome(
-    notes: List<NoteInfo>, tags: List<Pair<String, Int>>, unread: Int, showHidden: Boolean,
-    onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onProjects: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
+    notes: List<NoteInfo>, tags: List<Pair<String, Int>>, unread: Int, jobsOpen: Int, showHidden: Boolean,
+    onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onProjects: () -> Unit, onJobs: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
     onToggleHidden: () -> Unit,
 ) {
     val view = remember(notes, showHidden) { VaultBrowse.folder(notes, "", showHidden = showHidden) }
@@ -204,6 +204,7 @@ private fun VaultHome(
             ) {
                 AppChip(false, onRead, { Text("📖 Read later" + if (unread > 0) " $unread" else "") })
                 AppChip(false, onProjects, { Text("💡 Projects") })
+                AppChip(false, onJobs, { Text("💼 Jobs" + if (jobsOpen > 0) " $jobsOpen" else "") })
                 (Tags.BUILT_IN.filter { b -> tags.any { it.first == b } } + tags.map { it.first }.filter { it !in Tags.BUILT_IN }.take(6))
                     .forEach { t -> TagChip(t, false, onClick = { onTag(t) }) }
             }
