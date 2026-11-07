@@ -68,6 +68,57 @@ class WeatherTest {
         assertEquals(3, w.parts.size)
     }
 
+    private fun twoDays(rain: (LocalDateTime) -> Int, code: Int = 3): String {
+        val times = (0..47).map { LocalDateTime.of(2026, 11, 7, 0, 0).plusHours(it.toLong()) }
+        return JSONObject()
+            .put("daily", JSONObject()
+                .put("temperature_2m_max", JSONArray(listOf(10.2, 12.4)))
+                .put("temperature_2m_min", JSONArray(listOf(5.1, 4.3)))
+                .put("sunset", JSONArray(listOf("2026-11-07T16:27", "2026-11-08T16:25")))
+                .put("weather_code", JSONArray(listOf(53, code))))
+            .put("hourly", JSONObject()
+                .put("time", JSONArray(times.map { it.toString() }))
+                .put("temperature_2m", JSONArray(times.map { if (it.hour < 12) 6.0 else 9.0 }))
+                .put("precipitation_probability", JSONArray(times.map(rain)))
+                .put("cloud_cover", JSONArray(times.map { 90 }))
+                .put("weather_code", JSONArray(times.map { if (it.dayOfMonth == 7) 53 else code })))
+            .toString()
+    }
+
+    @Test fun `after sunset it shows tomorrow and a line for tonight`() {
+        val json = twoDays({ t ->
+            when {
+                t.dayOfMonth == 7 && t.hour in 18..20 -> 60
+                t.dayOfMonth == 8 && t.hour >= 13 -> 80
+                else -> 5
+            }
+        })
+        val w = Weather.summary(json, LocalDateTime.of(2026, 11, 7, 18, 52))
+        assertTrue(w.tomorrow)
+        assertEquals(12, w.high)
+        assertEquals(4, w.low)
+        assertEquals("Dry morning, wet afternoon", w.headline)
+        assertTrue(w.detail, w.detail.startsWith("Rain from 13:00"))
+        assertTrue(w.detail, w.detail.endsWith("Sunset 16:25."))
+        assertEquals("Leave the washing in. Best walk: 07:00–13:00.", w.tip)
+        assertEquals("Tonight: 9°, drizzle easing by 21:00.", w.tonight)
+        assertEquals(3, w.parts.size)
+        assertEquals(80, w.parts[1].rain)
+    }
+
+    @Test fun `before sunset it is still today`() {
+        val w = Weather.summary(twoDays({ 0 }), LocalDateTime.of(2026, 11, 7, 15, 0))
+        assertTrue(!w.tomorrow)
+        assertNull(w.tonight)
+        assertEquals(10, w.high)
+        assertTrue(w.detail.endsWith("Sunset 16:27."))
+    }
+
+    @Test fun `a one-day forecast after sunset stays on today`() {
+        val w = Weather.summary(forecast({ 0 }, { 95 }), LocalDateTime.of(2026, 10, 25, 18, 0))
+        assertTrue(!w.tomorrow)
+    }
+
     @Test fun `the forecast url asks for today in local time`() {
         val u = Weather.url(51.4546, -2.5879)
         assertTrue(u.startsWith("https://api.open-meteo.com/v1/forecast?latitude=51.455&longitude=-2.588"))
