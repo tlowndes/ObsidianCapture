@@ -35,10 +35,13 @@ object Jarvis {
         Worker("coding", "Coding", "⌨️", "Repo work, PRs, builds"),
         Worker("obsidian", "Obsidian", "🪨", "Tasks, notes and the vault"),
         Worker("research", "Research", "🔎", "Looks things up, reports back later"),
-        Worker("odd-jobs", "Odd jobs", "🧰", "Everything else"),
+        Worker("oddjobs", "Odd jobs", "🧰", "Everything else"),
     )
 
-    fun worker(id: String?): Worker = WORKERS.firstOrNull { it.id == id } ?: WORKERS[0]
+    fun worker(id: String?): Worker {
+        val key = if (id == "odd-jobs") "oddjobs" else id // old saved id
+        return WORKERS.firstOrNull { it.id == key } ?: WORKERS[0]
+    }
 
     /** A background job the server says has finished. */
     data class Done(val id: String, val title: String, val detail: String)

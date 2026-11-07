@@ -46,7 +46,7 @@ DEFAULT_WORKERS = {
     "coding": {"cwd": str(HOME / "code"), "prompt": "You help Tom with code in this folder."},
     "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it."},
     "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True},
-    "odd-jobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks."},
+    "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks."},
 }
 
 SPOKEN = (
