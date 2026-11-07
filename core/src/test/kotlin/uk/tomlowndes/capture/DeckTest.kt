@@ -34,6 +34,13 @@ class DeckTest {
         assertEquals(listOf(wol, reply, cv), Deck.topTasks(all, 3))
     }
 
+    @Test fun `with nothing dated left, next step is the first undated task`() {
+        val later = task("- [ ] #task Another someday thing")
+        assertEquals(undated, Deck.nextStep(listOf(bill, undated, later)))
+        assertEquals(later, Deck.nextStep(listOf(undated, later), skipped = setOf(undated.raw)))
+        assertEquals(listOf(cv, undated), Deck.topTasks(all, 4).drop(2))
+    }
+
     @Test fun `low energy keeps tasks of 15 minutes or less`() {
         assertEquals(reply, Deck.nextStep(all, maxMinutes = 15))
         assertEquals(emptyList<TaskItem>(), Deck.topTasks(all, 2, maxMinutes = 15))

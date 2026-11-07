@@ -214,7 +214,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         val uri = vault ?: return@LaunchedEffect
         if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first } }
             .onSuccess { unread = it }
-        if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { Jobs.list(SafVault(ctx, uri)).count { !it.closed } } }
+        if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { Jobs.list(appVault(ctx, uri)).count { !it.closed } } }
             .onSuccess { jobsOpen = it }
     }
 

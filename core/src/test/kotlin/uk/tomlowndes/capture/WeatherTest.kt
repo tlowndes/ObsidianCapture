@@ -114,6 +114,12 @@ class WeatherTest {
         assertTrue(w.detail.endsWith("Sunset 16:27."))
     }
 
+    @Test fun `a one-day cached forecast is not good enough`() {
+        assertTrue(Weather.hasTomorrow(twoDays({ 0 })))
+        assertTrue(!Weather.hasTomorrow(forecast({ 0 }, { 95 })))
+        assertTrue(!Weather.hasTomorrow(null))
+    }
+
     @Test fun `a one-day forecast after sunset stays on today`() {
         val w = Weather.summary(forecast({ 0 }, { 95 }), LocalDateTime.of(2026, 10, 25, 18, 0))
         assertTrue(!w.tomorrow)
