@@ -145,6 +145,15 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         p.edit().apply { if (y <= 0) remove("scroll_$file") else putInt("scroll_$file", y) }.apply()
     }
 
+    /** Settings › Vault › Server fallback: read and save through the Jarvis server while this phone's sync is behind. */
+    var serverFallback: Boolean
+        get() = p.getBoolean("server_fallback", true)
+        set(v) { p.edit().putBoolean("server_fallback", v).apply() }
+    /** How far behind (minutes) the phone must be before the server copy is used. */
+    var fallbackStaleMin: Int
+        get() = p.getInt("fallback_stale_min", 5)
+        set(v) { p.edit().putInt("fallback_stale_min", v).apply() }
+
     /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
     var jarvisAddress: String
         get() = p.getString("jarvis_address", "").orEmpty()

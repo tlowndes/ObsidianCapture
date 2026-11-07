@@ -53,14 +53,14 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        layout = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()) }
+        layout = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrDefault(DeckLayout()) }
     }
 
     fun save(l: DeckLayout) {
         layout = l
         val uri = vault ?: return
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { DeckConfig.save(SafVault(ctx, uri), l) } }
+            withContext(Dispatchers.IO) { runCatching { DeckConfig.save(appVault(ctx, uri), l) } }
                 .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
         }
     }

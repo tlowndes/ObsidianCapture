@@ -63,6 +63,7 @@ import java.time.LocalDate
 fun TasksScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, note: String? = null, onClearNote: () -> Unit = {},
     onStartFocus: (TaskItem, Int) -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -86,6 +87,7 @@ fun TasksScreen(
     fun reload() {
         val uri = vault ?: return
         scope.launch {
+            withContext(Dispatchers.IO) { runCatching { VaultRoute.check(ctx, uri) } }
             if (!loaded) {
                 withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listQuickTasks() } }
                     .onSuccess { tasks.clear(); tasks.addAll(it) }
@@ -202,6 +204,7 @@ fun TasksScreen(
             color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
         )
+        ServerCopyBanner(onClick = onOpenSettings)
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)

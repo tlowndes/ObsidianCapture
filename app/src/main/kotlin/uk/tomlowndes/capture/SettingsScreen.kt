@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -138,7 +139,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     }
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrNull() }
+        cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
@@ -229,6 +230,42 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Vault folder", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
             TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
         }
+        var fallbackOn by remember { mutableStateOf(prefs.serverFallback) }
+        var staleMin by remember { mutableStateOf(prefs.fallbackStaleMin) }
+        var checking by remember { mutableStateOf(false) }
+        SettingRow("Server fallback", "If this phone hasn't synced for a while, read and save through the Jarvis server's copy instead.") {
+            AppSwitch(fallbackOn) { on ->
+                fallbackOn = on; prefs.serverFallback = on
+                vault?.let { uri -> scope.launch { withContext(Dispatchers.IO) { VaultRoute.check(ctx, uri, force = true) } } }
+            }
+        }
+        if (fallbackOn) {
+            SettingRow("Counts as stale after", "Server copy newer than the phone's by this much") {
+                TextButton(onClick = {
+                    staleMin = STALE_STEPS.getOrNull(STALE_STEPS.indexOf(staleMin) + 1) ?: STALE_STEPS[0]
+                    prefs.fallbackStaleMin = staleMin
+                }) { Text("$staleMin min ▾", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.5.sp) }
+            }
+            val rs = VaultRoute.state
+            val hm = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+            fun clock(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).format(hm)
+            val lastSub = when {
+                rs.error != null -> "Can't reach the server: ${rs.error}"
+                rs.checkedAt == 0L -> "Not checked yet"
+                rs.serverAt == 0L -> "Checked ${clock(rs.checkedAt)}"
+                else -> "Phone " + (rs.phoneAt?.let { clock(it) } ?: "missing") + " · Server ${clock(rs.serverAt)}" +
+                    if (rs.useServer) " · using server" else ""
+            }
+            SettingRow("Last check", lastSub) {
+                TextButton(enabled = vault != null && !checking, onClick = {
+                    val uri = vault ?: return@TextButton
+                    checking = true
+                    scope.launch { withContext(Dispatchers.IO) { VaultRoute.check(ctx, uri, force = true) }; checking = false }
+                }) { Text(if (checking) "Checking…" else "Check now", color = Primary) }
+            }
+            Text("Uses the Jarvis address and token above. Nothing new to type.", fontSize = 12.sp, color = Muted,
+                modifier = Modifier.padding(bottom = 6.dp))
+        }
         SettingRow("Notes used") { TextButton(onClick = { notesOpen = !notesOpen }) { Text(if (notesOpen) "⌄" else "›", color = Muted) } }
         if (notesOpen) {
             PathField("Projects folder", prefs.ideasDir) { prefs.ideasDir = it }
@@ -240,6 +277,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         Text("", Modifier.padding(bottom = 16.dp))
     }
 }
+
+private val STALE_STEPS = listOf(2, 5, 15, 30)
 
 /** "2 min ago" for Settings › Updates. */
 private fun checkedAgo(at: Long): String {

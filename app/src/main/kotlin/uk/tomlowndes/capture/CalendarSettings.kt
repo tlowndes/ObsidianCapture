@@ -62,14 +62,14 @@ internal fun CalendarSection(vault: Uri?, startAdding: Boolean = false) {
 
     suspend fun load() {
         val uri = vault ?: return
-        sources = withContext(Dispatchers.IO) { runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrDefault(emptyList()) }
+        sources = withContext(Dispatchers.IO) { runCatching { CalendarConfig.load(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
     }
     fun save(list: List<CalendarSource>) {
         sources = list
         val uri = vault ?: return
         scope.launch {
             withContext(Dispatchers.IO) {
-                runCatching { CalendarConfig.save(SafVault(ctx, uri), list); CalendarSync.sync(ctx, uri) }
+                runCatching { CalendarConfig.save(appVault(ctx, uri), list); CalendarSync.sync(ctx, uri) }
             }
             synced = CalendarSync.lastSync(ctx)
             broken = CalendarSync.cached(ctx).any { !it.ok }

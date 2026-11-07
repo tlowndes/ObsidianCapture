@@ -212,14 +212,14 @@ private class AndroidDoc(
 // ---- the shared stores, set up for Android: the picked folder, the cache folder, and widget refreshes ----
 
 fun VaultWriter(ctx: Context, tree: Uri) =
-    VaultWriter(SafVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json")) { Widgets.tasksChanged(ctx) }
+    VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json")) { Widgets.tasksChanged(ctx) }
 
-fun ReadStore(ctx: Context, tree: Uri) = ReadStore(SafVault(ctx, tree)) { Widgets.readChanged(ctx) }
+fun ReadStore(ctx: Context, tree: Uri) = ReadStore(appVault(ctx, tree)) { Widgets.readChanged(ctx) }
 
-fun IdeaStore(ctx: Context, tree: Uri, prefs: AppPrefs) = IdeaStore(SafVault(ctx, tree), prefs)
+fun IdeaStore(ctx: Context, tree: Uri, prefs: AppPrefs) = IdeaStore(appVault(ctx, tree), prefs)
 
 fun ReadLater.save(ctx: Context, tree: Uri, url: String, sharedTitle: String?, tags: List<String> = emptyList()): Boolean =
-    save(SafVault(ctx, tree), url, sharedTitle, tags = tags).also { Widgets.readChanged(ctx) }
+    save(appVault(ctx, tree), url, sharedTitle, tags = tags).also { Widgets.readChanged(ctx) }
 
 /** Image file name -> content Uri for everything in the images folder. */
 fun IdeaStore.imageUris(): Map<String, Uri> = imageIndex().mapValues { it.value as Uri }
