@@ -1,5 +1,30 @@
 package uk.tomlowndes.capture
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,16 +100,122 @@ internal fun TaskLine(
     }
 }
 
+/**
+ * A tick box. Ticking fills it green with a quick pop and draws the tick in; [outline] is the empty box's edge.
+ */
 @Composable
-internal fun TickBox(done: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(6.dp)
+internal fun TickBox(
+    done: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier,
+    size: Dp = 20.dp, radius: Dp = 6.dp, outline: Color = Muted, fill: Color = Green, mark: Color = OnPrimary,
+) {
+    val shape = RoundedCornerShape(radius)
+    val bg by animateColorAsState(if (done) fill else Color.Transparent, tween(180), label = "tickBg")
+    val edge by animateColorAsState(if (done) fill else outline, tween(180), label = "tickEdge")
+    val drawn by animateFloatAsState(if (done) 1f else 0f, tween(if (done) 260 else 120, delayMillis = if (done) 60 else 0), label = "tickMark")
+    val scale = remember { Animatable(1f) }
+    var seen by remember { mutableStateOf(done) }
+    LaunchedEffect(done) {
+        if (done && !seen) { scale.animateTo(1.25f, tween(110)); scale.animateTo(1f, spring(dampingRatio = 0.45f)) }
+        seen = done
+    }
     Box(
-        modifier.size(20.dp).clip(shape)
-            .then(if (done) Modifier.background(Green) else Modifier.border(1.5.dp, Muted, shape))
+        modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.clip(shape)
+            .background(bg).border(if (size >= 24.dp) 2.dp else 1.5.dp, edge, shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { if (done) Text("✓", fontSize = 12.sp, color = OnPrimary) }
+    ) {
+        if (drawn > 0f) Canvas(Modifier.size(size * 0.6f)) {
+            val p = Path().apply {
+                moveTo(this@Canvas.size.width * 0.16f, this@Canvas.size.height * 0.53f)
+                lineTo(this@Canvas.size.width * 0.40f, this@Canvas.size.height * 0.76f)
+                lineTo(this@Canvas.size.width * 0.84f, this@Canvas.size.height * 0.26f)
+            }
+            val m = PathMeasure().apply { setPath(p, false) }
+            val part = Path()
+            m.getSegment(0f, m.length * drawn, part, true)
+            drawPath(part, mark, style = Stroke(this@Canvas.size.width * 0.17f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
 }
+
+/**
+ * A task on the Tasks tab: side edge, tick box in the side's colour, the task in 15sp with its tags, estimate and
+ * repeat on a small line under it, then [trailing]. While [ticked] the row turns green, the text is struck through
+ * and [trailing] gives way to "✓ Done".
+ */
+@Composable
+internal fun TaskRow(
+    t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, trailing: @Composable RowScope.() -> Unit
+) {
+    val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
+    val bg by animateColorAsState(if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
+    val edge by animateColorAsState(if (ticked) Green else side, tween(250), label = "rowEdge")
+    val textColour by animateColorAsState(if (ticked) Muted else TextMain, tween(200), label = "rowText")
+    Row(
+        Modifier.fillMaxWidth().background(bg)
+            .drawBehind {
+                val inset = 12.dp.toPx()
+                drawRoundRect(edge, Offset(0f, inset), Size(3.dp.toPx(), size.height - inset * 2), CornerRadius(3.dp.toPx()))
+            }
+            .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TickBox(ticked, onTick, size = 24.dp, radius = 8.dp, outline = side)
+        Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
+            Text(
+                TaskViews.plainText(t), fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
+            )
+            val tags = TaskViews.tags(t).take(2)
+            val mins = Deck.minutes(t)
+            if (tags.isNotEmpty() || mins != null || t.recurrence != null) Row(
+                Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tags.forEach { tag ->
+                    val (fg, tint) = tagColour(tag)
+                    Text(
+                        if (Tags.kind(tag) == TagKind.OTHER) tag else tag.removePrefix("#"),
+                        fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = fg, maxLines = 1,
+                        modifier = Modifier.clip(CircleShape).background(tint).padding(horizontal = 7.dp)
+                    )
+                }
+                mins?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                t.recurrence?.let {
+                    Text("↻ $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        if (ticked) Text("✓ Done", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Green)
+        else trailing()
+    }
+}
+
+/** A recently ticked task in Completed: small, muted and struck through. Tapping the box un-ticks it. */
+@Composable
+internal fun TickedRow(d: TickedTask, onUntick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 14.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TickBox(true, onUntick, size = 20.dp, radius = 7.dp, fill = DoneFill, mark = DoneMark)
+        Text(
+            d.text, fontSize = 13.5.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            textDecoration = TextDecoration.LineThrough, modifier = Modifier.weight(1f)
+        )
+        d.done?.let { day ->
+            val today = LocalDate.now()
+            Text(
+                when (day) { today -> "Today"; today.minusDays(1) -> "Yesterday"; else -> day.format(DateTimeFormatter.ofPattern("EEE d", Locale.UK)) },
+                fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Faint
+            )
+        }
+    }
+}
+
+private val DoneFill = Color(0xFF2C5A47)
+private val DoneMark = Color(0xFFBFEEDD)
+private val Faint = Color(0xFF5C6478)
 
 /** Mono pill with a short date ("Thu 22"); red when overdue. */
 @Composable

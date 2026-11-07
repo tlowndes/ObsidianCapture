@@ -8,6 +8,8 @@ import java.time.LocalDate
  */
 object TaskNote {
     private val OPEN_TASK = Regex("^\\s*- \\[ \\] (.*)$")
+    private val DONE_TASK = Regex("^\\s*- \\[[xX]\\] (.*)$")
+    private val DONE_DATE = Regex("✅\\s*(\\d{4}-\\d{2}-\\d{2})")
 
     private fun List<String>.activeStart() = indexOfFirst { it.trim() == "## Active" }
     private fun List<String>.archiveStart() = indexOfFirst { it.trim() == "## Archive" }
@@ -38,6 +40,39 @@ object TaskNote {
         val body = OPEN_TASK.matchEntire(line.trimEnd())?.groupValues?.get(1) ?: return null
         val text = TaskRules.cleanText(body)
         return TaskItem(line, text.ifBlank { body.trim() }, TaskRules.due(body), TaskRules.recurrence(body))
+    }
+
+    /** A ticked `- [x]` line, or null. */
+    fun parseDone(line: String): TickedTask? {
+        val body = DONE_TASK.matchEntire(line.trimEnd())?.groupValues?.get(1) ?: return null
+        val text = TaskRules.cleanText(body)
+        val date = DONE_DATE.find(body)?.groupValues?.get(1)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        return TickedTask(line, text.ifBlank { body.trim() }, date)
+    }
+
+    /** Ticked tasks under "## Archive", newest first (the app puts each one at the top). */
+    fun listDone(lines: List<String>): List<TickedTask> {
+        val archive = lines.archiveStart()
+        if (archive < 0) return emptyList()
+        val end = (archive + 1 until lines.size).firstOrNull { lines[it].startsWith("## ") } ?: lines.size
+        return lines.subList(archive + 1, end).mapNotNull { parseDone(it) }
+    }
+
+    /** [doneLine] as an open task again: `- [ ]` and no ✅ date. */
+    fun reopened(doneLine: String): String =
+        doneLine.replaceFirst(Regex("- \\[[xX]\\]"), "- [ ]").replace(Regex("\\s*✅\\s*\\d{4}-\\d{2}-\\d{2}"), "")
+
+    /**
+     * Un-ticks [doneLine] in Quick Task: it leaves "## Archive" and goes back into "## Active" (in place of
+     * [nextLine], the follow-up a repeat left behind, when that is still there).
+     */
+    fun untick(lines: MutableList<String>, doneLine: String, nextLine: String?) {
+        val i = lines.indexOf(doneLine)
+        if (i < 0) error("Task changed in Obsidian, refreshed")
+        lines.removeAt(i)
+        val open = reopened(doneLine)
+        val at = nextLine?.let { lines.indexOf(it) } ?: -1
+        if (at >= 0) lines[at] = open else insertActive(lines, open)
     }
 
     /** What ticking [raw] on [today] produces; nothing in the note changes yet. */

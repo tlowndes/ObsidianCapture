@@ -1,6 +1,19 @@
 package uk.tomlowndes.capture
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,6 +67,11 @@ fun TasksScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val tasks = remember { mutableStateListOf<TaskItem>() }
+    val ticked = remember { mutableStateListOf<TickedTask>() }
+    // Rows mid-tick: green and struck through for a moment, then folding away before the note is written.
+    val ticking = remember { mutableStateMapOf<TaskItem, Job>() }
+    val leaving = remember { mutableStateListOf<TaskItem>() }
+    val haptics = LocalHapticFeedback.current
     var loaded by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var tag by remember { mutableStateOf(prefs.tasksTag) }
@@ -72,17 +90,24 @@ fun TasksScreen(
                 withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listQuickTasks() } }
                     .onSuccess { tasks.clear(); tasks.addAll(it) }
             }
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTasks() } }
-            r.onSuccess { tasks.clear(); tasks.addAll(it); loaded = true }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }
+            r.onSuccess {
+                tasks.clear(); tasks.addAll(it.open); loaded = true
+                ticked.clear(); ticked.addAll(it.done)
+                leaving.retainAll(it.open.toSet())
+            }
                 .onFailure { snack.showSnackbar("Couldn't read tasks: ${it.message}") }
         }
     }
     LaunchedEffect(vault) { reload() }
 
-    fun tick(t: TaskItem) {
+    /** Writes the tick, after the row has shown it. */
+    fun complete(t: TaskItem) {
         val uri = vault ?: return
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, prefs.recurring) } }
+            r.onSuccess { c -> prefs.logTick(c.doneLine, c.nextLine) }
+            r.onFailure { leaving.remove(t) }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { c ->
@@ -93,6 +118,32 @@ fun TasksScreen(
                     reload()
                 }
             }
+        }
+    }
+
+    /** Ticks [t] on screen at once; a second tap within the hold takes it back before anything is written. */
+    fun tick(t: TaskItem) {
+        if (t in leaving) return
+        ticking.remove(t)?.let { it.cancel(); return }
+        if (vault == null) return
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        ticking[t] = scope.launch {
+            delay(1100)
+            leaving.add(t)
+            delay(320)
+            ticking.remove(t)
+            complete(t)
+        }
+    }
+
+    fun untick(d: TickedTask) {
+        val uri = vault ?: return
+        val next = prefs.tickLog.firstOrNull { it.first == d.raw }?.third?.ifBlank { null }
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).untickTask(d, next) } }
+            r.onSuccess { prefs.tickLog = prefs.tickLog.filter { it.first != d.raw } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
     }
 
@@ -140,8 +191,15 @@ fun TasksScreen(
                 Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
             }
         }
+        val todayCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.TODAY }
+        val overdueCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.OVERDUE }
         Text(
-            "Vault-wide #task · ${tasks.size} open", color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+            listOfNotNull(
+                "${tasks.size} open",
+                todayCount.takeIf { it > 0 }?.let { "$it today" },
+                overdueCount.takeIf { it > 0 }?.let { "$it overdue" }
+            ).joinToString(" · "),
+            color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
         )
         if (searching) OutlinedTextField(
@@ -167,23 +225,41 @@ fun TasksScreen(
                 { Text("≤ ${TaskViews.SHORT_MIN} min") })
         }
 
+        val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
+        val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
             groups.forEach { (g, items) ->
-                item(key = "h-$g") {
-                    GroupLabel("${g.title} · ${items.size}", if (g == TaskGroup.OVERDUE) Warn else Muted)
-                }
+                item(key = "h-$g") { GroupHead(g.title, items.size.toString(), red = g == TaskGroup.OVERDUE) }
                 item(key = "c-$g") {
-                    ListCard(Modifier.padding(top = 6.dp)) {
+                    ListCard(border = if (g == TaskGroup.OVERDUE) OverdueLine else Outline) {
                         items.forEachIndexed { i, t ->
-                            if (i > 0) HorizontalDivider(color = Outline)
-                            TaskLine(t, edge = true, onTick = { tick(t) }, onOpen = { editing = t }) {
-                                if (g == TaskGroup.TODAY) {
-                                    (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
-                                } else {
-                                    t.due?.let { DuePill(it) { editing = t } }
-                                        ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { editing = t })
+                            AnimatedVisibility(
+                                t !in leaving, enter = EnterTransition.None,
+                                exit = shrinkVertically(tween(300)) + fadeOut(tween(250))
+                            ) {
+                                Column {
+                                    if (i > 0) HorizontalDivider(color = Outline)
+                                    TaskRow(t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) {
+                                        if (g == TaskGroup.TODAY) {
+                                            (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
+                                        } else {
+                                            t.due?.let { DuePill(it) { editing = t } }
+                                                ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { editing = t })
+                                        }
+                                    }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            if (recent.isNotEmpty()) {
+                item(key = "h-done") { GroupHead("Completed", "last ${recent.size}", muted = true) }
+                item(key = "c-done") {
+                    ListCard {
+                        recent.forEachIndexed { i, d ->
+                            if (i > 0) HorizontalDivider(color = Outline)
+                            TickedRow(d) { untick(d) }
                         }
                     }
                 }
@@ -198,5 +274,21 @@ fun TasksScreen(
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null }
         )
+    }
+}
+
+/** A group's bold title, its count bubble and a hairline to the edge. Overdue is red. */
+@Composable
+private fun GroupHead(title: String, count: String, red: Boolean = false, muted: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = when { red -> Warn; muted -> Muted; else -> TextMain })
+        Text(
+            count, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (red) Warn else Muted,
+            modifier = Modifier.clip(CircleShape).background(if (red) OverdueTint else Surface2).padding(horizontal = 8.dp, vertical = 1.dp)
+        )
+        HorizontalDivider(Modifier.weight(1f), color = Outline)
     }
 }

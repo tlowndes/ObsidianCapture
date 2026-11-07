@@ -9,6 +9,12 @@ data class TaskItem(
     val path: String = VaultTasks.QUICK_TASK
 )
 
+/** A ticked task; [raw] is its `- [x]` line in the note at [path], [done] its ✅ date. */
+data class TickedTask(val raw: String, val text: String, val done: LocalDate?, val path: String = VaultTasks.QUICK_TASK)
+
+/** Open tasks plus ticked ones (Quick Task's Archive first, newest first, then the rest of the vault). */
+data class TaskLists(val open: List<TaskItem>, val done: List<TickedTask>)
+
 /** Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active. */
 data class Completion(val doneLine: String, val nextLine: String?)
 
@@ -48,6 +54,27 @@ class VaultWriter(
 
     /** Quick Task's open tasks first, then `#task` tasks from every other note in the vault. */
     fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(vault, cacheFile)
+
+    /** [listTasks] plus ticked tasks, from the same vault scan. */
+    fun listTaskLists(): TaskLists {
+        val quick = taskFile(false)?.let { readLines(it) }
+        val (open, done) = VaultScan.scan(vault, cacheFile)
+        return TaskLists(
+            (quick?.let { TaskNote.list(it) } ?: emptyList()) + open,
+            (quick?.let { TaskNote.listDone(it) } ?: emptyList()) + done
+        )
+    }
+
+    /** Un-ticks [d]; [nextLine] is the follow-up a repeat left when it was ticked, removed again if still there. */
+    fun untickTask(d: TickedTask, nextLine: String? = null) {
+        if (d.path == VaultTasks.QUICK_TASK) {
+            val file = taskFile(false) ?: error("Task note not found")
+            edit(file) { TaskNote.untick(it, d.raw, nextLine) }
+        } else {
+            val path = d.path.takeIf { vault.entry(it)?.isDir == false } ?: error("Note moved in Obsidian, refreshed")
+            edit(path) { VaultTasks.untickInPlace(it, d.raw, nextLine) }
+        }
+    }
 
     private fun isQuick(t: TaskItem) = t.path == VaultTasks.QUICK_TASK
 

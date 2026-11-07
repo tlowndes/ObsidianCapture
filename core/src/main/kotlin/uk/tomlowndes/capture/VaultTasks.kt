@@ -29,6 +29,32 @@ object VaultTasks {
         return out
     }
 
+    /** Every `#task` line in [lines], open or ticked, outside frontmatter and code blocks. */
+    fun taskLines(lines: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        var fence = false
+        var i = 0
+        if (lines.firstOrNull()?.trim() == "---") {
+            val end = (1 until lines.size).firstOrNull { lines[it].trim() == "---" }
+            if (end != null) i = end + 1
+        }
+        while (i < lines.size) {
+            val line = lines[i++]
+            if (line.trimStart().startsWith("```") || line.trimStart().startsWith("~~~")) { fence = !fence; continue }
+            if (fence || !TAG.containsMatchIn(line)) continue
+            if (TaskNote.parse(line) != null || TaskNote.parseDone(line) != null) out.add(line)
+        }
+        return out
+    }
+
+    /** Un-ticks [doneLine] where it is, and drops [nextLine] (a repeat's follow-up) if it's still there. */
+    fun untickInPlace(lines: MutableList<String>, doneLine: String, nextLine: String?) {
+        val i = lines.indexOf(doneLine)
+        if (i < 0) error("Task changed in Obsidian, refreshed")
+        lines[i] = TaskNote.reopened(doneLine)
+        nextLine?.let { n -> lines.indexOf(n).takeIf { it >= 0 }?.let { lines.removeAt(it) } }
+    }
+
     /** Whether [path] (a vault-relative folder or note path) is left out of the scan. */
     fun skipped(path: String, templates: List<String>): Boolean {
         if (path.split("/").any { it.startsWith(".") }) return true
