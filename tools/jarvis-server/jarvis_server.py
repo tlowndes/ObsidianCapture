@@ -45,9 +45,9 @@ DEFAULT_WORKERS = {
     "jarvis": {"cwd": str(HOME / "jarvis"), "prompt": "You are Jarvis, Tom's general assistant."},
     "coding": {"cwd": str(HOME / "code"), "prompt": "You help Tom with code in this folder."},
     "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it."},
-    "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True},
-    "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks. His Obsidian vault is at ~/vault.",
-                "permission_mode": "acceptEdits", "add_dirs": ["~/vault"]},
+    "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True,
+                 "allowed_tools": ["WebSearch", "WebFetch", "Read", "Write", "Edit"]},
+    "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks."},
 }
 
 SPOKEN = (
@@ -109,23 +109,28 @@ def transcribe(ogg: Path) -> str:
     return " ".join(s.text.strip() for s in segments).strip()
 
 
+def vault_note() -> str:
+    v = CONFIG.get("vault")
+    return f" Tom's Obsidian vault is at {Path(v).expanduser()}; you may add and edit notes there." if v else ""
+
+
 def ask_claude(worker: str, text: str, spoken: bool = True, chat: str = "") -> str:
     """Runs the Claude CLI once, in the worker's folder; in [chat]'s session when there is one."""
     w = CONFIG["workers"][worker]
     cwd = Path(w["cwd"]).expanduser()
     cwd.mkdir(parents=True, exist_ok=True)
     cmd = [CONFIG["claude"], "-p", text, "--output-format", "text",
-           "--append-system-prompt", w.get("prompt", "") + (SPOKEN if spoken else "")]
+           "--append-system-prompt", w.get("prompt", "") + vault_note() + (SPOKEN if spoken else "")]
     chat = chat.lower() if UUID_RE.match(chat or "") else ""
     if chat:
         cmd += ["--resume", chat] if chat in known_chats() else ["--session-id", chat]
     elif w.get("continue", CONFIG["continue"]):
         cmd.insert(1, "--continue")
-    if w.get("permission_mode"):
-        cmd += ["--permission-mode", w["permission_mode"]]
+    # Every worker may write to the vault unless its workers.json entry says otherwise.
+    cmd += ["--permission-mode", w.get("permission_mode", "acceptEdits")]
     if w.get("allowed_tools"):
         cmd += ["--allowedTools", *w["allowed_tools"]]
-    for d in w.get("add_dirs", []):  # extra folders it may edit, e.g. the vault
+    for d in w.get("add_dirs", [CONFIG["vault"]] if CONFIG.get("vault") else []):  # extra folders it may edit
         cmd += ["--add-dir", str(Path(d).expanduser())]
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=CONFIG["claude_timeout"])
     out = r.stdout.strip()
@@ -396,6 +401,8 @@ def main():
     ap.add_argument("--claude-timeout", type=int, default=int(os.environ.get("JARVIS_CLAUDE_TIMEOUT", "120")))
     ap.add_argument("--ramble-words", type=int, default=int(os.environ.get("JARVIS_RAMBLE_WORDS", "40")),
                     help="messages this long are offered to Claude to sort into tasks, ideas and a note (0 = never)")
+    ap.add_argument("--vault", default=os.environ.get("JARVIS_VAULT", "~/vault"),
+                    help="Obsidian vault every worker may edit ('' = none)")
     ap.add_argument("--continue", dest="cont", action="store_true", help="each worker carries on its last conversation")
     a = ap.parse_args()
     token = os.environ.get("JARVIS_TOKEN", "")
@@ -403,7 +410,7 @@ def main():
         raise SystemExit("Set JARVIS_TOKEN to a long random string (at least 20 characters), e.g. openssl rand -hex 24")
     workers = json.loads(Path(a.workers).read_text()) if a.workers else DEFAULT_WORKERS
     CONFIG.update(token=token, workers=workers, whisper_model=a.whisper_model, piper_voice=a.piper_voice, voices_dir=a.voices_dir,
-                  piper=a.piper, claude=a.claude, claude_timeout=a.claude_timeout,
+                  piper=a.piper, claude=a.claude, claude_timeout=a.claude_timeout, vault=a.vault,
                   ramble_words=a.ramble_words if a.ramble_words > 0 else 10**9, **{"continue": a.cont})
     print(f"Jarvis on http://127.0.0.1:{a.port} · workers: {', '.join(workers)}"
           f" · speech: {'Piper' if a.piper_voice else 'off (text only)'}"
