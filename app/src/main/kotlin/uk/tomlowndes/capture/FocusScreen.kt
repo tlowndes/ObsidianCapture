@@ -60,7 +60,7 @@ fun FocusScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: 
 
     suspend fun loadToday() {
         val uri = vault ?: return
-        today = withContext(Dispatchers.IO) { runCatching { FlightNotes.loadToday(SafVault(ctx, uri)) }.getOrDefault(emptyList()) }
+        today = withContext(Dispatchers.IO) { runCatching { FlightNotes.loadToday(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
     }
     LaunchedEffect(vault) { loadToday() }
     LaunchedEffect(state) { while (state?.running == true) { now = System.currentTimeMillis(); delay(500) } }
@@ -74,7 +74,7 @@ fun FocusScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: 
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     val started = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(s.startedAt), java.time.ZoneId.systemDefault())
-                    FlightNotes.logFocus(SafVault(ctx, uri), FocusSession(started.withSecond(0).withNano(0), s.task, s.elapsedMinutes()))
+                    FlightNotes.logFocus(appVault(ctx, uri), FocusSession(started.withSecond(0).withNano(0), s.task, s.elapsedMinutes()))
                     if (done && s.raw != null && s.path != null) {
                         VaultWriter(ctx, uri).completeTask(TaskItem(s.raw, s.task, TaskRules.due(s.raw), TaskRules.recurrence(s.raw), s.path), prefs.recurring)
                     }

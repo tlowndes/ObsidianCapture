@@ -64,7 +64,7 @@ internal class TagData(private val ctx: android.content.Context, private val vau
     suspend fun load() {
         val uri = vault ?: return
         withContext(Dispatchers.IO) {
-            runCatching { Tags.loadPinned(SafVault(ctx, uri)) }.getOrNull()?.let { pinned = it }
+            runCatching { Tags.loadPinned(appVault(ctx, uri)) }.getOrNull()?.let { pinned = it }
             runCatching { Tags.counts(VaultWriter(ctx, uri).listTasks().map { it.raw }) }.getOrNull()?.let { known = it }
         }
     }
@@ -72,7 +72,7 @@ internal class TagData(private val ctx: android.content.Context, private val vau
     suspend fun setPinned(tags: List<String>) {
         val uri = vault ?: return
         pinned = tags
-        withContext(Dispatchers.IO) { runCatching { Tags.savePinned(SafVault(ctx, uri), tags) } }
+        withContext(Dispatchers.IO) { runCatching { Tags.savePinned(appVault(ctx, uri), tags) } }
     }
 }
 

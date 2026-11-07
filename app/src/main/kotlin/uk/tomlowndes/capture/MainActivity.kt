@@ -241,7 +241,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true }
                 ) { settings = true }
                 tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack) { settings = true }
-                tab == Tab.TASKS -> TasksScreen(vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null }) { t, m -> startFocus(t.text, t.raw, t.path, m) }
+                tab == Tab.TASKS -> TasksScreen(
+                    vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
+                    onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true }
+                )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
                     onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }

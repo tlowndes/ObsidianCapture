@@ -80,14 +80,14 @@ fun ManageHabitsScreen(vault: Uri?, snack: SnackbarHostState, onOpenNote: () -> 
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        list = withContext(Dispatchers.IO) { runCatching { Habits.load(SafVault(ctx, uri)).all }.getOrNull() }
+        list = withContext(Dispatchers.IO) { runCatching { Habits.load(appVault(ctx, uri)).all }.getOrNull() }
     }
 
     fun save(l: List<Habit>, renames: Map<String, String> = emptyMap()) {
         list = l
         val uri = vault ?: return
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { Habits.save(SafVault(ctx, uri), l, renames) } }
+            withContext(Dispatchers.IO) { runCatching { Habits.save(appVault(ctx, uri), l, renames) } }
                 .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
         }
     }

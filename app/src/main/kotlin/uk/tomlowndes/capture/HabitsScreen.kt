@@ -58,7 +58,7 @@ fun HabitsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
     suspend fun load() {
         val uri = vault ?: return
-        note = withContext(Dispatchers.IO) { runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull() }
+        note = withContext(Dispatchers.IO) { runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull() }
     }
     LaunchedEffect(vault, managing) { if (!managing) load() }
 
@@ -71,7 +71,7 @@ fun HabitsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         val uri = vault ?: return
         note?.let { n -> note = n.copy(days = n.days + (today to f(n.day(today)))) }
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { Habits.update(SafVault(ctx, uri), today, f) } }
+            withContext(Dispatchers.IO) { runCatching { Habits.update(appVault(ctx, uri), today, f) } }
                 .onFailure { snack.showSnackbar("Failed: ${it.message}") }
             load()
         }

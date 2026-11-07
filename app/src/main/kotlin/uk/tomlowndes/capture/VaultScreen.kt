@@ -140,9 +140,9 @@ fun VaultScreen(
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        if (notes.isEmpty()) withContext(Dispatchers.IO) { runCatching { NoteIndex.paths(SafVault(ctx, uri)) } }
+        if (notes.isEmpty()) withContext(Dispatchers.IO) { runCatching { NoteIndex.paths(appVault(ctx, uri)) } }
             .onSuccess { notes = it }
-        withContext(Dispatchers.IO) { runCatching { NoteIndex.build(SafVault(ctx, uri), File(ctx.cacheDir, "vault-index.json")) } }
+        withContext(Dispatchers.IO) { runCatching { NoteIndex.build(appVault(ctx, uri), File(ctx.cacheDir, "vault-index.json")) } }
             .onSuccess { notes = it; full = true; VaultCache.tree = uri; VaultCache.notes = it; VaultCache.full = true }
             .onFailure { snack.showSnackbar("Couldn't read the vault: ${it.message}") }
     }
@@ -446,7 +446,7 @@ private fun NoteScreen(
     var adding by remember(path) { mutableStateOf(false) }
     var clash by remember(path) { mutableStateOf<Clash?>(null) }
     var menu by remember { mutableStateOf(false) }
-    fun v() = SafVault(ctx, vault)
+    fun v() = appVault(ctx, vault)
 
     suspend fun load() {
         withContext(Dispatchers.IO) { runCatching { v().read(path) } }

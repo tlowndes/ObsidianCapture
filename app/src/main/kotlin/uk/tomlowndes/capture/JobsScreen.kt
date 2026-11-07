@@ -72,12 +72,12 @@ fun JobsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
-        jobs = withContext(Dispatchers.IO) { runCatching { Jobs.list(SafVault(ctx, uri)) }.getOrDefault(emptyList()) }
+        jobs = withContext(Dispatchers.IO) { runCatching { Jobs.list(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
     }
     fun act(f: (Vault) -> Unit) {
         val uri = vault ?: return
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { f(SafVault(ctx, uri)) } }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            withContext(Dispatchers.IO) { runCatching { f(appVault(ctx, uri)) } }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             refresh++
         }
     }

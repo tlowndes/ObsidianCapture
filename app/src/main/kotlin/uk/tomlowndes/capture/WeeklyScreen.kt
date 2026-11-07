@@ -60,7 +60,7 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         review = withContext(Dispatchers.IO) {
             runCatching {
                 val w = VaultWriter(ctx, uri)
-                WeeklyReview.build(WeeklyReview.done(SafVault(ctx, uri), today), w.listTasks(), today)
+                WeeklyReview.build(WeeklyReview.done(appVault(ctx, uri), today), w.listTasks(), today)
             }.getOrNull()
         }
     }

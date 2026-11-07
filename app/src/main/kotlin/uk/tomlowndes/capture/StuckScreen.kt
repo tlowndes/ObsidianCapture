@@ -58,7 +58,7 @@ fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onSta
 
     suspend fun load() {
         val uri = vault ?: return
-        menu = withContext(Dispatchers.IO) { runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)) }.getOrDefault(emptyMap()) }
+        menu = withContext(Dispatchers.IO) { runCatching { FlightNotes.loadStuck(appVault(ctx, uri)) }.getOrDefault(emptyMap()) }
     }
     LaunchedEffect(vault) { load() }
 
@@ -129,7 +129,7 @@ fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onSta
                     val item = StuckItem(emoji.trim(), name.trim(), mins.toInt())
                     scope.launch {
                         withContext(Dispatchers.IO) {
-                            runCatching { VaultIo.edit(SafVault(ctx, uri), FlightNotes.STUCK) { FlightNotes.addStuck(it, length, item) } }
+                            runCatching { VaultIo.edit(appVault(ctx, uri), FlightNotes.STUCK) { FlightNotes.addStuck(it, length, item) } }
                         }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
                         load()
                     }

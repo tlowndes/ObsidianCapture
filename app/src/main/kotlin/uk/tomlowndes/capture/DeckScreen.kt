@@ -110,7 +110,7 @@ fun DeckScreen(
     var paying by remember { mutableStateOf(emptySet<String>()) }
     var vaultOk by remember { mutableStateOf(true) }
     LaunchedEffect(vault, refresh) {
-        vaultOk = vault != null && withContext(Dispatchers.IO) { runCatching { SafVault(ctx, vault).list("") }.isSuccess }
+        vaultOk = vault != null && withContext(Dispatchers.IO) { runCatching { appVault(ctx, vault).list("") }.isSuccess }
     }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var weather by remember { mutableStateOf<WeatherSummary?>(null) }
@@ -138,16 +138,17 @@ fun DeckScreen(
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         data = withContext(Dispatchers.IO) {
+            runCatching { VaultRoute.check(ctx, uri, force = refresh > 0) }
             DeckData(
                 tasks = runCatching { VaultWriter(ctx, uri).listTasks() }.getOrDefault(emptyList()),
                 project = runCatching { IdeaStore(ctx, uri, prefs).list().firstOrNull { it.status == "active" } }.getOrNull(),
                 unread = runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first }.getOrDefault(0),
-                layout = runCatching { DeckConfig.load(SafVault(ctx, uri)) }.getOrDefault(DeckLayout()),
-                stuck = runCatching { FlightNotes.loadStuck(SafVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
-                focusMin = runCatching { FlightNotes.loadToday(SafVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
-                habits = runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull(),
-                calendars = runCatching { CalendarConfig.load(SafVault(ctx, uri)) }.getOrNull(),
-                jobs = runCatching { Jobs.list(SafVault(ctx, uri)) }.getOrDefault(emptyList())
+                layout = runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrDefault(DeckLayout()),
+                stuck = runCatching { FlightNotes.loadStuck(appVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
+                focusMin = runCatching { FlightNotes.loadToday(appVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
+                habits = runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull(),
+                calendars = runCatching { CalendarConfig.load(appVault(ctx, uri)) }.getOrNull(),
+                jobs = runCatching { Jobs.list(appVault(ctx, uri)) }.getOrDefault(emptyList())
             ).also { DeckCache.save(ctx, it) }
         }
     }
@@ -172,9 +173,9 @@ fun DeckScreen(
         val today = LocalDate.now()
         data.habits?.let { n -> data = data.copy(habits = n.copy(days = n.days + (today to f(n.day(today))))) }
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { Habits.update(SafVault(ctx, uri), today, f) } }
+            withContext(Dispatchers.IO) { runCatching { Habits.update(appVault(ctx, uri), today, f) } }
                 .onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            val fresh = withContext(Dispatchers.IO) { runCatching { Habits.load(SafVault(ctx, uri)) }.getOrNull() }
+            val fresh = withContext(Dispatchers.IO) { runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull() }
             if (fresh != null) data = data.copy(habits = fresh)
         }
     }
@@ -195,6 +196,7 @@ fun DeckScreen(
             )
         }
         UpdateBanner()
+        ServerCopyChip(onClick = onOpenSettings)
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.progress(LocalDate.now()),

@@ -53,7 +53,7 @@ object CalendarSync {
 
     /** Fetches every enabled calendar. A failed one keeps its old events, marked not ok. Call off the main thread. */
     fun sync(ctx: Context, vault: Uri): List<CalendarCache> {
-        val sources = CalendarConfig.load(SafVault(ctx, vault)).filter { it.enabled }
+        val sources = CalendarConfig.load(appVault(ctx, vault)).filter { it.enabled }
         val old = cached(ctx).associateBy { it.id }
         val today = LocalDate.now()
         val now = System.currentTimeMillis()
