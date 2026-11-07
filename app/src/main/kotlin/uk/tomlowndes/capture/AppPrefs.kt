@@ -186,4 +186,21 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     fun setDraft(key: String, text: String) {
         p.edit().apply { if (text.isEmpty()) remove("draft_$key") else putString("draft_$key", text) }.apply()
     }
+
+    /**
+     * Tasks the app ticked: done line -> (when, the repeat's follow-up line or ""). Orders Completed and lets
+     * un-tick remove the follow-up. Keeps the last 30.
+     */
+    var tickLog: List<Triple<String, Long, String>>
+        get() = p.getString("tick_log", "").orEmpty().split("\u0002").filter { it.isNotBlank() }.mapNotNull {
+            val f = it.split("\u0001")
+            if (f.size == 3) Triple(f[0], f[1].toLongOrNull() ?: 0L, f[2]) else null
+        }
+        set(v) {
+            p.edit().putString("tick_log", v.takeLast(30).joinToString("\u0002") { "${it.first}\u0001${it.second}\u0001${it.third}" }).apply()
+        }
+
+    fun logTick(doneLine: String, nextLine: String?) {
+        tickLog = tickLog.filter { it.first != doneLine } + Triple(doneLine, System.currentTimeMillis(), nextLine.orEmpty())
+    }
 }
