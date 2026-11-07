@@ -92,21 +92,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
             p.getStringSet("later", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("later", v).putString("later_day", java.time.LocalDate.now().toString()).apply() }
 
-    /**
-     * Claude model id for Sort it. Blank or missing uses [Sorting.MODEL], so a retired id can be
-     * replaced in Settings without a new build.
-     */
-    var sortModel: String
-        get() = p.getString("sort_model", null)?.trim()?.ifEmpty { null } ?: Sorting.MODEL
-        set(v) {
-            val id = v.trim()
-            p.edit().apply { if (id.isEmpty() || id == Sorting.MODEL) remove("sort_model") else putString("sort_model", id) }.apply()
-        }
-
-    /** Brain dumps waiting to be sorted or saved; raw text is kept until Save. */
-    var captureQueue: List<QueuedDump>
-        get() = Sorting.queueFromJson(p.getString("capture_queue", null))
-        set(v) { p.edit().putString("capture_queue", Sorting.queueToJson(v)).apply() }
+    /** What Jarvis last sorted, waiting for Check and save (null once saved or discarded). */
+    var jarvisFound: SortResult?
+        get() = Sorting.fromJson(p.getString("jarvis_found", null))
+        set(v) { p.edit().apply { if (v == null) remove("jarvis_found") else putString("jarvis_found", Sorting.toJson(v)) }.remove("capture_queue").remove("sort_model").apply() }
 
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean
@@ -122,7 +111,7 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("weekly_min", 19 * 60)
         set(v) { p.edit().putInt("weekly_min", v).apply() }
 
-    /** Capture's switch: 0 Task, 1 Read later, 2 Brain dump. Opens on the last one used. */
+    /** Capture's switch: 0 Task, 1 Read later, 2 Jarvis. Opens on the last one used. */
     var captureMode: Int
         get() = p.getInt("capture_mode", 0)
         set(v) { p.edit().putInt("capture_mode", v).apply() }
@@ -155,6 +144,43 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     fun setScrollPos(file: String, y: Int) {
         p.edit().apply { if (y <= 0) remove("scroll_$file") else putInt("scroll_$file", y) }.apply()
     }
+
+    /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
+    var jarvisAddress: String
+        get() = p.getString("jarvis_address", "").orEmpty()
+        set(v) { p.edit().putString("jarvis_address", v.trim()).apply() }
+    var jarvisWorker: String
+        get() = p.getString("jarvis_worker", "jarvis") ?: "jarvis"
+        set(v) { p.edit().putString("jarvis_worker", v).apply() }
+    var jarvisSpeak: Boolean
+        get() = p.getBoolean("jarvis_speak", true)
+        set(v) { p.edit().putBoolean("jarvis_speak", v).apply() }
+    /** Voice id sent with each recording ("" = the server's default) and its label for Settings. */
+    var jarvisVoice: String
+        get() = p.getString("jarvis_voice", "").orEmpty()
+        set(v) { p.edit().putString("jarvis_voice", v).apply() }
+    var jarvisVoiceLabel: String
+        get() = p.getString("jarvis_voice_label", "").orEmpty()
+        set(v) { p.edit().putString("jarvis_voice_label", v).apply() }
+    /** Reply playback speed, done on the phone. */
+    var jarvisSpeed: Float
+        get() = p.getFloat("jarvis_speed", 1f)
+        set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
+    /** The last exchange, shown until you talk again: heard, reply, epoch millis. */
+    var jarvisLast: Triple<String, String, Long>?
+        get() = p.getString("jarvis_last_reply", null)?.let {
+            Triple(p.getString("jarvis_last_heard", "").orEmpty(), it, p.getLong("jarvis_last_at", 0))
+        }
+        set(v) {
+            p.edit().apply {
+                if (v == null) { remove("jarvis_last_heard"); remove("jarvis_last_reply"); remove("jarvis_last_at") }
+                else { putString("jarvis_last_heard", v.first); putString("jarvis_last_reply", v.second); putLong("jarvis_last_at", v.third) }
+            }.apply()
+        }
+    /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
+    var jarvisSeenDone: List<String>
+        get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
+        set(v) { p.edit().putString("jarvis_seen_done", v.takeLast(50).joinToString("\u0001")).apply() }
 
     fun draft(key: String): String = p.getString("draft_$key", "") ?: ""
     fun setDraft(key: String, text: String) {

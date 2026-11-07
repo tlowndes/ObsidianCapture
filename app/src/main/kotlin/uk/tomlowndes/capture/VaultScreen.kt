@@ -121,12 +121,12 @@ internal fun agoLabel(millis: Long, now: Long = System.currentTimeMillis()): Str
 
 /**
  * Vault tab: every note, by folder or by search, rendered to read, with quick edits (tap a block to change it,
- * tick checkboxes, change tags). Read later sits inside it as a chip ([onOpenRead]).
+ * tick checkboxes, change tags). Read later and Projects sit inside it as chips ([onOpenRead], [onOpenProjects]).
  */
 @Composable
 fun VaultScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, unread: Int,
-    onOpenRead: () -> Unit, onOpenTasks: (String?) -> Unit, onEditing: (Boolean) -> Unit,
+    onOpenRead: () -> Unit, onOpenProjects: () -> Unit, onOpenTasks: (String?) -> Unit, onEditing: (Boolean) -> Unit,
 ) {
     val ctx = LocalContext.current
     var notes by remember { mutableStateOf(if (VaultCache.tree == vault) VaultCache.notes else emptyList()) }
@@ -175,7 +175,7 @@ fun VaultScreen(
             notes, tags, unread, showHidden,
             onSearch = { searchIn = null; startTag = null; searching = true },
             onTag = { searchIn = null; startTag = it; searching = true },
-            onRead = onOpenRead, onFolder = { folder = it }, onNote = { open.add(it) },
+            onRead = onOpenRead, onProjects = onOpenProjects, onFolder = { folder = it }, onNote = { open.add(it) },
             onToggleHidden = { showHidden = !showHidden; prefs.vaultShowHidden = showHidden }
         )
     }
@@ -186,7 +186,7 @@ fun VaultScreen(
 @Composable
 private fun VaultHome(
     notes: List<NoteInfo>, tags: List<Pair<String, Int>>, unread: Int, showHidden: Boolean,
-    onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
+    onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onProjects: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
     onToggleHidden: () -> Unit,
 ) {
     val view = remember(notes, showHidden) { VaultBrowse.folder(notes, "", showHidden = showHidden) }
@@ -203,6 +203,7 @@ private fun VaultHome(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 AppChip(false, onRead, { Text("📖 Read later" + if (unread > 0) " $unread" else "") })
+                AppChip(false, onProjects, { Text("💡 Projects") })
                 (Tags.BUILT_IN.filter { b -> tags.any { it.first == b } } + tags.map { it.first }.filter { it !in Tags.BUILT_IN }.take(6))
                     .forEach { t -> TagChip(t, false, onClick = { onTag(t) }) }
             }

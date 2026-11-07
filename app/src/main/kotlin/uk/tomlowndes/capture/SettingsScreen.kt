@@ -72,10 +72,19 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
     val secrets = remember { SecretStore(ctx) }
-    var masked by remember { mutableStateOf(secrets.maskedKey()) }
-    var editingKey by remember { mutableStateOf(false) }
     var ghMasked by remember { mutableStateOf(secrets.githubToken?.let { "••••" + it.takeLast(4) }) }
     var editingGh by remember { mutableStateOf(false) }
+    var jvMasked by remember { mutableStateOf(secrets.jarvisToken?.let { "••••" + it.takeLast(4) }) }
+    var editingJv by remember { mutableStateOf(false) }
+    var jvSpeak by remember { mutableStateOf(prefs.jarvisSpeak) }
+    var jvPing by remember { mutableStateOf<Jarvis.Ping?>(null) }
+    var jvTesting by remember { mutableStateOf(false) }
+    var jvVoiceLabel by remember { mutableStateOf(prefs.jarvisVoiceLabel) }
+    var jvPickVoice by remember { mutableStateOf(false) }
+    var jvSpeed by remember { mutableStateOf(prefs.jarvisSpeed) }
+    if (jvPickVoice) JarvisVoiceSheet(prefs, onPick = { id, label ->
+        prefs.jarvisVoice = id; prefs.jarvisVoiceLabel = label; jvVoiceLabel = label; jvPickVoice = false
+    }) { jvPickVoice = false }
     var checks by remember { mutableStateOf(prefs.updateChecks) }
     val installed = remember { AppUpdate.installed(ctx) }
     val scope = rememberCoroutineScope()
@@ -103,24 +112,27 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }
         )
     }
-    if (editingKey) {
+    if (editingJv) {
         var draft by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { editingKey = false }, containerColor = Surface1,
-            title = { Text("Claude API key") },
+            onDismissRequest = { editingJv = false }, containerColor = Surface1,
+            title = { Text("Jarvis token") },
             text = {
                 OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
-                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("sk-ant-…") })
+                    visualTransformation = PasswordVisualTransformation(), placeholder = { Text("Bearer token from the Oracle box") })
             },
             confirmButton = {
-                TextButton(onClick = { secrets.claudeKey = draft; masked = secrets.maskedKey(); editingKey = false }, enabled = draft.isNotBlank()) {
-                    Text("Save", color = Primary)
-                }
+                TextButton(onClick = {
+                    secrets.jarvisToken = draft
+                    jvMasked = secrets.jarvisToken?.let { "••••" + it.takeLast(4) }
+                    editingJv = false; jvPing = null
+                }, enabled = draft.isNotBlank()) { Text("Save", color = Primary) }
             },
             dismissButton = {
-                TextButton(onClick = { if (masked != null) { secrets.claudeKey = null; masked = null }; editingKey = false }) {
-                    Text(if (masked != null) "Remove" else "Cancel", color = Muted)
-                }
+                TextButton(onClick = {
+                    if (jvMasked != null) { secrets.jarvisToken = null; jvMasked = null }
+                    editingJv = false
+                }) { Text(if (jvMasked != null) "Remove" else "Cancel", color = Muted) }
             }
         )
     }
@@ -148,16 +160,32 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
 
         Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Brain dump AI")
-        SettingRow("Claude API key", masked ?: "Not set") {
-            TextButton(onClick = { editingKey = true }) { Text(if (masked == null) "Add" else "Change", color = Primary) }
-        }
-        PathField("Sort it model", prefs.sortModel) { prefs.sortModel = it }
+        GroupLabel("Jarvis")
+        PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
         Text(
-            "Claude model id for brain dumps. ${Sorting.MODEL} is the default. If Claude says that model was rejected, put the current id here.",
-            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp)
+            "Tailscale name of the Oracle box, like oracle.tail1234.ts.net:8443. Only works with Tailscale on. Type demo to try the tab without a server.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
         )
-        SettingRow("Queued dumps") { Text("${prefs.captureQueue.size}", color = Muted, modifier = Modifier.padding(end = 12.dp)) }
+        SettingRow("Token", jvMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingJv = true }) { Text(if (jvMasked == null) "Add" else "Change", color = Primary) }
+        }
+        SettingRow("Test connection", jvPing?.message ?: if (jvTesting) "Checking…" else null) {
+            TextButton(onClick = {
+                jvTesting = true; jvPing = null
+                scope.launch {
+                    jvPing = withContext(Dispatchers.IO) { Jarvis.ping(prefs.jarvisAddress, secrets.jarvisToken.orEmpty()) }
+                    jvTesting = false
+                }
+            }, enabled = !jvTesting) { Text("Test", color = Primary) }
+        }
+        SettingRow("Play replies aloud") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
+        SettingRow("Voice", "Made on the server. Tap to hear each one.") {
+            TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
+        }
+        Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
+            jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
+        }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Updates")
