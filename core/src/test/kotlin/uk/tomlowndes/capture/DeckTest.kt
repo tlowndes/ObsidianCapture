@@ -83,7 +83,9 @@ class DeckTest {
     @Test fun `a card added later is appended to a saved order`() {
         val json = "{\"cards\":[\"JOBS\",\"NEXT_STEP\"],\"hiddenCards\":[]}"
         val l = DeckConfig.layout(json)
-        assertEquals(listOf(HomeCard.JOBS, HomeCard.NEXT_STEP), l.order.take(2))
+        // The saved two keep their order; cards added since (v1.16's follow Jobs) slot in around them.
+        assertEquals(listOf(HomeCard.JOBS, HomeCard.NEXT_STEP), l.order.filter { it == HomeCard.JOBS || it == HomeCard.NEXT_STEP })
+        assertEquals(HomeCard.JOBS, l.order.first())
         assertEquals(HomeCard.values().size, l.order.size)
     }
 
