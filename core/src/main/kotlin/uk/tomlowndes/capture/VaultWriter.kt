@@ -189,6 +189,18 @@ class VaultWriter(
         return path
     }
 
+    /** Adds [lines] at the end of the inbox's running note (`01 - Inbox/Inbox.md`), making it if needed. Rapid-log notes and events go here. */
+    fun appendInbox(lines: List<String>) {
+        if (lines.isEmpty()) return
+        val path = "$INBOX/$INBOX_NOTE"
+        if (vault.entry(path) == null) VaultIo.write(vault, vault.create(INBOX, INBOX_NOTE.removeSuffix(".md"), "md"), "")
+        VaultIo.edit(vault, path) { ls ->
+            while (ls.isNotEmpty() && ls.last().isBlank()) ls.removeAt(ls.size - 1)
+            ls.addAll(lines)
+            ls.add("")
+        }
+    }
+
     /** Removes the note at [path]. Used to undo a capture note when the rest of the save fails. */
     fun deleteNote(path: String) { vault.delete(path) }
 
@@ -201,5 +213,6 @@ class VaultWriter(
         const val INBOX = "01 - Inbox"
         const val RIL_DIR = "ReadItLater Inbox"
         const val TASK_FILE = "⚡ Quick Task.md"
+        const val INBOX_NOTE = "Inbox.md"
     }
 }

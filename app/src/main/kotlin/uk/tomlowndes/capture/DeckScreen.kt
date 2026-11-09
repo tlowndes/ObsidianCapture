@@ -197,6 +197,10 @@ fun DeckScreen(
         }
         UpdateBanner()
         ServerCopyChip(onClick = onOpenSettings)
+        if (Migrate.due(data.tasks, LocalDate.now(), prefs.migratedMonth)) {
+            val n = Migrate.candidates(data.tasks, LocalDate.now()).size
+            RowCard("Migrate · $n from last month", "Start ›", accent = true) { onOpenSub(Sub.MIGRATE) }
+        }
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.progress(LocalDate.now()),

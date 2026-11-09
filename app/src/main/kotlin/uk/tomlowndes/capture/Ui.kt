@@ -50,6 +50,7 @@ internal val Green = Color(0xFF5FD39A)
 internal val Amber = Color(0xFFF5C06A)
 internal val Warn = Color(0xFFFF8A80)
 internal val Purple = Color(0xFFB39DFF)
+internal val Teal = Color(0xFF5FC8D3)
 internal val WorkEdge = Amber
 internal val PersonalEdge = Primary
 internal val NavBg = Color(0xFF121724)

@@ -39,6 +39,8 @@ dependencies {
     implementation(project(":core"))
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Reads scanned notebook pages on the phone (bundled Latin model, no network).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.glance:glance-appwidget:1.2.0")

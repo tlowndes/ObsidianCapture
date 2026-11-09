@@ -28,6 +28,14 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksFilter: String?
         get() = p.getString("tasks_filter", null)
         set(v) { p.edit().putString("tasks_filter", v).apply() }
+    /** Quiet projects the user chose to Keep, so the Vault's "Archive?" doesn't ask again. */
+    var paraKept: Set<String>
+        get() = p.getString("para_kept", "").orEmpty().split('\n').filter { it.isNotEmpty() }.toSet()
+        set(v) { p.edit().putString("para_kept", v.joinToString("\n")).apply() }
+    /** The month ("2026-11") the last Bullet Journal migration was done for. */
+    var migratedMonth: String?
+        get() = p.getString("migrated_month", null)
+        set(v) { p.edit().putString("migrated_month", v).apply() }
 
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
