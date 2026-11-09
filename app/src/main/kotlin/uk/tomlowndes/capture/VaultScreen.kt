@@ -137,8 +137,28 @@ fun VaultScreen(
     var startTag by remember { mutableStateOf<String?>(null) }
     val open = remember { mutableStateListOf<String>() }
     var showHidden by remember { mutableStateOf(prefs.vaultShowHidden) }
+    var reindex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var kept by remember { mutableStateOf(prefs.paraKept) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(vault) {
+    /** Moves a quiet project's folder into the Archive folder, with Undo. */
+    fun archive(project: String, archiveDir: String) {
+        val uri = vault ?: return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { appVault(ctx, uri).move(project, archiveDir) } }
+            r.onFailure { snack.showSnackbar("Couldn't move it: ${it.message}") }
+            r.onSuccess { moved ->
+                reindex++
+                if (snack.showSnackbar("${nameOf(project)} archived", "Undo", duration = androidx.compose.material3.SnackbarDuration.Short)
+                    == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    withContext(Dispatchers.IO) { runCatching { appVault(ctx, uri).move(moved, parentOf(project)) } }
+                    reindex++
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(vault, reindex) {
         val uri = vault ?: return@LaunchedEffect
         if (notes.isEmpty()) withContext(Dispatchers.IO) { runCatching { NoteIndex.paths(appVault(ctx, uri)) } }
             .onSuccess { notes = it }
@@ -176,7 +196,8 @@ fun VaultScreen(
             onSearch = { searchIn = null; startTag = null; searching = true },
             onTag = { searchIn = null; startTag = it; searching = true },
             onRead = onOpenRead, onProjects = onOpenProjects, onJobs = onOpenJobs, onFolder = { folder = it }, onNote = { open.add(it) },
-            onToggleHidden = { showHidden = !showHidden; prefs.vaultShowHidden = showHidden }
+            onToggleHidden = { showHidden = !showHidden; prefs.vaultShowHidden = showHidden },
+            kept = kept, onKeep = { p -> kept = kept + p; prefs.paraKept = kept }, onArchive = ::archive,
         )
     }
 }
@@ -188,8 +209,15 @@ private fun VaultHome(
     notes: List<NoteInfo>, tags: List<Pair<String, Int>>, unread: Int, jobsOpen: Int, showHidden: Boolean,
     onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onProjects: () -> Unit, onJobs: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
     onToggleHidden: () -> Unit,
+    kept: Set<String> = emptySet(), onKeep: (String) -> Unit = {}, onArchive: (String, String) -> Unit = { _, _ -> },
 ) {
     val view = remember(notes, showHidden) { VaultBrowse.folder(notes, "", showHidden = showHidden) }
+    val top = remember(notes) { VaultBrowse.folder(notes, "", showHidden = true).folders }
+    val para = remember(top) { Para.folders(top.map { it.first }) }
+    val quiet = remember(notes, para, kept) {
+        para[ParaKind.PROJECTS]?.let { Para.quietProjects(notes, it, System.currentTimeMillis()) }.orEmpty().filter { it.first !in kept }.take(2)
+    }
+    var asking by remember { mutableStateOf<String?>(null) }
     val recent = remember(notes, showHidden) { VaultBrowse.recent(notes, 3, showHidden) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
         item {
@@ -209,6 +237,39 @@ private fun VaultHome(
                     .forEach { t -> TagChip(t, false, onClick = { onTag(t) }) }
             }
         }
+        // PARA (paper-hybrid-v1): four doors over the vault's own folders.
+        item {
+            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ParaKind.values().toList().chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { k ->
+                            val dir = para[k]
+                            val count = dir?.let { d -> top.firstOrNull { it.first == d }?.second }
+                            ParaDoor(k, dir, count, Modifier.weight(1f)) {
+                                if (k == ParaKind.PROJECTS) onProjects() else dir?.let(onFolder)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (quiet.isNotEmpty()) item {
+            Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)
+                .border(1.dp, Outline, RoundedCornerShape(16.dp))) {
+                quiet.forEachIndexed { i, (p, last) ->
+                    if (i > 0) HorizontalDivider(color = Outline)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(nameOf(p), fontSize = 14.sp)
+                            Text("${(System.currentTimeMillis() - last) / 86_400_000L} days quiet", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                        }
+                        Text("Keep", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { onKeep(p) }.padding(8.dp))
+                        Text("Archive?", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Amber,
+                            modifier = Modifier.clip(CircleShape).background(AmberTint).clickable { asking = p }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    }
+                }
+            }
+        }
         if (recent.isNotEmpty()) {
             item { Box(Modifier.padding(top = 16.dp, bottom = 2.dp)) { GroupLabel("Recent") } }
             items(recent, key = { "r-" + it.path }) { n -> NoteRow(n, showFolder = true, preview = false) { onNote(n.path) } }
@@ -220,6 +281,34 @@ private fun VaultHome(
             Text(if (showHidden) "Hide 99 folders" else "Show hidden folders", fontSize = 13.sp, color = Muted,
                 modifier = Modifier.padding(top = 14.dp).clickable(onClick = onToggleHidden).padding(vertical = 6.dp))
         }
+    }
+    asking?.let { p ->
+        val to = para[ParaKind.ARCHIVE] ?: "05 - Archive"
+        AlertDialog(
+            onDismissRequest = { asking = null }, containerColor = Surface1,
+            title = { Text("Archive ${nameOf(p)}?") },
+            text = { Text("Moves the folder to $to. Nothing is deleted.", color = Muted) },
+            confirmButton = { TextButton(onClick = { asking = null; onArchive(p, to) }) { Text("Archive", color = Primary) } },
+            dismissButton = { TextButton(onClick = { asking = null }) { Text("Cancel", color = Muted) } }
+        )
+    }
+}
+
+/** One PARA door: icon, name, and how many notes; dimmed when the vault has no folder for it. */
+@Composable
+private fun ParaDoor(k: ParaKind, dir: String?, count: Int?, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(14.dp))
+            .clickable(enabled = dir != null || k == ParaKind.PROJECTS, onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(k.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (dir != null) TextMain else Muted, modifier = Modifier.weight(1f))
+            Text(k.icon, fontSize = 15.sp)
+        }
+        Text(
+            if (dir == null) "no folder yet" else "${count ?: 0} notes",
+            fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 2.dp)
+        )
     }
 }
 

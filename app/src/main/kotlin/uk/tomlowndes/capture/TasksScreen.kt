@@ -57,6 +57,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.LocalDateTime
+import androidx.compose.runtime.key
 
 /** Tasks tab: every open `#task` in the vault, filtered by tag, side or length, grouped by when it's due. */
 @Composable
@@ -64,6 +66,7 @@ fun TasksScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, note: String? = null, onClearNote: () -> Unit = {},
     onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenTriage: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,6 +85,28 @@ fun TasksScreen(
     val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var upcoming by remember { mutableStateOf(prefs.tasksUpcoming) }
+    val swipe = remember { prefs.taskSwipe }
+    var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
+    var dayView by remember { mutableStateOf(prefs.upcomingDay) }
+    var billsOpen by remember { mutableStateOf(false) }
+    var breaking by remember { mutableStateOf<TaskItem?>(null) }
+    var fitting by remember { mutableStateOf<AgendaItem.Gap?>(null) }
+    var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
+    var sources by remember { mutableStateOf<List<CalendarSource>>(emptyList()) }
+    var travel by remember { mutableStateOf<TravelLine?>(null) }
+    var now by remember { mutableStateOf(LocalDateTime.now()) }
+    LaunchedEffect(Unit) { while (true) { delay(30_000); now = LocalDateTime.now() } }
+    // Upcoming reads the calendars the Deck keeps; it only fetches when that copy is over half an hour old.
+    LaunchedEffect(vault, upcoming) {
+        val uri = vault ?: return@LaunchedEffect
+        if (!upcoming) return@LaunchedEffect
+        sources = withContext(Dispatchers.IO) { runCatching { CalendarConfig.load(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+        cal = CalendarSync.cached(ctx)
+        if (System.currentTimeMillis() - CalendarSync.lastSync(ctx) > CalendarSync.EVERY_MS)
+            cal = withContext(Dispatchers.IO) { runCatching { CalendarSync.sync(ctx, uri) }.getOrDefault(cal) }
+        travel = withContext(Dispatchers.IO) { runCatching { TravelFetch.line(ctx, cal.flatMap { it.events }) }.getOrNull() }
+    }
 
     /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
     fun reload() {
@@ -166,8 +191,10 @@ fun TasksScreen(
 
     fun remove(t: TaskItem) {
         val uri = vault ?: return
+        leaving.add(t)
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).deleteTask(t) } }
+            r.onFailure { leaving.remove(t) }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { at ->
@@ -178,6 +205,42 @@ fun TasksScreen(
             }
         }
     }
+
+    /** Gives [t] a new due date (null clears it), with Undo. */
+    fun move(t: TaskItem, due: LocalDate?) {
+        val uri = vault ?: return
+        if (due == t.due) return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, t.text, due, t.recurrence, Deck.minutes(t)) } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            r.onSuccess { newRaw ->
+                val msg = due?.let { "Moved to " + if (it == LocalDate.now() || it == LocalDate.now().plusDays(1)) dueLabel(it) else dayChip(it) } ?: "Date cleared"
+                if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
+                    reload()
+                }
+            }
+        }
+    }
+
+    /** Visual day: gives [t] a time today (keeping its length), or clears it. */
+    fun setTime(t: TaskItem, time: java.time.LocalTime?) {
+        val uri = vault ?: return
+        val len = DayPlan.timeOf(t)?.let { java.time.Duration.between(it.start, it.end).toMinutes().toInt() } ?: DayPlan.minutes(t)
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).setTime(t, time, len) } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+        }
+    }
+
+    /** A task row with the swipes: right ticks, left opens the reschedule sheet, further left removes. */
+    @Composable
+    fun Swiped(t: TaskItem, content: @Composable () -> Unit) = SwipeRow(
+        enabled = swipe && t !in ticking && t !in leaving,
+        onDone = { tick(t) }, onMove = { rescheduling = t }, onRemove = { remove(t) }, content = content
+    )
 
     val today = LocalDate.now()
     val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) }
@@ -205,6 +268,15 @@ fun TasksScreen(
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
         )
         ServerCopyBanner(onClick = onOpenSettings)
+        // Triage (build-queue O1): once enough are overdue or undated, clear them one card at a time.
+        val triage = Triage.candidates(tasks, today).size
+        if (triage >= Triage.SHOW_FROM) Text(
+            "⚡ Triage $triage overdue or undated, one at a time ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(12.dp)).background(PrimaryTint)
+                .clickable(onClick = onOpenTriage).padding(horizontal = 14.dp, vertical = 9.dp)
+        )
+        TasksViewSwitch(upcoming) { upcoming = it; prefs.tasksUpcoming = it }
+        if (upcoming) UpcomingModeSwitch(dayView) { dayView = it; prefs.upcomingDay = it }
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
@@ -228,6 +300,25 @@ fun TasksScreen(
                 { Text("≤ ${TaskViews.SHORT_MIN} min") })
         }
 
+        if (upcoming && dayView) {
+            DayTimeline(shown, cal.flatMap { it.events }, sources.associate { it.id to hexColour(it.colour) }, now) { t, time -> setTime(t, time) }
+        } else if (upcoming) {
+            val events = cal.flatMap { it.events }
+            val bills = TaskViews.billsMonth(tasks, ticked, today)
+            val billsTop: (@Composable () -> Unit)? = if (bills.empty) null else {
+                { BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }) { b -> complete(b.task) } }
+            }
+            UpcomingList(
+                days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
+                colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
+                travel = travel, onFit = { fitting = it },
+                top = billsTop,
+            ) { t, late ->
+                AnimatedVisibility(t !in leaving, enter = EnterTransition.None, exit = shrinkVertically(tween(300)) + fadeOut(tween(250))) {
+                    Swiped(t) { AgendaTaskRow(t, late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) }
+                }
+            }
+        } else {
         val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
         val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
@@ -242,14 +333,16 @@ fun TasksScreen(
                             ) {
                                 Column {
                                     if (i > 0) HorizontalDivider(color = Outline)
+                                    key(t.raw) { Swiped(t) {
                                     TaskRow(t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) {
                                         if (g == TaskGroup.TODAY) {
                                             (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
                                         } else {
-                                            t.due?.let { DuePill(it) { editing = t } }
-                                                ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { editing = t })
+                                            t.due?.let { DuePill(it) { rescheduling = t } }
+                                                ?: Text("＋ date", fontSize = 12.sp, color = Muted, modifier = Modifier.clickable { rescheduling = t })
                                         }
                                     }
+                                    } }
                                 }
                             }
                         }
@@ -268,6 +361,14 @@ fun TasksScreen(
                 }
             }
         }
+        }
+    }
+
+    rescheduling?.let { t ->
+        RescheduleSheet(t, tasks, cal.flatMap { it.events }, onMove = { d -> rescheduling = null; move(t, d) }, onDismiss = { rescheduling = null })
+    }
+    fitting?.let { g ->
+        FitTaskSheet(g, shown, onPick = { t -> fitting = null; move(t, g.start.toLocalDate()) }, onDismiss = { fitting = null })
     }
 
     editing?.let { t ->
@@ -275,9 +376,11 @@ fun TasksScreen(
             t, tagData,
             onSave = { text, due, rule, minutes -> editing = null; save(t, text, due, rule, minutes) },
             onRemove = { editing = null; remove(t) },
-            onDismiss = { editing = null }
+            onDismiss = { editing = null },
+            onBreakDown = { editing = null; breaking = t }
         )
     }
+    breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }
 }
 
 /** A group's bold title, its count bubble and a hairline to the edge. Overdue is red. */

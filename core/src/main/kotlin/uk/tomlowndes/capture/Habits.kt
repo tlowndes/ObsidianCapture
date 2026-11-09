@@ -82,11 +82,35 @@ data class HabitsNote(val all: List<Habit>, val days: Map<LocalDate, HabitDay>) 
         var d = if (met(h, day(today))) today else today.minusDays(1)
         var n = 0
         while (!d.isBefore(first)) {
-            if (h.due(d) && !h.resting(d)) { if (met(h, day(d))) n++ else break }
+            if (h.due(d) && !h.resting(d) && !frozen(h, d, today)) { if (met(h, day(d))) n++ else break }
             d = d.minusDays(1)
         }
         return n
     }
+
+    private fun missed(h: Habit, d: LocalDate, today: LocalDate) =
+        d.isBefore(today) && h.due(d) && !h.resting(d) && !met(h, day(d)) && days.keys.minOrNull()?.let { !d.isBefore(it) } == true
+
+    /**
+     * Streak freeze (build-queue O2): one a week, used on the first missed day of that week, so one bad day doesn't
+     * end a streak. A frozen day doesn't add to the streak either. Worked out from the log, nothing extra is written.
+     */
+    fun frozen(h: Habit, d: LocalDate, today: LocalDate): Boolean {
+        if (!missed(h, d, today)) return false
+        val mon = d.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        var e = mon
+        while (e.isBefore(d)) { if (missed(h, e, today)) return false; e = e.plusDays(1) }
+        return true
+    }
+
+    /** Freezes left this week for [h]: 1, or 0 once one has been used. */
+    fun freezesLeft(h: Habit, today: LocalDate): Int = if (week(today).any { frozen(h, it, today) }) 0 else 1
+
+    /** The habit (and its streak) a freeze saved most recently this week, for the Habits screen note. */
+    fun lastFreeze(today: LocalDate): Triple<Habit, LocalDate, Int>? =
+        active.filter { !it.counter }.mapNotNull { h ->
+            week(today).lastOrNull { frozen(h, it, today) }?.let { Triple(h, it, streak(h, today)) }
+        }.filter { it.third > 0 }.maxByOrNull { it.second }
 
     /** Monday to Sunday of the week holding [today]. */
     fun week(today: LocalDate): List<LocalDate> {

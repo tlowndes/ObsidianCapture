@@ -65,7 +65,7 @@ import java.util.Locale
  * note, it waits in [AppPrefs.jarvisFound] until Check and save. Nothing reaches the vault until Save.
  */
 @Composable
-fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpenSettings: () -> Unit) {
+fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan: () -> Unit = {}, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var mode by remember { mutableIntStateOf(prefs.captureMode.coerceIn(0, 2)) }
@@ -114,6 +114,11 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen
         pill()
         Box(Modifier.height(14.dp))
         QuickAdd(vault, link = mode == 1, snack = snack)
+        if (mode == 0) Text(
+            "📷 Scan a notebook page", color = Primary, fontSize = 14.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(CircleShape).border(1.dp, Outline, CircleShape)
+                .clickable(onClick = onScan).padding(vertical = 12.dp)
+        )
         Box(Modifier.height(16.dp))
     }
 }
@@ -276,6 +281,11 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     var busy by remember { mutableStateOf(false) }
     // Tags picked on the Tag row; ones typed as #word in the box count too.
     var picked by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Rapid log (paper-hybrid-v1): the kind chip, overridden by a mark typed at the start of the line.
+    var kindPick by remember { mutableStateOf(LogKind.TASK) }
+    val today0 = LocalDate.now()
+    val entry = if (link) null else RapidLog.parse(text, today0, kindPick)
+    val kind = entry?.kind ?: LogKind.TASK
     val tagData = rememberTagData(vault)
     // A link is saved as typed, so only the chips tag it.
     val typedTags = if (link) emptyList() else Tags.inText(text)
@@ -289,16 +299,35 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         }
     }
 
+    /** Notes and events go to the inbox note as one line each. */
+    fun submitLog(e: LogEntry) {
+        val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).appendInbox(listOf(RapidLog.inboxLine(e))) } }
+            busy = false
+            r.onSuccess {
+                history.add(0, Added(false, e.text, "${e.kind.mark} ${e.kind.label.replaceFirstChar { it.uppercase() }} · ${VaultWriter.INBOX}/Inbox"))
+                text = ""; picked = emptyList()
+                snack.showSnackbar(if (e.kind == LogKind.EVENT) "Event logged" else "Note logged")
+            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+        }
+    }
+
     fun submit() {
-        val value = text.trim()
+        if (busy) return
+        if (entry != null && !entry.kind.isTask) { if (entry.text.isNotBlank()) submitLog(entry); return }
+        // Typed date and estimate fill in what the chips left empty; the mark and those words come off the task.
+        val value = (entry?.text ?: text).trim()
         val uri = vault
         if (value.isEmpty() || busy) return
         if (uri == null) { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
         busy = true
         val wasRule = repeat
         // A repeating task needs a first date for the series to count from.
-        val wasDue = due ?: if (wasRule != null) LocalDate.now() else null
-        val wasMin = minutes
+        val wasDue = due ?: entry?.due ?: if (wasRule != null) LocalDate.now() else null
+        val wasMin = minutes ?: entry?.minutes
+        val star = if (entry?.kind == LogKind.PRIORITY) " ⏫" else ""
         val wasTags = picked.filter { it !in typedTags }
         val wasTyped = typedTags
         scope.launch {
@@ -307,7 +336,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
                     if (link) {
                         val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
                         ReadLater.save(ctx, uri, url, null, wasTags)
-                    } else { VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString()); true }
+                    } else { VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString()); true }
                 }
             }
             busy = false
@@ -317,22 +346,36 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
                     (if (link) (if (full) "Read later · full page" else "Read later · link only")
                     else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "") +
                         (wasRule?.let { " · ↻ $it" } ?: "")) + tagNote))
-                text = ""; due = null; minutes = null; repeat = null; picked = emptyList()
+                text = ""; due = null; minutes = null; repeat = null; picked = emptyList(); kindPick = LogKind.TASK
                 snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
             }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
     }
 
+    if (!link) KindChips(kind) { kindPick = it; text = RapidLog.mark(text).second }
     OutlinedTextField(
         value = text, onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-        placeholder = { Text(if (link) "Paste a link" else "What needs doing?") },
+        placeholder = { Text(if (link) "Paste a link" else when (kind) {
+            LogKind.NOTE -> "A thought, a quote, anything"
+            LogKind.EVENT -> "What happened, or what's on"
+            else -> "What needs doing? Try \"fri 15m\""
+        }) },
         minLines = if (link) 1 else 2,
         textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
         keyboardOptions = if (link) KeyboardOptions(keyboardType = KeyboardType.Uri) else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
         colors = fieldColors()
     )
-    if (!link) {
+    if (entry != null && text.isNotBlank()) {
+        val bits = listOfNotNull(
+            "${entry.kind.mark} ${entry.kind.label}",
+            entry.due?.takeIf { due == null }?.let { dueChip(it) },
+            entry.minutes?.takeIf { minutes == null }?.let { TaskRules.minutesLabel(it) },
+        ) + Tags.inText(text)
+        Text("→ " + bits.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Green,
+            modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+    }
+    if (!link && kind.isTask) {
         val today = LocalDate.now()
         val custom = due != null && due != today && due != today.plusDays(1)
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -347,7 +390,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     }
     TagRow(tagData, onTags, ::toggleTag)
     Text(
-        if (link) "Save link" else "Add task", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
+        if (link) "Save link" else when (kind) { LogKind.NOTE -> "Log note"; LogKind.EVENT -> "Log event"; else -> "Add task" }, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
         modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
             .background(if (text.isBlank() || busy) Primary.copy(alpha = 0.4f) else Primary)
             .clickable(enabled = text.isNotBlank() && !busy) { submit() }.padding(vertical = 14.dp)
@@ -362,7 +405,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (e.isLink) LinkTint else TaskTint), contentAlignment = Alignment.Center) {
-                        Text(if (e.isLink) "🔗" else "✓")
+                        Text(if (e.isLink) "🔗" else if (e.sub.startsWith("–")) "–" else if (e.sub.startsWith("○")) "○" else "✓")
                     }
                     Column {
                         Text(e.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
@@ -373,4 +416,22 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         }
     }
     if (picking) PickDateDialog(due, onPick = { due = it; picking = false }, onDismiss = { picking = false })
+}
+
+/** • task ○ event – note ★ priority: the rapid-log kind for the line in the box. */
+@Composable
+private fun KindChips(kind: LogKind, onPick: (LogKind) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LogKind.values().forEach { k ->
+            val on = k == kind
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Surface1)
+                    .border(1.dp, if (on) Primary else Outline, RoundedCornerShape(12.dp)).clickable { onPick(k) }.padding(vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(k.mark, fontSize = 17.sp, color = if (on) Primary else when (k) { LogKind.PRIORITY -> Amber; LogKind.EVENT -> Teal; else -> TextMain })
+                Text(k.label, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            }
+        }
+    }
 }

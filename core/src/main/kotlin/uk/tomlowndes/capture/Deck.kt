@@ -7,8 +7,13 @@ import java.time.LocalDate
 /** The cards Flight Deck can show on home, in their default order. */
 enum class HomeCard(val label: String) {
     NEXT_STEP("Next step"), WEATHER("Weather & travel"), TODAY("Today"), BILLS("Bills"), PROJECTS("Projects"),
-    TOP_TASKS("Top tasks"), HABITS("Habits"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs")
+    TOP_TASKS("Top tasks"), HABITS("Habits"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs"),
+    // Added in v1.16 (build queue). Plan today and Mood show near the top at their time of day while switched on.
+    PLAN("Plan today · Shut down"), MOOD("Mood at night"), ROUTINES("Routines"), HIGHLIGHTS("Daily highlights")
 }
+
+/** Cards that pop up at the top at their time of day rather than sitting in the order. */
+val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD)
 
 /** Card order and which cards are switched off, from Settings › Cards on home. */
 data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), val hidden: Set<HomeCard> = emptySet()) {

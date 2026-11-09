@@ -90,14 +90,17 @@ internal data class DeckData(
     val focusMin: Int = 0,
     val habits: HabitsNote? = null,
     val calendars: List<CalendarSource>? = null,
-    val jobs: List<Job> = emptyList()
+    val jobs: List<Job> = emptyList(),
+    val routines: List<Routine> = emptyList(),
+    val passages: List<Passage> = emptyList(),
 )
 
 @Composable
 fun DeckScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState,
     onOpenTab: (Tab) -> Unit, onOpenSub: (Sub) -> Unit, onStartFocus: (TaskItem, Int) -> Unit,
-    onOpenSearch: () -> Unit, onOpenSettings: () -> Unit
+    onOpenSearch: () -> Unit, onOpenArticle: (ReadRef) -> Unit = {}, onPlayRoutine: (String) -> Unit = {},
+    onOpenSettings: () -> Unit
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -148,7 +151,14 @@ fun DeckScreen(
                 focusMin = runCatching { FlightNotes.loadToday(appVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull(),
                 calendars = runCatching { CalendarConfig.load(appVault(ctx, uri)) }.getOrNull(),
-                jobs = runCatching { Jobs.list(appVault(ctx, uri)) }.getOrDefault(emptyList())
+                jobs = runCatching { Jobs.list(appVault(ctx, uri)) }.getOrDefault(emptyList()),
+                routines = runCatching { Routines.load(appVault(ctx, uri)) }.getOrDefault(emptyList()),
+                passages = runCatching {
+                    val store = ReadStore(ctx, uri)
+                    store.list().filter { it.read }.take(15).flatMap { a ->
+                        runCatching { store.load(a.ref) }.getOrNull()?.let { doc -> Highlights.passages(doc).map { Passage(it, doc.title, doc.ref) } }.orEmpty()
+                    }
+                }.getOrDefault(emptyList()),
             ).also { DeckCache.save(ctx, it) }
         }
     }
@@ -180,6 +190,24 @@ fun DeckScreen(
         }
     }
 
+    var breaking by remember { mutableStateOf<TaskItem?>(null) }
+    var seen by remember { mutableStateOf(prefs.highlightsSeen) }
+    var hl by remember { mutableIntStateOf(0) }
+    val todayPicks = remember(data.passages) { Highlights.pick(data.passages, LocalDate.now(), prefs.highlightsSeen) }
+    val nowDt = java.time.LocalDateTime.now()
+
+    fun setMood(n: Int) = changeHabits { Mood.set(it, n) }
+
+    fun keepPassage(p: Passage) {
+        val uri = vault ?: return
+        seen = seen + Highlights.key(p); prefs.highlightsSeen = seen
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { Highlights.keep(appVault(ctx, uri), p, LocalDate.now()) } }
+                .onSuccess { snack.showSnackbar("Kept in Highlights.md") }
+                .onFailure { snack.showSnackbar("Failed: ${it.message}") }
+        }
+    }
+
     val low = energy == Energy.LOW
     val maxMin = if (low) SHORT_MIN else null
     val next = Deck.nextStep(data.tasks, later, maxMin)
@@ -197,6 +225,17 @@ fun DeckScreen(
         }
         UpdateBanner()
         ServerCopyChip(onClick = onOpenSettings)
+        if (Migrate.due(data.tasks, LocalDate.now(), prefs.migratedMonth)) {
+            val n = Migrate.candidates(data.tasks, LocalDate.now()).size
+            RowCard("Migrate · $n from last month", "Start ›", accent = true) { onOpenSub(Sub.MIGRATE) }
+        }
+        if (HomeCard.PLAN !in data.layout.hidden) {
+            val today = LocalDate.now().toString()
+            val left = DayPlan.leftToday(data.tasks, LocalDate.now()).size
+            if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today) PlanPromptCard(false, left) { onOpenSub(Sub.PLAN) }
+            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today && left > 0) PlanPromptCard(true, left) { onOpenSub(Sub.PLAN) }
+        }
+        if (HomeCard.MOOD !in data.layout.hidden && nowDt.hour >= 18) data.habits?.let { MoodCard(it, LocalDate.now(), ::setMood) }
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.progress(LocalDate.now()),
@@ -205,10 +244,23 @@ fun DeckScreen(
 
         data.layout.visible(low).forEach { card ->
             when (card) {
-                HomeCard.NEXT_STEP -> NextStepCard(
-                    next, onStart = onStartFocus, onStuck = { onOpenSub(Sub.STUCK) },
-                    onLater = { t -> later = later + t.raw; prefs.laterToday = later }
-                )
+                HomeCard.NEXT_STEP -> {
+                    NextStepCard(
+                        next, onStart = onStartFocus, onStuck = { onOpenSub(Sub.STUCK) },
+                        onLater = { t -> later = later + t.raw; prefs.laterToday = later }
+                    )
+                    if (next != null && next.raw.isNotEmpty()) BreakItDownLink { breaking = next }
+                }
+                HomeCard.PLAN, HomeCard.MOOD -> {}
+                HomeCard.ROUTINES -> RoutinesCard(data.routines) { onPlayRoutine(it.name) }
+                HomeCard.HIGHLIGHTS -> todayPicks.filter { Highlights.key(it) !in seen }.let { left ->
+                    if (left.isNotEmpty()) {
+                        val i = hl % left.size
+                        HighlightsCard(left[i], i, left.size, onOpen = { onOpenArticle(left[i].ref) }, onKeep = { keepPassage(left[i]) }) {
+                            if (left.size > 1) hl++ else { seen = seen + Highlights.key(left[i]); prefs.highlightsSeen = seen }
+                        }
+                    }
+                }
                 HomeCard.PROJECTS -> data.project?.let { ProjectCard(it) { onOpenTab(Tab.PROJECTS) } }
                 HomeCard.TOP_TASKS -> if (top.isNotEmpty()) TopTasksCard(top, low, ::tick) { onOpenTab(Tab.TASKS) }
                 HomeCard.STUCK -> if (low && data.stuck.isNotEmpty()) StuckCard(data.stuck.take(3), onOpen = { onOpenSub(Sub.STUCK) }) { onStartFocus(TaskItem("", "${it.emoji} ${it.name}", null, null, ""), it.minutes) }
@@ -231,6 +283,7 @@ fun DeckScreen(
         }
         Box(Modifier.height(12.dp))
     }
+    breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
 }
 
 @Composable
@@ -407,11 +460,11 @@ private fun Pill(text: String, dot: Color, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DeckCard(border: Color = Outline, bg: Color = Surface1, modifier: Modifier = Modifier, content: @Composable () -> Unit) =
+internal fun DeckCard(border: Color = Outline, bg: Color = Surface1, modifier: Modifier = Modifier, content: @Composable () -> Unit) =
     ListCard(modifier, border, bg, content)
 
 @Composable
-private fun CardHead(title: String, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
+internal fun CardHead(title: String, trailing: String? = null, onTrailing: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 7.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
@@ -456,7 +509,7 @@ private fun NextStepCard(t: TaskItem?, onStart: (TaskItem, Int) -> Unit, onStuck
 }
 
 @Composable
-private fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Text(
         text, textAlign = TextAlign.Center, fontSize = 13.sp,
         fontWeight = if (primary) FontWeight.Bold else FontWeight.Normal,
@@ -579,7 +632,7 @@ private fun BillsCard(bills: List<Bill>, paying: Set<String>, onPaid: (Bill) -> 
 }
 
 @Composable
-private fun RowCard(title: String, trailing: String, accent: Boolean = false, onClick: () -> Unit) {
+internal fun RowCard(title: String, trailing: String, accent: Boolean = false, onClick: () -> Unit) {
     DeckCard(modifier = Modifier.clickable(onClick = onClick)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),

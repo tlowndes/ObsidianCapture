@@ -68,6 +68,14 @@ object Focus {
         kick(ctx)
     }
 
+    /** Adds [minutes] to the session, running or paused (the lock-screen +5 min). */
+    fun extend(ctx: Context, minutes: Int) {
+        val s = state(ctx) ?: return
+        val add = minutes * 60_000L
+        save(ctx, s.copy(totalMs = s.totalMs + add, endAt = s.endAt?.plus(add), remainingMs = s.remainingMs + add))
+        kick(ctx)
+    }
+
     /** Ends the session and returns it, for logging. */
     fun stop(ctx: Context): FocusState? {
         val s = state(ctx)
@@ -87,16 +95,60 @@ class FocusService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_MORE -> { Focus.extend(this, 5); return START_STICKY }
+            ACTION_DONE -> { finishFromLockScreen(); return START_NOT_STICKY }
+        }
         val s = Focus.state(this) ?: run { stopSelf(); return START_NOT_STICKY }
         channels()
         ServiceCompat.startForeground(this, ONGOING_ID, ongoing(s), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         handler.removeCallbacks(done)
         if (s.running) handler.postDelayed(done, s.remaining())
+        handler.removeCallbacks(tick)
+        if (s.running) handler.postDelayed(tick, TICK_MS)
         return START_STICKY
     }
 
+    /** Refreshes the progress bar while the timer runs. */
+    private val tick: Runnable = object : Runnable {
+        override fun run() {
+            val s = Focus.state(this@FocusService) ?: return
+            if (!s.running) return
+            getSystemService(NotificationManager::class.java).notify(ONGOING_ID, ongoing(s))
+            handler.postDelayed(this, TICK_MS)
+        }
+    }
+
+    /**
+     * Done on the lock screen: logs the session, ticks the task it was for, and clears the timer, all without
+     * opening the app.
+     */
+    private fun finishFromLockScreen() {
+        val s = Focus.stop(this)
+        handler.removeCallbacks(done); handler.removeCallbacks(tick)
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        val prefs = AppPrefs(this)
+        val uri = prefs.vault
+        if (s != null && uri != null) Thread {
+            runCatching {
+                val started = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(s.startedAt), java.time.ZoneId.systemDefault())
+                FlightNotes.logFocus(appVault(applicationContext, uri), FocusSession(started.withSecond(0).withNano(0), s.task, s.elapsedMinutes()))
+                if (s.raw != null && s.path != null) {
+                    VaultWriter(applicationContext, uri).completeTask(TaskItem(s.raw, s.task, TaskRules.due(s.raw), TaskRules.recurrence(s.raw), s.path), prefs.recurring)
+                }
+            }
+        }.start()
+        stopSelf()
+    }
+
+    private fun action(name: String, code: Int): PendingIntent = PendingIntent.getService(
+        this, code, Intent(this, FocusService::class.java).setAction(name),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
     override fun onDestroy() {
         handler.removeCallbacks(done)
+        handler.removeCallbacks(tick)
         super.onDestroy()
     }
 
@@ -106,11 +158,21 @@ class FocusService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
+    /**
+     * The ongoing notification (build-queue O3): shows on the lock screen with a progress bar, the time left, and
+     * +5 min and Done (which ticks the task), so you don't have to unlock to keep going.
+     */
     private fun ongoing(s: FocusState): Notification = NotificationCompat.Builder(this, ONGOING)
         .setSmallIcon(R.drawable.ic_notify)
         .setContentTitle(s.task)
-        .setContentText(if (s.running) "Focus" else "Paused · ${s.remaining() / 60_000} min left")
+        .setSubText("Focus · Flight Deck")
+        .setContentText(if (s.running) "of ${s.totalMs / 60_000} min" else "Paused · ${s.remaining() / 60_000} min left")
         .setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+        .setProgress(1000, (((s.totalMs - s.remaining()).toDouble() / s.totalMs.coerceAtLeast(1)) * 1000).toInt().coerceIn(0, 1000), false)
+        .addAction(0, "+5 min", action(ACTION_MORE, 31))
+        .addAction(0, if (s.raw != null) "Done ✓" else "Done", action(ACTION_DONE, 32))
         .setContentIntent(openApp())
         .apply {
             if (s.running) setUsesChronometer(true).setChronometerCountDown(true).setWhen(s.endAt!!).setShowWhen(true)
@@ -144,5 +206,8 @@ class FocusService : Service() {
         const val DONE = "focus_done"
         const val ONGOING_ID = 41
         const val DONE_ID = 42
+        const val ACTION_MORE = "uk.tomlowndes.capture.FOCUS_MORE"
+        const val ACTION_DONE = "uk.tomlowndes.capture.FOCUS_DONE"
+        const val TICK_MS = 30_000L
     }
 }

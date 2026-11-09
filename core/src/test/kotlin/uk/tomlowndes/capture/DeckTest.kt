@@ -64,7 +64,7 @@ class DeckTest {
     @Test fun `cards reorder and switch off`() {
         val l = DeckLayout().moved(9, 0).toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
-        assertEquals(9, l.onCount)
+        assertEquals(HomeCard.values().size - 1, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
     }
 
@@ -83,7 +83,9 @@ class DeckTest {
     @Test fun `a card added later is appended to a saved order`() {
         val json = "{\"cards\":[\"JOBS\",\"NEXT_STEP\"],\"hiddenCards\":[]}"
         val l = DeckConfig.layout(json)
-        assertEquals(listOf(HomeCard.JOBS, HomeCard.NEXT_STEP), l.order.take(2))
+        // The saved two keep their order; cards added since (v1.16's follow Jobs) slot in around them.
+        assertEquals(listOf(HomeCard.JOBS, HomeCard.NEXT_STEP), l.order.filter { it == HomeCard.JOBS || it == HomeCard.NEXT_STEP })
+        assertEquals(HomeCard.JOBS, l.order.first())
         assertEquals(HomeCard.values().size, l.order.size)
     }
 

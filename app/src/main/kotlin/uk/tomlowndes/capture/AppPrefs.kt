@@ -28,6 +28,37 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksFilter: String?
         get() = p.getString("tasks_filter", null)
         set(v) { p.edit().putString("tasks_filter", v).apply() }
+    /** Quiet projects the user chose to Keep, so the Vault's "Archive?" doesn't ask again. */
+    var paraKept: Set<String>
+        get() = p.getString("para_kept", "").orEmpty().split('\n').filter { it.isNotEmpty() }.toSet()
+        set(v) { p.edit().putString("para_kept", v.joinToString("\n")).apply() }
+    /** The month ("2026-11") the last Bullet Journal migration was done for. */
+    var migratedMonth: String?
+        get() = p.getString("migrated_month", null)
+        set(v) { p.edit().putString("migrated_month", v).apply() }
+    /** Tasks tab shows Upcoming (tasks + calendar, 7 days) instead of the List. */
+    var tasksUpcoming: Boolean
+        get() = p.getBoolean("tasks_upcoming", false)
+        set(v) { p.edit().putBoolean("tasks_upcoming", v).apply() }
+    /** Upcoming shows today as a timeline (Visual day) instead of the 7-day list. */
+    var upcomingDay: Boolean
+        get() = p.getBoolean("upcoming_day", false)
+        set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** The day Plan today was done ("2026-11-10"), and the day Shut down was. */
+    var plannedOn: String?
+        get() = p.getString("planned_on", null)
+        set(v) { p.edit().putString("planned_on", v).apply() }
+    var shutDownOn: String?
+        get() = p.getString("shut_down_on", null)
+        set(v) { p.edit().putString("shut_down_on", v).apply() }
+    /** Daily highlights: passages already kept or skipped (so they don't come back), and today's picks. */
+    var highlightsSeen: Set<String>
+        get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()
+        set(v) { p.edit().putString("highlights_seen", v.toList().takeLast(500).joinToString("\u0001")).apply() }
+    /** Swipe a task right to tick, left to reschedule or remove. */
+    var taskSwipe: Boolean
+        get() = p.getBoolean("task_swipe", true)
+        set(v) { p.edit().putBoolean("task_swipe", v).apply() }
 
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
