@@ -244,7 +244,8 @@ fun TasksScreen(
 
     val today = LocalDate.now()
     val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) }
-    val groups = TaskViews.groups(shown, today)
+    val nested = Subtasks.nest(shown, tasks)
+    val groups = TaskViews.groups(nested.top, today)
 
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
         Row(
@@ -343,6 +344,19 @@ fun TasksScreen(
                                         }
                                     }
                                     } }
+                                    // Its steps (Break it down), indented underneath.
+                                    nested.children[t].orEmpty().forEach { c ->
+                                        AnimatedVisibility(
+                                            c !in leaving, enter = EnterTransition.None,
+                                            exit = shrinkVertically(tween(300)) + fadeOut(tween(250))
+                                        ) {
+                                            key(c.raw) { Swiped(c) {
+                                                TaskRow(c, ticked = c in ticking || c in leaving, onTick = { tick(c) }, onOpen = { editing = c }, sub = true) {
+                                                    Deck.minutes(c)?.let { m -> StartPill(m) { onStartFocus(c, m) } }
+                                                }
+                                            } }
+                                        }
+                                    }
                                 }
                             }
                         }

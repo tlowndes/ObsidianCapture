@@ -145,7 +145,8 @@ internal fun TickBox(
  */
 @Composable
 internal fun TaskRow(
-    t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, trailing: @Composable RowScope.() -> Unit
+    t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, sub: Boolean = false,
+    trailing: @Composable RowScope.() -> Unit
 ) {
     val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
     val bg by animateColorAsState(if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
@@ -154,16 +155,20 @@ internal fun TaskRow(
     Row(
         Modifier.fillMaxWidth().background(bg)
             .drawBehind {
-                val inset = 12.dp.toPx()
-                drawRoundRect(edge, Offset(0f, inset), Size(3.dp.toPx(), size.height - inset * 2), CornerRadius(3.dp.toPx()))
+                // A subtask hangs off a thin guide line, indented under its task.
+                if (sub) drawRect(Outline, Offset(27.dp.toPx(), 0f), Size(1.5.dp.toPx(), size.height))
+                else {
+                    val inset = 12.dp.toPx()
+                    drawRoundRect(edge, Offset(0f, inset), Size(3.dp.toPx(), size.height - inset * 2), CornerRadius(3.dp.toPx()))
+                }
             }
-            .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = if (sub) 42.dp else 16.dp, end = 14.dp, top = if (sub) 8.dp else 12.dp, bottom = if (sub) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        TickBox(ticked, onTick, size = 24.dp, radius = 8.dp, outline = side)
+        TickBox(ticked, onTick, size = if (sub) 20.dp else 24.dp, radius = if (sub) 6.dp else 8.dp, outline = side)
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
             Text(
-                TaskViews.plainText(t), fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
             )
             val tags = TaskViews.tags(t).take(2)

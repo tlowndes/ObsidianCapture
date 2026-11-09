@@ -235,7 +235,7 @@ fun DeckScreen(
             if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today) PlanPromptCard(false, left) { onOpenSub(Sub.PLAN) }
             else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today && left > 0) PlanPromptCard(true, left) { onOpenSub(Sub.PLAN) }
         }
-        if (HomeCard.MOOD !in data.layout.hidden && nowDt.hour >= 18) data.habits?.let { MoodCard(it, LocalDate.now(), ::setMood) }
+        if (HomeCard.MOOD !in data.layout.hidden) data.habits?.takeIf { Mood.ask(it, LocalDate.now(), nowDt.hour) }?.let { MoodCard(it, LocalDate.now(), ::setMood) }
         Pills(
             Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
             data.habits?.progress(LocalDate.now()),
