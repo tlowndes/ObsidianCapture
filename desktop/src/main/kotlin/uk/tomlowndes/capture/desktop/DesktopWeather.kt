@@ -29,7 +29,7 @@ object DesktopWeather {
         val now = LocalDateTime.now()
         val cached = prefs.weatherJson
         val sameDay = cached != null && Instant.ofEpochMilli(prefs.weatherAt).atZone(ZoneId.systemDefault()).toLocalDate() == now.toLocalDate()
-        if (!force && sameDay && System.currentTimeMillis() - prefs.weatherAt < FRESH_MS) {
+        if (!force && sameDay && Weather.hasTomorrow(cached) && System.currentTimeMillis() - prefs.weatherAt < FRESH_MS) {
             return runCatching { Weather.summary(cached!!, now) }.getOrNull()
         }
         val fresh = runCatching { get(Weather.url(lat, lon)) }.getOrNull()

@@ -91,12 +91,15 @@ object Deck {
 
     fun isBill(t: TaskItem) = BILL.containsMatchIn(t.raw)
 
-    /** Dated tasks, earliest due first (so overdue first), leaving out bills, ones put off today and, if set, long ones. */
+    /**
+     * Open tasks in the Tasks tab's order: dated ones earliest due first (so overdue first), then undated ones as they
+     * sit in the vault. Leaves out bills, ones put off today and, if set, long ones.
+     */
     fun ranked(tasks: List<TaskItem>, skipped: Set<String> = emptySet(), maxMinutes: Int? = null): List<TaskItem> =
         tasks.asSequence()
-            .filter { it.due != null && !isBill(it) && it.raw !in skipped }
+            .filter { !isBill(it) && it.raw !in skipped }
             .filter { maxMinutes == null || (minutes(it) ?: Int.MAX_VALUE) <= maxMinutes }
-            .sortedBy { it.due }
+            .sortedBy { it.due ?: LocalDate.MAX }
             .toList()
 
     fun nextStep(tasks: List<TaskItem>, skipped: Set<String> = emptySet(), maxMinutes: Int? = null): TaskItem? =

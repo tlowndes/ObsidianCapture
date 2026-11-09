@@ -40,7 +40,7 @@ object WeatherFetch {
         val cachedJson = p(ctx).getString("json", null)
         val cachedAt = p(ctx).getLong("at", 0)
         val sameDay = cachedJson != null && java.time.Instant.ofEpochMilli(cachedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == now.toLocalDate()
-        if (!force && sameDay && System.currentTimeMillis() - cachedAt < FRESH_MS) {
+        if (!force && sameDay && Weather.hasTomorrow(cachedJson) && System.currentTimeMillis() - cachedAt < FRESH_MS) {
             return runCatching { Weather.summary(cachedJson!!, now) }.getOrNull()
         }
         val (lat, lon) = location(ctx) ?: return null

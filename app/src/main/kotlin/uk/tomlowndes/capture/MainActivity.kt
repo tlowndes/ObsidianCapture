@@ -166,6 +166,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var tasksNote by remember { mutableStateOf<String?>(null) }
     var vaultEditing by remember { mutableStateOf(false) }
     var unread by remember { mutableStateOf(0) }
+    var jobsOpen by remember { mutableStateOf(0) }
     val snack = remember { SnackbarHostState() }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
@@ -213,6 +214,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         val uri = vault ?: return@LaunchedEffect
         if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first } }
             .onSuccess { unread = it }
+        if (tab == Tab.VAULT) withContext(Dispatchers.IO) { runCatching { Jobs.list(appVault(ctx, uri)).count { !it.closed } } }
+            .onSuccess { jobsOpen = it }
     }
 
     val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null) || (tab == Tab.VAULT && vaultEditing)
@@ -220,7 +223,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            if (!hideNav) NavBar(if (sub == Sub.JOBS) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -246,7 +249,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true }
                 )
                 tab == Tab.VAULT -> VaultScreen(
-                    vault, prefs, snack, unread, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
+                    vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
+                    onOpenJobs = { sub = Sub.JOBS },
                     onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }
                 )
                 tab == Tab.PROJECTS -> Column(Modifier.fillMaxSize()) {

@@ -28,6 +28,10 @@ object Weather {
             "&hourly=temperature_2m,precipitation_probability,weather_code,cloud_cover" +
             "&daily=temperature_2m_max,temperature_2m_min,sunset,weather_code&timezone=auto&forecast_days=2"
 
+    /** True when a cached forecast has tomorrow in it. Older versions cached today only, which left the card on today after sunset. */
+    fun hasTomorrow(json: String?): Boolean =
+        json != null && runCatching { JSONObject(json).getJSONObject("daily").getJSONArray("sunset").length() > 1 }.getOrDefault(false)
+
     private data class Hour(val at: LocalDateTime, val rain: Int, val cloud: Int, val code: Int, val temp: Double?)
 
     private val HM = DateTimeFormatter.ofPattern("HH:mm")

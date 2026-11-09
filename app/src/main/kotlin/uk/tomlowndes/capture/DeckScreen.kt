@@ -215,7 +215,8 @@ fun DeckScreen(
                     else RowCard("Stuck? Pick one.", "Open ›", accent = true) { onOpenSub(Sub.STUCK) }
                 HomeCard.HABITS -> data.habits?.let { HabitsCard(it, ::changeHabits) { onOpenSub(Sub.HABITS) } }
                     ?: RowCard("Habits", "Open ›") { onOpenSub(Sub.HABITS) }
-                HomeCard.READ_LATER -> RowCard("Read it later", "${data.unread} ›") { onOpenTab(Tab.READ) }
+                // Read it later and Jobs live in Vault now (chips), not on the phone Deck.
+                HomeCard.READ_LATER, HomeCard.JOBS -> {}
                 // Weather, Today and Jobs arrive with their own steps.
                 HomeCard.BILLS -> TaskViews.billsDue(data.tasks, LocalDate.now()).takeIf { it.isNotEmpty() }?.let { bills ->
                     BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
@@ -225,10 +226,6 @@ fun DeckScreen(
                     val w = weather
                     if (w != null) WeatherCard(w, travel, showStrip) { showStrip = !showStrip; prefs.weatherStrip = showStrip }
                     else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
-                }
-                HomeCard.JOBS -> {
-                    val open = data.jobs.count { !it.closed }
-                    RowCard("Jobs", listOfNotNull("$open", Jobs.nextDate(data.jobs)?.let { shortDate(it) }).joinToString(" · ") + " ›") { onOpenSub(Sub.JOBS) }
                 }
             }
         }
