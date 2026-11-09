@@ -50,6 +50,7 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var review by remember { mutableStateOf<Review?>(null) }
+    var recap by remember { mutableStateOf<Recap?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var allDone by remember { mutableStateOf(false) }
     var dropSkipped by remember { mutableStateOf(false) }
@@ -60,7 +61,13 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         review = withContext(Dispatchers.IO) {
             runCatching {
                 val w = VaultWriter(ctx, uri)
-                WeeklyReview.build(WeeklyReview.done(appVault(ctx, uri), today), w.listTasks(), today)
+                val v = appVault(ctx, uri)
+                val done = WeeklyReview.done(v, today)
+                recap = runCatching {
+                    Recaps.build(done, FlightNotes.loadSince(v, today.minusDays(6)), runCatching { Habits.load(v) }.getOrNull(),
+                        runCatching { Jobs.list(v) }.getOrDefault(emptyList()), today)
+                }.getOrNull()
+                WeeklyReview.build(done, w.listTasks(), today)
             }.getOrNull()
         }
     }
@@ -85,6 +92,16 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(bottom = 12.dp)
         )
         val r = review ?: return@Column
+        recap?.let { rc ->
+            RecapCard(rc, onSave = {
+                val uri = vault ?: return@RecapCard
+                scope.launch {
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).putInboxNote(Recaps.noteName(rc), Recaps.note(rc)) } }
+                        .onSuccess { snack.showSnackbar("Saved to 01 - Inbox/${Recaps.noteName(rc)}") }
+                        .onFailure { snack.showSnackbar("Failed: ${it.message}") }
+                }
+            }, onShare = { runCatching { shareRecap(ctx, rc) }.onFailure { scope.launch { snack.showSnackbar("Couldn't share: ${it.message}") } } })
+        }
 
         GroupLabel("Done · ${r.done.size}")
         if (r.done.isNotEmpty()) ListCard(Modifier.padding(top = 6.dp)) {

@@ -40,6 +40,7 @@ internal fun EditTaskSheet(
     onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
+    onBreakDown: (() -> Unit)? = null,
 ) {
     var text by remember(t.raw) { mutableStateOf(t.text) }
     var due by remember(t.raw) { mutableStateOf(t.due) }
@@ -74,6 +75,11 @@ internal fun EditTaskSheet(
             }
             RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
             TagRow(tags, Tags.inText(text)) { tag -> text = Tags.toggle(text, tag) }
+            if (onBreakDown != null) Text(
+                "🌶 Break it down", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).background(PrimaryTint)
+                    .clickable(onClick = onBreakDown).padding(vertical = 10.dp)
+            )
             Text(
                 "Remove task", color = Warn, fontSize = 14.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).clickable(onClick = onRemove).padding(vertical = 8.dp)

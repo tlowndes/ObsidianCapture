@@ -64,7 +64,7 @@ class DeckTest {
     @Test fun `cards reorder and switch off`() {
         val l = DeckLayout().moved(9, 0).toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
-        assertEquals(9, l.onCount)
+        assertEquals(HomeCard.values().size - 1, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
     }
 

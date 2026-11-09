@@ -66,6 +66,7 @@ fun TasksScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, note: String? = null, onClearNote: () -> Unit = {},
     onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenTriage: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -87,6 +88,9 @@ fun TasksScreen(
     var upcoming by remember { mutableStateOf(prefs.tasksUpcoming) }
     val swipe = remember { prefs.taskSwipe }
     var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
+    var dayView by remember { mutableStateOf(prefs.upcomingDay) }
+    var billsOpen by remember { mutableStateOf(false) }
+    var breaking by remember { mutableStateOf<TaskItem?>(null) }
     var fitting by remember { mutableStateOf<AgendaItem.Gap?>(null) }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var sources by remember { mutableStateOf<List<CalendarSource>>(emptyList()) }
@@ -220,6 +224,17 @@ fun TasksScreen(
         }
     }
 
+    /** Visual day: gives [t] a time today (keeping its length), or clears it. */
+    fun setTime(t: TaskItem, time: java.time.LocalTime?) {
+        val uri = vault ?: return
+        val len = DayPlan.timeOf(t)?.let { java.time.Duration.between(it.start, it.end).toMinutes().toInt() } ?: DayPlan.minutes(t)
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).setTime(t, time, len) } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+        }
+    }
+
     /** A task row with the swipes: right ticks, left opens the reschedule sheet, further left removes. */
     @Composable
     fun Swiped(t: TaskItem, content: @Composable () -> Unit) = SwipeRow(
@@ -253,7 +268,15 @@ fun TasksScreen(
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
         )
         ServerCopyBanner(onClick = onOpenSettings)
+        // Triage (build-queue O1): once enough are overdue or undated, clear them one card at a time.
+        val triage = Triage.candidates(tasks, today).size
+        if (triage >= Triage.SHOW_FROM) Text(
+            "⚡ Triage $triage overdue or undated, one at a time ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(12.dp)).background(PrimaryTint)
+                .clickable(onClick = onOpenTriage).padding(horizontal = 14.dp, vertical = 9.dp)
+        )
         TasksViewSwitch(upcoming) { upcoming = it; prefs.tasksUpcoming = it }
+        if (upcoming) UpcomingModeSwitch(dayView) { dayView = it; prefs.upcomingDay = it }
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
@@ -277,12 +300,19 @@ fun TasksScreen(
                 { Text("≤ ${TaskViews.SHORT_MIN} min") })
         }
 
-        if (upcoming) {
+        if (upcoming && dayView) {
+            DayTimeline(shown, cal.flatMap { it.events }, sources.associate { it.id to hexColour(it.colour) }, now) { t, time -> setTime(t, time) }
+        } else if (upcoming) {
             val events = cal.flatMap { it.events }
+            val bills = TaskViews.billsMonth(tasks, ticked, today)
+            val billsTop: (@Composable () -> Unit)? = if (bills.empty) null else {
+                { BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }) { b -> complete(b.task) } }
+            }
             UpcomingList(
                 days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
                 colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
                 travel = travel, onFit = { fitting = it },
+                top = billsTop,
             ) { t, late ->
                 AnimatedVisibility(t !in leaving, enter = EnterTransition.None, exit = shrinkVertically(tween(300)) + fadeOut(tween(250))) {
                     Swiped(t) { AgendaTaskRow(t, late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) }
@@ -346,9 +376,11 @@ fun TasksScreen(
             t, tagData,
             onSave = { text, due, rule, minutes -> editing = null; save(t, text, due, rule, minutes) },
             onRemove = { editing = null; remove(t) },
-            onDismiss = { editing = null }
+            onDismiss = { editing = null },
+            onBreakDown = { editing = null; breaking = t }
         )
     }
+    breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }
 }
 
 /** A group's bold title, its count bubble and a hairline to the edge. Overdue is red. */

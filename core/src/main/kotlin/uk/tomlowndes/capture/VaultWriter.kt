@@ -118,6 +118,19 @@ class VaultWriter(
         edit(noteOf(t)) { TaskNote.replace(it, t.raw, WeeklyReview.cancelled(t.raw, today)) }
     }
 
+    /** Gives the task a time today (Visual day), or clears it for null. Returns the new line. */
+    fun setTime(t: TaskItem, start: java.time.LocalTime?, minutes: Int): String {
+        val updated = DayPlan.withTime(t.raw, start, minutes)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
+    /** Break it down: adds [steps] as indented subtasks under the task. */
+    fun addSubtasks(t: TaskItem, steps: List<Step>) {
+        if (steps.isEmpty()) return
+        edit(noteOf(t)) { Breakdown.insert(it, t.raw, steps) }
+    }
+
     /** Sets (or clears) the task's `⏱` estimate in place. Returns the new line. */
     fun setEstimate(t: TaskItem, minutes: Int?): String {
         val updated = TaskRules.withMinutes(t.raw, minutes)

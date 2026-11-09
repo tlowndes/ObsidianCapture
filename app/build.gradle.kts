@@ -14,7 +14,7 @@ android {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
+        versionCode = 16
         versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.

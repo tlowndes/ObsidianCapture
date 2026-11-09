@@ -78,12 +78,14 @@ internal fun TasksViewSwitch(upcoming: Boolean, onPick: (Boolean) -> Unit) {
 internal fun UpcomingList(
     days: List<AgendaDay>, next: CalEvent?, now: LocalDateTime, colours: Map<String, Color>, names: Map<String, String>,
     travel: TravelLine?, onFit: (AgendaItem.Gap) -> Unit,
+    top: (@Composable () -> Unit)? = null,
     taskRow: @Composable (TaskItem, late: Boolean) -> Unit,
 ) {
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val base = if (next != null) 2 else 1
+    val base = (if (next != null) 2 else 1) + (if (top != null) 1 else 0)
     LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
+        if (top != null) item(key = "top") { top() }
         if (next != null) item(key = "next") { NextUpCard(next, now) }
         item(key = "strip") {
             WeekStrip(days, colours) { i -> scope.launch { state.animateScrollToItem(base + i * 2) } }

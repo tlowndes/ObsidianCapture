@@ -6,6 +6,12 @@ import java.time.LocalDate
 /** A `#bill` task: `- [ ] Council tax £128 #bill 📅 2026-10-26`. */
 data class Bill(val task: TaskItem, val name: String, val amount: BigDecimal?)
 
+/** A month of bills: what's left to pay and what's been paid, with totals. */
+data class MonthBills(val unpaid: List<Bill>, val paid: List<Bill>, val left: BigDecimal, val paidTotal: BigDecimal, val dueThisWeek: BigDecimal) {
+    val empty get() = unpaid.isEmpty() && paid.isEmpty()
+    val all get() = (paid.map { it to true } + unpaid.map { it to false }).sortedBy { it.first.task.due }
+}
+
 /** The groups the Flight Deck Tasks tab shows, in order. Later also holds undated tasks. */
 enum class TaskGroup(val title: String) { OVERDUE("Overdue"), TODAY("Today"), WEEK("This week"), LATER("Later") }
 
@@ -77,6 +83,22 @@ object TaskViews {
         tasks.filter { Deck.isBill(it) && it.due != null && it.due.isBefore(today.plusDays(7)) }
             .sortedBy { it.due }
             .map { bill(it) }
+
+    /**
+     * Bills this month (build-queue O5) for the card at the top of Upcoming: open #bill tasks due this month (or late),
+     * and #bill tasks ticked this month as paid. Empty when the month has none.
+     */
+    fun billsMonth(open: List<TaskItem>, done: List<TickedTask>, today: LocalDate): MonthBills {
+        val first = today.withDayOfMonth(1)
+        val last = today.withDayOfMonth(today.lengthOfMonth())
+        val unpaid = open.filter { Deck.isBill(it) && it.due != null && !it.due.isAfter(last) }.sortedBy { it.due }.map { bill(it) }
+        val paid = done.filter { BILL_DONE.containsMatchIn(it.raw) && it.done != null && !it.done.isBefore(first) && !it.done.isAfter(last) }
+            .map { d -> bill(TaskItem(d.raw, d.text, TaskRules.due(d.raw) ?: d.done, null, d.path)) }.sortedBy { it.task.due }
+        val week = unpaid.filter { it.task.due!!.isBefore(today.plusDays(7)) }
+        return MonthBills(unpaid, paid, total(unpaid), total(paid), total(week))
+    }
+
+    private val BILL_DONE = Regex("(^|\\s)#bill(\\s|$)")
 
     fun total(bills: List<Bill>): BigDecimal = bills.mapNotNull { it.amount }.fold(BigDecimal.ZERO, BigDecimal::add)
 

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -138,13 +139,23 @@ fun HabitsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             }
         }
 
+        n.lastFreeze(today)?.let { (h, d, streak) ->
+            val whenText = if (d == today.minusDays(1)) "yesterday" else "on " + d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
+            Text(
+                "Missed ${h.name} $whenText. A freeze kept your $streak-day streak. ❄ 0 left until Monday.",
+                fontSize = 13.sp, color = TextMain, lineHeight = 18.sp,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(FreezeTint)
+                    .border(1.dp, FreezeEdge, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+
         if (n.active.isNotEmpty()) {
-            GroupLabel("This week")
+            GroupLabel("This week · one freeze a week ❄")
             ListCard(Modifier.padding(top = 6.dp)) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val week = n.week(today)
                     WeekRow("", week.map { null }, labels = listOf("M", "T", "W", "T", "F", "S", "S"))
-                    n.active.forEach { h -> WeekRow(h.name, week.map { d -> if (!h.due(d) || d.isAfter(today)) null else n.met(h, n.day(d)) }) }
+                    n.active.forEach { h -> WeekRow(h.name, week.map { d -> if (!h.due(d) || d.isAfter(today)) null else n.met(h, n.day(d)) }, frozen = week.map { n.frozen(h, it, today) }) }
                 }
             }
         }
@@ -158,9 +169,12 @@ fun HabitsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     }
 }
 
-/** One row of the week grid. A null day (not due, or still to come) shows as a small ring. */
+private val FreezeTint = androidx.compose.ui.graphics.Color(0xFF13283A)
+private val FreezeEdge = androidx.compose.ui.graphics.Color(0xFF2F6E9A)
+
+/** One row of the week grid. A frozen day (streak freeze) shows as a blue ❄ square. A null day (not due, or still to come) shows as a small ring. */
 @Composable
-private fun WeekRow(name: String, filled: List<Boolean?>, labels: List<String>? = null) {
+private fun WeekRow(name: String, filled: List<Boolean?>, labels: List<String>? = null, frozen: List<Boolean> = emptyList()) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(name, fontSize = 12.sp, color = Muted, maxLines = 1, modifier = Modifier.width(110.dp))
         filled.forEachIndexed { i, f ->
@@ -168,6 +182,9 @@ private fun WeekRow(name: String, filled: List<Boolean?>, labels: List<String>? 
                 when {
                     labels != null -> Text(labels[i], fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, textAlign = TextAlign.Center)
                     f == null -> Box(Modifier.size(4.dp).clip(CircleShape).background(Outline))
+                    frozen.getOrNull(i) == true -> Box(Modifier.size(14.dp).clip(RoundedCornerShape(4.dp)).background(FreezeEdge), contentAlignment = Alignment.Center) {
+                        Text("❄", fontSize = 9.sp, color = TextMain)
+                    }
                     else -> Box(Modifier.size(10.dp).clip(CircleShape).background(if (f) Purple else Surface2).then(
                         if (f) Modifier else Modifier.border(1.dp, Outline, CircleShape)))
                 }

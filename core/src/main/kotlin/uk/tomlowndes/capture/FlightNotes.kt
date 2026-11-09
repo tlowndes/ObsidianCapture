@@ -111,6 +111,10 @@ object FlightNotes {
 
     fun loadStuck(v: Vault): Map<StuckLength, List<StuckItem>> { ensure(v); return stuck(VaultIo.read(v, STUCK)) }
 
+    /** Focus sessions on or after [since], for the weekly recap. */
+    fun loadSince(v: Vault, since: LocalDate): List<FocusSession> =
+        sessions(v.read(FOCUS_LOG).orEmpty()).filter { !it.at.toLocalDate().isBefore(since) }
+
     fun loadToday(v: Vault, today: LocalDate = LocalDate.now()): List<FocusSession> =
         today(sessions(v.read(FOCUS_LOG).orEmpty()), today)
 }

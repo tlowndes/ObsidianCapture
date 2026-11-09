@@ -40,6 +40,21 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksUpcoming: Boolean
         get() = p.getBoolean("tasks_upcoming", false)
         set(v) { p.edit().putBoolean("tasks_upcoming", v).apply() }
+    /** Upcoming shows today as a timeline (Visual day) instead of the 7-day list. */
+    var upcomingDay: Boolean
+        get() = p.getBoolean("upcoming_day", false)
+        set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** The day Plan today was done ("2026-11-10"), and the day Shut down was. */
+    var plannedOn: String?
+        get() = p.getString("planned_on", null)
+        set(v) { p.edit().putString("planned_on", v).apply() }
+    var shutDownOn: String?
+        get() = p.getString("shut_down_on", null)
+        set(v) { p.edit().putString("shut_down_on", v).apply() }
+    /** Daily highlights: passages already kept or skipped (so they don't come back), and today's picks. */
+    var highlightsSeen: Set<String>
+        get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()
+        set(v) { p.edit().putString("highlights_seen", v.toList().takeLast(500).joinToString("\u0001")).apply() }
     /** Swipe a task right to tick, left to reschedule or remove. */
     var taskSwipe: Boolean
         get() = p.getBoolean("task_swipe", true)
