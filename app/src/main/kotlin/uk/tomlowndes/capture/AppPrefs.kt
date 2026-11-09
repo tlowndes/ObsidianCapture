@@ -28,6 +28,14 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksFilter: String?
         get() = p.getString("tasks_filter", null)
         set(v) { p.edit().putString("tasks_filter", v).apply() }
+    /** Tasks tab shows Upcoming (tasks + calendar, 7 days) instead of the List. */
+    var tasksUpcoming: Boolean
+        get() = p.getBoolean("tasks_upcoming", false)
+        set(v) { p.edit().putBoolean("tasks_upcoming", v).apply() }
+    /** Swipe a task right to tick, left to reschedule or remove. */
+    var taskSwipe: Boolean
+        get() = p.getBoolean("task_swipe", true)
+        set(v) { p.edit().putBoolean("task_swipe", v).apply() }
 
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean

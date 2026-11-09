@@ -159,6 +159,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         }
         SettingRow("Weekly review") { TextButton(onClick = onOpenWeekly) { Text("›", color = Muted) } }
         SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
+        var swipe by remember { mutableStateOf(prefs.taskSwipe) }
+        SettingRow("Swipe on tasks", "Right to tick, left to reschedule, further left to remove") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Jarvis")
