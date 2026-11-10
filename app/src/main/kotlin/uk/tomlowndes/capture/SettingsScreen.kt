@@ -2,6 +2,19 @@ package uk.tomlowndes.capture
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -142,37 +155,79 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
+    var page by remember { mutableStateOf(SettingsPage.MAIN) }
+    BackHandler(enabled = page != SettingsPage.MAIN) { page = SettingsPage.MAIN }
+    val back = { page = SettingsPage.MAIN }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
+        when (page) {
+        // Settings tidy-v1: one short main page, the technical bits on their own pages.
+        SettingsPage.MAIN -> {
         ScreenTitle("Settings")
-
-        RemindersSection(prefs)
-
-        Text("", Modifier.padding(top = 8.dp))
-        CalendarSection(vault)
-
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Flight Deck")
-        SettingRow("Cards on home") {
-            TextButton(onClick = onOpenCards) {
-                Text(cardsOn?.let { "${it.onCount} of ${HomeCard.values().size} ›" } ?: "›", color = Muted)
+        // Vault status on top: can the app see your notes?
+        val vaultName = vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()).substringAfterLast(':').substringAfterLast('/') }
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Color(0xFF1C2744), Surface1)))
+                .border(1.dp, NextBorder, RoundedCornerShape(18.dp)).clickable(onClick = onPickVault).padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(Modifier.size(9.dp).clip(CircleShape).background(if (vault != null) Green else Amber))
+            Column(Modifier.weight(1f)) {
+                Text(vaultName ?: "No vault chosen", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (vault != null) "vault folder" else "tap to pick your vault", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
             }
+            Text(if (vault == null) "Choose ›" else "Change ›", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted)
         }
-        SettingRow("Weekly review") { TextButton(onClick = onOpenWeekly) { Text("›", color = Muted) } }
-        SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
+
+        SectionLabel("Everyday")
+        RowsCard(listOf(
+            { QuietRow("🔔", "Reminders", "›", onClick = { page = SettingsPage.REMINDERS }) },
+            { QuietRow("📅", "Calendars", "›", onClick = { page = SettingsPage.CALENDARS }) },
+            { QuietRow("◎", "Cards on home", (cardsOn?.let { "${it.onCount} of ${HomeCard.values().size} " } ?: "") + "›", onClick = onOpenCards) },
+            { QuietRow("✅", "Habits", "›", onClick = onOpenHabits) },
+            { QuietRow("🗓", "Weekly review", "›", onClick = onOpenWeekly) },
+        ))
+
+        SectionLabel("Tasks")
         var swipe by remember { mutableStateOf(prefs.taskSwipe) }
-        SettingRow("Swipe on tasks", "Right to tick, left to reschedule, further left to remove") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
-        SettingRow("Subtasks open", "Tap \"3 steps\" on a task") {
-            TextButton(onClick = { inline = !inline; prefs.subtasksInline = inline }) {
-                Text(if (inline) "Under the task ▾" else "In a sheet ▾", color = Muted, fontSize = 13.sp)
+        DeckCard {
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                SettingRow("Swipe on tasks", "Right ticks, left reschedules") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
+            }
+            HorizontalDivider(color = Outline)
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                SettingRow("Subtasks open") {
+                    Segmented(listOf("Under task", "Sheet"), if (inline) 0 else 1) { inline = it == 0; prefs.subtasksInline = inline }
+                }
             }
         }
 
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Jarvis")
+        SectionLabel("Connections")
+        val jvSet = prefs.jarvisAddress.isNotBlank() && (jvMasked != null || prefs.jarvisAddress.trim() == "demo")
+        val latest = AppUpdate.release?.version ?: prefs.updateLatest?.removePrefix("v")
+        val newer = latest != null && Updater.isNewer(latest, installed)
+        RowsCard(listOf(
+            { QuietRow("🎙", "Jarvis", (if (jvSet) "● set up" else "not set up") + " ›", if (jvSet) Green else Muted, onClick = { page = SettingsPage.JARVIS }) },
+            { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },
+            { QuietRow("🗄", "Vault & sync", (if (prefs.serverFallback) "fallback on" else "fallback off") + " ›", onClick = { page = SettingsPage.VAULT }) },
+        ))
+        Box(Modifier.height(20.dp))
+        }
+
+        SettingsPage.REMINDERS -> {
+            SubPageTitle("Reminders", back)
+            RemindersSection(prefs)
+        }
+        SettingsPage.CALENDARS -> {
+            SubPageTitle("Calendars", back)
+            CalendarSection(vault)
+        }
+        SettingsPage.JARVIS -> {
+            SubPageTitle("Jarvis", back)
         PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
         Text(
-            "Tailscale name of the Oracle box, like oracle.tail1234.ts.net:8443. Only works with Tailscale on. Type demo to try the tab without a server.",
+            "Tailscale name of the Oracle box (Tailscale on). Type demo to try without a server.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
         )
         SettingRow("Token", jvMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
@@ -196,14 +251,15 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
         }
 
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Updates")
+        }
+        SettingsPage.UPDATES -> {
+            SubPageTitle("Updates", back)
         SettingRow("Check for updates on launch") { AppSwitch(checks) { checks = it; prefs.updateChecks = it } }
         SettingRow("GitHub token", ghMasked ?: "Not set") {
             TextButton(onClick = { editingGh = true }) { Text(if (ghMasked == null) "Add" else "Change", color = Primary) }
         }
         Text(
-            "Read-only, for the private repo. Also shows GitHub activity on projects. Make one at github.com › Settings › Developer settings › Fine-grained tokens: repo ObsidianCapture only, Contents read-only.",
+            "Read-only: ObsidianCapture repo only, Contents read.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
         )
         TextButton(onClick = {
@@ -233,8 +289,9 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }
         }, modifier = Modifier.fillMaxWidth()) { Text("Check now", color = Primary) }
 
-        Text("", Modifier.padding(top = 8.dp))
-        GroupLabel("Vault")
+        }
+        SettingsPage.VAULT -> {
+            SubPageTitle("Vault & sync", back)
         SettingRow("Vault folder", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
             TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
         }
@@ -282,7 +339,35 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                 Text(it, fontSize = 12.sp, color = Muted, modifier = Modifier.padding(vertical = 2.dp))
             }
         }
+        }
+        }
         Text("", Modifier.padding(bottom = 16.dp))
+    }
+}
+
+private enum class SettingsPage { MAIN, REMINDERS, CALENDARS, JARVIS, UPDATES, VAULT }
+
+/** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
+@Composable
+private fun SubPageTitle(title: String, onBack: () -> Unit) {
+    Text(
+        "‹ $title", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 12.dp, bottom = 12.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(vertical = 4.dp)
+    )
+}
+
+/** A small two-or-more option switch, like "Under task | Sheet". */
+@Composable
+private fun Segmented(options: List<String>, selected: Int, onPick: (Int) -> Unit) {
+    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Surface2).padding(2.dp)) {
+        options.forEachIndexed { i, o ->
+            val on = i == selected
+            Text(
+                o, fontSize = 12.sp, color = if (on) Primary else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) PrimaryTint else Color.Transparent)
+                    .clickable { onPick(i) }.padding(horizontal = 9.dp, vertical = 4.dp)
+            )
+        }
     }
 }
 
