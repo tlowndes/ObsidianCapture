@@ -29,7 +29,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarDuration
@@ -95,6 +98,7 @@ internal data class DeckData(
     val passages: List<Passage> = emptyList(),
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeckScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState,
@@ -212,83 +216,162 @@ fun DeckScreen(
     val maxMin = if (low) SHORT_MIN else null
     val next = Deck.nextStep(data.tasks, later, maxMin)
     val top = Deck.topTasks(data.tasks, if (energy == Energy.HIGH) 3 else 2, later, maxMin)
+    val hidden = data.layout.hidden
+    val today = LocalDate.now()
 
+    // The Now line (tidy-v1): one waiting prompt at a time, "+N" steps through the rest.
+    var nowIdx by remember { mutableIntStateOf(0) }
+    val nowItems = buildList {
+        if (!vaultOk) add(NowItem.Line("⚠ Vault not found", "Pick folder ›", warn = true, onClick = onOpenSettings))
+        if (HomeCard.PLAN !in hidden) {
+            val left = DayPlan.leftToday(data.tasks, today).size
+            if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today.toString())
+                add(NowItem.Line("☀️ Plan today · pick up to ${DayPlan.PICK_MAX}", "Plan ›") { onOpenSub(Sub.PLAN) })
+            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && left > 0)
+                add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
+        }
+        if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
+        if (Migrate.due(data.tasks, today, prefs.migratedMonth)) {
+            val n = Migrate.candidates(data.tasks, today).size
+            add(NowItem.Line("Migrate · $n from last month", "Start ›") { onOpenSub(Sub.MIGRATE) })
+        }
+    }
+
+    var habitsOpen by remember { mutableStateOf(false) }
+    var routinesOpen by remember { mutableStateOf(false) }
+    var highlightOpen by remember { mutableStateOf(false) }
+    val leftPassages = todayPicks.filter { Highlights.key(it) !in seen }
+    var pulling by remember { mutableStateOf(false) }
+    LaunchedEffect(data) { pulling = false }
+
+    PullToRefreshBox(isRefreshing = pulling, onRefresh = { pulling = true; refresh++ }, modifier = Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-        DeckHeader(energy, onOpenSearch = onOpenSearch, onRefresh = { refresh++ }, onOpenSettings = onOpenSettings)
-        EnergyChip(energy) { energy = it; prefs.energy = it }
-        if (!vaultOk) {
-            Text(
-                "⚠ Vault not found · Pick folder ›", color = Amber, fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(14.dp)).background(AmberTint)
-                    .clickable(onClick = onOpenSettings).padding(horizontal = 14.dp, vertical = 10.dp)
-            )
+        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings)
+        SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
+            EnergyChip(energy) { energy = it; prefs.energy = it }
         }
         UpdateBanner()
         ServerCopyChip(onClick = onOpenSettings)
-        if (Migrate.due(data.tasks, LocalDate.now(), prefs.migratedMonth)) {
-            val n = Migrate.candidates(data.tasks, LocalDate.now()).size
-            RowCard("Migrate · $n from last month", "Start ›", accent = true) { onOpenSub(Sub.MIGRATE) }
-        }
-        if (HomeCard.PLAN !in data.layout.hidden) {
-            val today = LocalDate.now().toString()
-            val left = DayPlan.leftToday(data.tasks, LocalDate.now()).size
-            if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today) PlanPromptCard(false, left) { onOpenSub(Sub.PLAN) }
-            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today && left > 0) PlanPromptCard(true, left) { onOpenSub(Sub.PLAN) }
-        }
-        if (HomeCard.MOOD !in data.layout.hidden && nowDt.hour >= 18) data.habits?.let { MoodCard(it, LocalDate.now(), ::setMood) }
-        Pills(
-            Deck.dueCount(data.tasks, LocalDate.now()), data.focusMin,
-            data.habits?.progress(LocalDate.now()),
-            onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) }, onHabits = { onOpenSub(Sub.HABITS) }
-        )
+        NowLine(nowItems, nowIdx) { nowIdx++ }
 
+        if (HomeCard.NEXT_STEP !in hidden) {
+            val meta = next?.let { t -> listOfNotNull(firstTag(t), t.due?.let { duePhrase(it) }, Deck.minutes(t)?.let { TaskRules.minutesLabel(it) }).joinToString(" · ") }.orEmpty()
+            NextStepHero(
+                next, meta, onStart = onStartFocus,
+                onLater = { t -> later = later + t.raw; prefs.laterToday = later },
+                onSplit = { breaking = it }, onStuck = { onOpenSub(Sub.STUCK) }
+            )
+        }
+        StatPills(
+            Deck.dueCount(data.tasks, today), data.focusMin, data.habits?.progress(today),
+            onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) },
+            onHabits = { if (data.habits != null && HomeCard.HABITS !in hidden) habitsOpen = true else onOpenSub(Sub.HABITS) }
+        )
+        // Low energy keeps the Stuck? list near the top.
+        if (low && HomeCard.STUCK !in hidden && data.stuck.isNotEmpty()) {
+            Box(Modifier.height(12.dp))
+            StuckCard(data.stuck.take(3), onOpen = { onOpenSub(Sub.STUCK) }) { onStartFocus(TaskItem("", "${it.emoji} ${it.name}", null, null, ""), it.minutes) }
+        }
+
+        val todayGroup = setOf(HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS)
+        var todayDone = false
         data.layout.visible(low).forEach { card ->
             when (card) {
-                HomeCard.NEXT_STEP -> {
-                    NextStepCard(
-                        next, onStart = onStartFocus, onStuck = { onOpenSub(Sub.STUCK) },
-                        onLater = { t -> later = later + t.raw; prefs.laterToday = later }
-                    )
-                    if (next != null && next.raw.isNotEmpty()) BreakItDownLink { breaking = next }
+                HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS -> if (!todayDone) {
+                    todayDone = true
+                    val w = weather
+                    val rows = mutableListOf<@Composable () -> Unit>()
+                    if (HomeCard.WEATHER !in hidden) {
+                        if (w != null && !showStrip) rows.add {
+                            QuietRow(
+                                w.parts.firstOrNull()?.icon ?: "⛅", "${w.high}° / ${w.low}° · ${w.headline}",
+                                if (w.tomorrow) "tomorrow ▾" else "▾", onClick = { showStrip = true; prefs.weatherStrip = true }
+                            )
+                        }
+                        else if (w == null && !canLocate) rows.add {
+                            QuietRow("📍", "Weather", "Allow location ›", Primary, onClick = { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
+                        }
+                        travel?.let { tr ->
+                            val hm = DateTimeFormatter.ofPattern("HH:mm")
+                            rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
+                        }
+                    }
+                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings))
+                    if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
+                        rows.add {
+                            val paid = b.task.raw in paying
+                            QuietRow(
+                                null, b.name, listOfNotNull(b.amount?.let { TaskViews.money(it) }, b.task.due?.let { dueLabel(it) }).joinToString(" · "),
+                                rightColour = if (paid) Muted else Amber, textColour = if (paid) Muted else TextMain, strike = paid,
+                                lead = { TickBox(done = paid, onClick = { if (!paid) { paying = paying + b.task.raw; tick(b.task) } }) }
+                            )
+                        }
+                    }
+                    val expanded = HomeCard.WEATHER !in hidden && w != null && showStrip
+                    if (rows.isNotEmpty() || expanded) SectionLabel("Today")
+                    if (expanded) {
+                        WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
+                        if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
+                    }
+                    RowsCard(rows)
                 }
-                HomeCard.PLAN, HomeCard.MOOD -> {}
-                HomeCard.ROUTINES -> RoutinesCard(data.routines) { onPlayRoutine(it.name) }
-                HomeCard.HIGHLIGHTS -> todayPicks.filter { Highlights.key(it) !in seen }.let { left ->
-                    if (left.isNotEmpty()) {
-                        val i = hl % left.size
-                        HighlightsCard(left[i], i, left.size, onOpen = { onOpenArticle(left[i].ref) }, onKeep = { keepPassage(left[i]) }) {
-                            if (left.size > 1) hl++ else { seen = seen + Highlights.key(left[i]); prefs.highlightsSeen = seen }
+                HomeCard.TOP_TASKS -> if (top.isNotEmpty()) {
+                    SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
+                    DeckCard {
+                        top.forEachIndexed { i, t ->
+                            if (i > 0) HorizontalDivider(color = Outline)
+                            TaskLine(t, edge = false, onTick = { tick(t) }) { t.due?.let { DuePill(it) } }
                         }
                     }
                 }
-                HomeCard.PROJECTS -> data.project?.let { ProjectCard(it) { onOpenTab(Tab.PROJECTS) } }
-                HomeCard.TOP_TASKS -> if (top.isNotEmpty()) TopTasksCard(top, low, ::tick) { onOpenTab(Tab.TASKS) }
-                HomeCard.STUCK -> if (low && data.stuck.isNotEmpty()) StuckCard(data.stuck.take(3), onOpen = { onOpenSub(Sub.STUCK) }) { onStartFocus(TaskItem("", "${it.emoji} ${it.name}", null, null, ""), it.minutes) }
-                    else RowCard("Stuck? Pick one.", "Open ›", accent = true) { onOpenSub(Sub.STUCK) }
-                HomeCard.HABITS -> data.habits?.let { HabitsCard(it, ::changeHabits) { onOpenSub(Sub.HABITS) } }
-                    ?: RowCard("Habits", "Open ›") { onOpenSub(Sub.HABITS) }
-                // Read it later and Jobs live in Vault now (chips), not on the phone Deck.
-                HomeCard.READ_LATER, HomeCard.JOBS -> {}
-                // Weather, Today and Jobs arrive with their own steps.
-                HomeCard.BILLS -> TaskViews.billsDue(data.tasks, LocalDate.now()).takeIf { it.isNotEmpty() }?.let { bills ->
-                    BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
-                }
-                HomeCard.TODAY -> data.calendars?.let { sources -> TodayCard(sources, cal, onConnect = onOpenSettings) }
-                HomeCard.WEATHER -> {
-                    val w = weather
-                    if (w != null) WeatherCard(w, travel, showStrip) { showStrip = !showStrip; prefs.weatherStrip = showStrip }
-                    else if (!canLocate) RowCard("📍 Weather", "Allow location ›") { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
-                }
+                else -> {}
             }
         }
-        Box(Modifier.height(12.dp))
+        // Routines, Projects and Highlights as small tiles.
+        val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
+        val showProject = HomeCard.PROJECTS !in hidden && data.project != null
+        val showHighlight = HomeCard.HIGHLIGHTS !in hidden && leftPassages.isNotEmpty()
+        if (showRoutines || showProject || showHighlight) {
+            SectionLabel("More")
+            TileRow {
+                if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
+                    data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
+                }
+                if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
+                if (showHighlight) Tile("✨", "Highlight", "${leftPassages.size} today") { highlightOpen = true }
+            }
+        }
+        Box(Modifier.height(16.dp))
+    }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
+    if (habitsOpen) data.habits?.let { n ->
+        DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
+    }
+    if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
+    if (highlightOpen) {
+        if (leftPassages.isEmpty()) highlightOpen = false
+        else DeckSheet({ highlightOpen = false }) {
+            val i = hl % leftPassages.size
+            val p = leftPassages[i]
+            HighlightsCard(p, i, leftPassages.size, onOpen = { highlightOpen = false; onOpenArticle(p.ref) }, onKeep = { keepPassage(p) }) {
+                if (leftPassages.size > 1) hl++ else { seen = seen + Highlights.key(p); prefs.highlightsSeen = seen }
+            }
+        }
+    }
+}
+
+/** A bottom sheet holding one of the Deck's cards. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeckSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Bg) {
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { content() }
+    }
 }
 
 @Composable
-private fun DeckHeader(energy: Energy, onOpenSearch: () -> Unit, onRefresh: () -> Unit, onOpenSettings: () -> Unit) {
-    val today = LocalDate.now()
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
@@ -296,27 +379,15 @@ private fun DeckHeader(energy: Energy, onOpenSearch: () -> Unit, onRefresh: () -
         Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
         Row {
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
-            IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, "Refresh", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }
         }
     }
-    Text(
-        buildAnnotatedString {
-            append("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER")
-            if (energy == Energy.LOW) {
-                append(" · ")
-                withStyle(SpanStyle(color = Amber)) { append("energy low") }
-            }
-        },
-        color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
-    )
 }
 
 @Composable
 private fun EnergyChip(selected: Energy, onSelect: (Energy) -> Unit) {
     Row(
-        Modifier.padding(bottom = 12.dp).clip(CircleShape).background(Surface1)
+        Modifier.clip(CircleShape).background(Surface1)
             .border(1.dp, Outline, CircleShape).padding(2.dp)
     ) {
         Energy.values().forEach { e ->
@@ -332,56 +403,6 @@ private fun EnergyChip(selected: Energy, onSelect: (Energy) -> Unit) {
                     e.label, color = fg, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun Pills(due: Int, focusMin: Int, habits: Pair<Int, Int>?, onTasks: () -> Unit, onFocus: () -> Unit, onHabits: () -> Unit) {
-    Row(Modifier.padding(bottom = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Pill("Tasks due $due", Amber, onTasks)
-        Pill("Focus today ${focusMin}m", Green, onFocus)
-        Pill(habits?.let { (done, total) -> "Habits $done/$total" } ?: "Habits", Purple, onHabits)
-    }
-}
-
-/** Today (Proton): today's events, the current one highlighted. Hidden when there are none. */
-@Composable
-private fun TodayCard(sources: List<CalendarSource>, cache: List<CalendarCache>, onConnect: () -> Unit) {
-    if (sources.isEmpty()) { RowCard("📅 Calendar", "Connect ›", onClick = onConnect); return }
-    val on = sources.filter { it.enabled }.map { it.id }.toSet()
-    val mine = cache.filter { it.id in on }
-    val today = LocalDate.now()
-    val now = java.time.LocalDateTime.now()
-    val events = mine.flatMap { it.events }.filter { it.on(today) }.sortedWith(compareBy({ !it.allDay }, { it.start }))
-    val broken = mine.any { !it.ok }
-    if (events.isEmpty() && !broken) return
-    val synced = mine.maxOfOrNull { it.syncedAt } ?: 0L
-    DeckCard {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 7.dp),
-            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Today", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            if (broken) Text("Reconnect ›", fontSize = 12.sp, color = Amber, modifier = Modifier.clickable(onClick = onConnect))
-            else Text("Proton", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
-        }
-        val colours = sources.associate { it.id to hexColour(it.colour) }
-        events.forEach { e ->
-            HorizontalDivider(color = Outline)
-            val current = e.isNow(now)
-            Row(
-                Modifier.fillMaxWidth().background(if (current && !broken) PrimaryTint else Color.Transparent).padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(colours[e.calendarId] ?: Primary))
-                Text(
-                    if (e.allDay) "all day" else "${e.start.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))}–${e.end.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))}",
-                    fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (current && !broken) Primary else Muted
-                )
-                Text(e.title, fontSize = 13.5.sp, color = if (broken) Muted else TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (broken && synced > 0) Text(clockOf(synced), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
             }
         }
     }
@@ -448,18 +469,6 @@ private fun StuckCard(items: List<StuckItem>, onOpen: () -> Unit, onStart: (Stuc
 }
 
 @Composable
-private fun Pill(text: String, dot: Color, onClick: () -> Unit) {
-    Row(
-        Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
-        Text(text, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-    }
-}
-
-@Composable
 internal fun DeckCard(border: Color = Outline, bg: Color = Surface1, modifier: Modifier = Modifier, content: @Composable () -> Unit) =
     ListCard(modifier, border, bg, content)
 
@@ -487,28 +496,6 @@ private fun duePhrase(d: LocalDate, today: LocalDate = LocalDate.now()) = when {
 }
 
 @Composable
-private fun NextStepCard(t: TaskItem?, onStart: (TaskItem, Int) -> Unit, onStuck: () -> Unit, onLater: (TaskItem) -> Unit) {
-    DeckCard(border = NextBorder, bg = NextBg) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text("NEXT STEP", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Primary)
-            if (t == null) {
-                Text("✓ All clear", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-                DeckButton("Stuck? Pick one.", primary = true, modifier = Modifier.fillMaxWidth(), onClick = onStuck)
-                return@Column
-            }
-            Text(t.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-            val mins = Deck.minutes(t)
-            val meta = listOfNotNull(firstTag(t), t.due?.let { duePhrase(it) }, mins?.let { "about $it min" }).joinToString(" · ")
-            Text(meta, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DeckButton("Start ${mins ?: SHORT_MIN} min", primary = true, modifier = Modifier.weight(1f)) { onStart(t, mins ?: SHORT_MIN) }
-                DeckButton("Later", primary = false, modifier = Modifier.weight(1f)) { onLater(t) }
-            }
-        }
-    }
-}
-
-@Composable
 internal fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Text(
         text, textAlign = TextAlign.Center, fontSize = 13.sp,
@@ -518,49 +505,6 @@ internal fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Mod
             .then(if (primary) Modifier.background(Primary) else Modifier.border(1.dp, Outline, CircleShape))
             .clickable(onClick = onClick).padding(vertical = 9.dp)
     )
-}
-
-@Composable
-private fun ProjectCard(p: IdeaSummary, onOpen: () -> Unit) {
-    DeckCard(modifier = Modifier.clickable(onClick = onOpen)) {
-        CardHead("Projects")
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(end = 14.dp, bottom = 10.dp, top = 2.dp)) {
-            Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp))
-                .background(if (p.area == "work") WorkEdge else PersonalEdge))
-            Column(Modifier.padding(start = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(p.title, fontSize = 13.5.sp)
-                    p.type?.let { TypeTag(it) }
-                }
-                p.next?.let { Text("Next: $it", fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TypeTag(type: String) {
-    val (bg, fg) = when (type) {
-        "claude" -> TagTint to Purple
-        "concept" -> TaskTint to Green
-        "idea" -> AmberTint to Amber
-        else -> Surface2 to Muted
-    }
-    Text(
-        type, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = fg,
-        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(7.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp)
-    )
-}
-
-@Composable
-private fun TopTasksCard(tasks: List<TaskItem>, low: Boolean, onTick: (TaskItem) -> Unit, onAll: () -> Unit) {
-    DeckCard {
-        CardHead("Top tasks", if (low) "under $SHORT_MIN min ›" else "All tasks ›", onAll)
-        tasks.forEach { t ->
-            HorizontalDivider(color = Outline)
-            TaskLine(t, edge = false, onTick = { onTick(t) }) { t.due?.let { DuePill(it) } }
-        }
-    }
 }
 
 /** Habits on home: a bar and press button per counter, today's ticks with streaks. "All ›" opens the full Habits screen. */
@@ -602,30 +546,6 @@ private fun HabitsCard(n: HabitsNote, onChange: ((HabitDay) -> HabitDay) -> Unit
                     Text(h.label, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
                     if (streak > 0) Text("🔥 $streak", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BillsCard(bills: List<Bill>, paying: Set<String>, onPaid: (Bill) -> Unit) {
-    val open = bills.filter { it.task.raw !in paying }
-    DeckCard {
-        CardHead("Bills", "next 7 days · ${TaskViews.money(TaskViews.total(open))}")
-        bills.forEach { b ->
-            val paid = b.task.raw in paying
-            HorizontalDivider(color = Outline)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                TickBox(done = paid, onClick = { if (!paid) onPaid(b) })
-                Text(
-                    b.name, fontSize = 13.5.sp, color = if (paid) Muted else TextMain, modifier = Modifier.weight(1f),
-                    textDecoration = if (paid) TextDecoration.LineThrough else null
-                )
-                b.amount?.let { Text(TaskViews.money(it), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (paid) Muted else TextMain) }
-                b.task.due?.let { DuePill(it) }
             }
         }
     }

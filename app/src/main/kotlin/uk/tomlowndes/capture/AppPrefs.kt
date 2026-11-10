@@ -55,6 +55,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var highlightsSeen: Set<String>
         get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()
         set(v) { p.edit().putString("highlights_seen", v.toList().takeLast(500).joinToString("\u0001")).apply() }
+    /** Subtasks pop out under their task in place (true) or in a sheet (false). */
+    var subtasksInline: Boolean
+        get() = p.getBoolean("subtasks_inline", true)
+        set(v) { p.edit().putBoolean("subtasks_inline", v).apply() }
     /** Swipe a task right to tick, left to reschedule or remove. */
     var taskSwipe: Boolean
         get() = p.getBoolean("task_swipe", true)

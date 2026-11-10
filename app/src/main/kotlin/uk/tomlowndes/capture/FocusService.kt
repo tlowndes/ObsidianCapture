@@ -197,12 +197,19 @@ class FocusService : Service() {
 
     private fun channels() {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(ONGOING, "Focus timer", NotificationManager.IMPORTANCE_LOW))
+        // Low-importance ("silent") notifications are hidden on many lock screens, so the timer uses a default
+        // channel with no sound or vibration. The old low channel is removed.
+        nm.deleteNotificationChannel(OLD_ONGOING)
+        nm.createNotificationChannel(NotificationChannel(ONGOING, "Focus timer", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            setSound(null, null); enableVibration(false); setShowBadge(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        })
         nm.createNotificationChannel(NotificationChannel(DONE, "Focus finished", NotificationManager.IMPORTANCE_HIGH))
     }
 
     private companion object {
-        const val ONGOING = "focus"
+        const val OLD_ONGOING = "focus"
+        const val ONGOING = "focus_timer"
         const val DONE = "focus_done"
         const val ONGOING_ID = 41
         const val DONE_ID = 42

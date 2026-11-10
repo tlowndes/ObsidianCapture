@@ -145,7 +145,9 @@ internal fun TickBox(
  */
 @Composable
 internal fun TaskRow(
-    t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, trailing: @Composable RowScope.() -> Unit
+    t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, sub: Boolean = false,
+    steps: Int = 0, stepsOpen: Boolean = false, onSteps: () -> Unit = {},
+    trailing: @Composable RowScope.() -> Unit
 ) {
     val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
     val bg by animateColorAsState(if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
@@ -154,21 +156,25 @@ internal fun TaskRow(
     Row(
         Modifier.fillMaxWidth().background(bg)
             .drawBehind {
-                val inset = 12.dp.toPx()
-                drawRoundRect(edge, Offset(0f, inset), Size(3.dp.toPx(), size.height - inset * 2), CornerRadius(3.dp.toPx()))
+                // A subtask hangs off a thin guide line, indented under its task.
+                if (sub) drawRect(Outline, Offset(27.dp.toPx(), 0f), Size(1.5.dp.toPx(), size.height))
+                else {
+                    val inset = 12.dp.toPx()
+                    drawRoundRect(edge, Offset(0f, inset), Size(3.dp.toPx(), size.height - inset * 2), CornerRadius(3.dp.toPx()))
+                }
             }
-            .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = if (sub) 42.dp else 16.dp, end = 14.dp, top = if (sub) 8.dp else 12.dp, bottom = if (sub) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        TickBox(ticked, onTick, size = 24.dp, radius = 8.dp, outline = side)
+        TickBox(ticked, onTick, size = if (sub) 20.dp else 24.dp, radius = if (sub) 6.dp else 8.dp, outline = side)
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
             Text(
-                TaskViews.plainText(t), fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
             )
             val tags = TaskViews.tags(t).take(2)
             val mins = Deck.minutes(t)
-            if (tags.isNotEmpty() || mins != null || t.recurrence != null) Row(
+            if (tags.isNotEmpty() || mins != null || t.recurrence != null || steps > 0) Row(
                 Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -181,6 +187,12 @@ internal fun TaskRow(
                     )
                 }
                 mins?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                // Subtasks pop out from here (subtasks-popout-v1): folded in place or in a sheet, per Settings.
+                if (steps > 0) Text(
+                    "$steps step${if (steps > 1) "s" else ""} ${if (stepsOpen) "▴" else "▾"}",
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary, maxLines = 1,
+                    modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable(onClick = onSteps).padding(horizontal = 8.dp, vertical = 1.dp)
+                )
                 t.recurrence?.let {
                     Text("↻ $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +53,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -109,16 +114,13 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Capture", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+            Text("Capture", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, modifier = Modifier.weight(1f))
+            // Scan a notebook page (paper-hybrid) as an icon, tidy-v1.
+            Text("📷", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable(onClick = onScan).padding(8.dp))
         }
         pill()
         Box(Modifier.height(14.dp))
         QuickAdd(vault, link = mode == 1, snack = snack)
-        if (mode == 0) Text(
-            "📷 Scan a notebook page", color = Primary, fontSize = 14.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(CircleShape).border(1.dp, Outline, CircleShape)
-                .clickable(onClick = onScan).padding(vertical = 12.dp)
-        )
         Box(Modifier.height(16.dp))
     }
 }
@@ -267,7 +269,21 @@ private fun SortedRow(work: Boolean, text: String, tag: String?, trailing: Strin
 
 private data class Added(val isLink: Boolean, val text: String, val sub: String)
 
+private enum class CaptureSheet { KIND, DATE, TIME, REPEAT, TAGS }
+
+/** A small chip along the bottom of the capture box; [on] when it holds a value. */
+@Composable
+private fun ToolChip(label: String, on: Boolean, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 12.5.sp, maxLines = 1, color = if (on) Primary else Muted,
+        modifier = Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent)
+            .border(1.dp, if (on) Primary else Outline, CircleShape).clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    )
+}
+
 /** Task and Read later, as Capture had them before Flight Deck: one field, due chips for tasks, Just added. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     val ctx = LocalContext.current
@@ -278,6 +294,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
     var minutes by remember { mutableStateOf<Int?>(null) }
     var repeat by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf<CaptureSheet?>(null) }
     var busy by remember { mutableStateOf(false) }
     // Tags picked on the Tag row; ones typed as #word in the box count too.
     var picked by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -352,20 +369,47 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
         }
     }
 
-    if (!link) KindChips(kind) { kindPick = it; text = RapidLog.mark(text).second }
-    OutlinedTextField(
-        value = text, onValueChange = { text = it },
-        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-        placeholder = { Text(if (link) "Paste a link" else when (kind) {
-            LogKind.NOTE -> "A thought, a quote, anything"
-            LogKind.EVENT -> "What happened, or what's on"
-            else -> "What needs doing? Try \"fri 15m\""
-        }) },
-        minLines = if (link) 1 else 2,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
-        keyboardOptions = if (link) KeyboardOptions(keyboardType = KeyboardType.Uri) else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-        colors = fieldColors()
-    )
+    // The text box is the hero (tidy-v1): kind, date, time, repeat and tags sit as chips along its bottom edge.
+    val canSend = text.isNotBlank() && !busy
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surface1)
+            .border(1.5.dp, if (text.isNotBlank()) Primary else Outline, RoundedCornerShape(20.dp))
+            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 10.dp)
+    ) {
+        OutlinedTextField(
+            value = text, onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(if (link) "Paste a link" else when (kind) {
+                LogKind.NOTE -> "A thought, a quote, anything"
+                LogKind.EVENT -> "What happened, or what's on"
+                else -> "What needs doing? Try \"fri 15m\""
+            }) },
+            minLines = if (link) 1 else 3,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+            keyboardOptions = if (link) KeyboardOptions(keyboardType = KeyboardType.Uri) else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, cursorColor = Primary
+            )
+        )
+        HorizontalDivider(color = Outline, modifier = Modifier.padding(start = 10.dp, bottom = 10.dp))
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!link) ToolChip("${kind.mark} ${kind.label.replaceFirstChar { it.uppercase() }}", kind != LogKind.TASK) { sheet = CaptureSheet.KIND }
+                if (!link && kind.isTask) {
+                    ToolChip(due?.let { dueLabel(it) } ?: "Date", due != null) { sheet = CaptureSheet.DATE }
+                    ToolChip(minutes?.let { "⏱ " + TaskRules.minutesLabel(it) } ?: "⏱", minutes != null) { sheet = CaptureSheet.TIME }
+                    ToolChip(if (repeat != null) "↻ on" else "↻", repeat != null) { sheet = CaptureSheet.REPEAT }
+                }
+                ToolChip(if (onTags.isEmpty()) "#" else onTags.joinToString(" ") { Tags.label(it) }, onTags.isNotEmpty()) { sheet = CaptureSheet.TAGS }
+            }
+            Box(
+                Modifier.padding(start = 8.dp).size(38.dp).clip(CircleShape).background(if (canSend) Primary else Primary.copy(alpha = 0.35f))
+                    .clickable(enabled = canSend) { submit() },
+                contentAlignment = Alignment.Center
+            ) { Text("↑", color = OnPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        }
+    }
     if (entry != null && text.isNotBlank()) {
         val bits = listOfNotNull(
             "${entry.kind.mark} ${entry.kind.label}",
@@ -373,35 +417,42 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
             entry.minutes?.takeIf { minutes == null }?.let { TaskRules.minutesLabel(it) },
         ) + Tags.inText(text)
         Text("→ " + bits.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Green,
-            modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+            modifier = Modifier.padding(top = 8.dp, start = 4.dp))
     }
-    if (!link && kind.isTask) {
-        val today = LocalDate.now()
-        val custom = due != null && due != today && due != today.plusDays(1)
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AppChip(due == today, { due = if (due == today) null else today }, { Text("Today") })
-            AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) }, { Text("Tomorrow") })
-            AppChip(custom, { picking = true }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
+    if (sheet != null) ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Bg) {
+        Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
+            when (sheet) {
+                CaptureSheet.KIND -> KindChips(kind) { kindPick = it; text = RapidLog.mark(text).second; sheet = null }
+                CaptureSheet.DATE -> {
+                    val today = LocalDate.now()
+                    val custom = due != null && due != today && due != today.plusDays(1)
+                    Text("Due", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppChip(due == today, { due = if (due == today) null else today; sheet = null }, { Text("Today") })
+                        AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1); sheet = null }, { Text("Tomorrow") })
+                        AppChip(custom, { picking = true; sheet = null }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
+                    }
+                }
+                CaptureSheet.TIME -> {
+                    Text("How long?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m; sheet = null }, { Text(TaskRules.minutesLabel(m)) }) }
+                    }
+                }
+                CaptureSheet.REPEAT -> RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
+                CaptureSheet.TAGS -> TagRow(tagData, onTags, ::toggleTag)
+                null -> {}
+            }
         }
-        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
-        }
-        RepeatPicker(repeat, due) { repeat = it }
     }
-    TagRow(tagData, onTags, ::toggleTag)
-    Text(
-        if (link) "Save link" else when (kind) { LogKind.NOTE -> "Log note"; LogKind.EVENT -> "Log event"; else -> "Add task" }, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = OnPrimary,
-        modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape)
-            .background(if (text.isBlank() || busy) Primary.copy(alpha = 0.4f) else Primary)
-            .clickable(enabled = text.isNotBlank() && !busy) { submit() }.padding(vertical = 14.dp)
-    )
     if (history.isNotEmpty()) {
         Box(Modifier.height(16.dp))
         GroupLabel("Just added")
-        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            history.take(5).forEach { e ->
+        Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(16.dp))) {
+            history.take(5).forEachIndexed { i, e ->
+                if (i > 0) HorizontalDivider(color = Outline)
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).padding(12.dp),
+                    Modifier.fillMaxWidth().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (e.isLink) LinkTint else TaskTint), contentAlignment = Alignment.Center) {
