@@ -180,9 +180,18 @@ object SlipRender {
 
         fun calendar(s: SlipContent) {
             val n = s.allDay.size + s.events.size
+            val next = s.nextAllDay.size + s.nextEvents.size
             heading("Calendar", if (n == 0) "clear" else "$n event" + if (n == 1) "" else "s")
             gap(6f)
-            s.allDay.forEach { e ->
+            if (next > 0) { gap(2f); dayLabel("TODAY", s.date) }
+            events(s.allDay, s.events)
+            if (n == 0) { text("Nothing in the calendar today.", paint(BODY)); gap(8f) }
+            if (next > 0) { gap(8f); dayLabel("TOMORROW", s.date.plusDays(1)); events(s.nextAllDay, s.nextEvents) }
+            if (s.show.month) { gap(6f); month(s.date) }
+        }
+
+        fun events(allDay: List<SlipEvent>, timed: List<SlipEvent>) {
+            allDay.forEach { e ->
                 val top = y
                 gap(8f)
                 text("ALL DAY · " + e.title, paint(SMALL + 1), M + 12f, inner - 24f)
@@ -191,7 +200,7 @@ object SlipRender {
                 gap(10f)
             }
             val tw = 108f
-            s.events.forEach { e ->
+            timed.forEach { e ->
                 val top = y
                 c.drawText(e.start ?: "", M.toFloat(), top + BODY, paint(BODY, monoBold))
                 y = top
@@ -200,8 +209,6 @@ object SlipRender {
                 if (sub.isNotEmpty()) text(sub, paint(SMALL - 1), M + tw, inner - tw)
                 gap(12f)
             }
-            if (n == 0) { text("Nothing in the calendar today.", paint(BODY)); gap(8f) }
-            if (s.show.month) { gap(6f); month(s.date) }
         }
 
         fun month(d: LocalDate) {

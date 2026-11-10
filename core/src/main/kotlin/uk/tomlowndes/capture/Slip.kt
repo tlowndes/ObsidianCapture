@@ -15,6 +15,7 @@ data class SlipOptions(
     val tomorrow: Boolean = true,
     val blank: Boolean = true,
     val sudoku: Boolean = true,
+    val tomorrowEvents: Boolean = true,
 )
 
 /** One to-do on the slip. [late] is the date it was due when that's before today. */
@@ -33,6 +34,8 @@ data class SlipContent(
     val sudoku: String?,
     /** The choices it was built with, for the parts that aren't lists (month grid, blank lines). */
     val show: SlipOptions = SlipOptions(),
+    /** Tomorrow's calendar, shown under today's. */
+    val nextAllDay: List<SlipEvent> = emptyList(), val nextEvents: List<SlipEvent> = emptyList(),
 )
 
 /** The Daily Slip: a till-roll printout of today's weather, calendar and to-dos, for a pocket thermal printer. */
@@ -48,11 +51,15 @@ object Slip {
     ): SlipContent {
         // Quick Task can come back from both the note and the vault scan: keep one of each.
         val tasks = all.distinctBy { Tags.strip(it.text).lowercase() to it.due }
-        val todays = events.filter { it.on(date) }
-        val allDay = todays.filter { it.allDay }.map { SlipEvent(it.title, null, null, it.location) }
-        val timed = todays.filter { !it.allDay }.sortedBy { it.start }.map {
-            SlipEvent(it.title, if (it.start.toLocalDate() == date) it.start.format(HM) else "…", it.end.format(HM), it.location)
+        fun day(d: LocalDate): Pair<List<SlipEvent>, List<SlipEvent>> {
+            val on = events.filter { it.on(d) }
+            return on.filter { it.allDay }.map { SlipEvent(it.title, null, null, it.location) } to
+                on.filter { !it.allDay }.sortedBy { it.start }.map {
+                    SlipEvent(it.title, if (it.start.toLocalDate() == d) it.start.format(HM) else "…", it.end.format(HM), it.location)
+                }
         }
+        val (allDay, timed) = day(date)
+        val (nextAllDay, nextTimed) = if (o.calendar && o.tomorrowEvents) day(date.plusDays(1)) else emptyList<SlipEvent>() to emptyList()
         fun slip(t: TaskItem, late: Boolean = false) = SlipTask(
             Tags.strip(t.text), Tags.inText(t.text).filter { it != "#task" }, if (late) t.due else null
         )
@@ -68,6 +75,7 @@ object Slip {
             if (o.todo && o.tomorrow) tomorrow else emptyList(),
             if (o.sudoku) Sudoku.forDay(date) else null,
             o,
+            nextAllDay, nextTimed,
         )
     }
 

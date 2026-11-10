@@ -46,6 +46,9 @@ class SlipTest {
         assertEquals(listOf("Bin day"), s.allDay.map { it.title })
         assertEquals(listOf("09:30", "12:30"), s.events.map { it.start })
         assertEquals("Dishoom", s.events[1].place)
+        assertEquals(listOf("Tomorrow's thing"), s.nextEvents.map { it.title })
+        assertEquals("09:00", s.nextEvents[0].start)
+        assertTrue(Slip.build(day, emptyList(), ev, null, SlipOptions(tomorrowEvents = false)).nextEvents.isEmpty())
     }
 
     @Test fun switchedOffSectionsAreEmpty() {

@@ -63,11 +63,13 @@ private object SlipPrefs {
         SlipOptions(
             it.getBoolean("weather", true), it.getBoolean("calendar", true), it.getBoolean("month", true),
             it.getBoolean("todo", true), it.getBoolean("tomorrow", true), it.getBoolean("blank", true), it.getBoolean("sudoku", true),
+            it.getBoolean("tomorrowEvents", true),
         )
     }
     fun save(ctx: Context, o: SlipOptions) = p(ctx).edit()
         .putBoolean("weather", o.weather).putBoolean("calendar", o.calendar).putBoolean("month", o.month)
         .putBoolean("todo", o.todo).putBoolean("tomorrow", o.tomorrow).putBoolean("blank", o.blank).putBoolean("sudoku", o.sudoku)
+        .putBoolean("tomorrowEvents", o.tomorrowEvents)
         .apply()
 }
 
@@ -143,8 +145,11 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         GroupLabel("On the slip")
         SettingRow("Weather", sources?.weather?.let { if (it.tomorrow) "Tomorrow's forecast (it's after sunset)" else it.headline }
             ?: "No forecast yet: allow location on the Deck") { AppSwitch(opts.weather) { set(opts.copy(weather = it)) } }
-        SettingRow("Calendar", "Today's Proton events") { AppSwitch(opts.calendar) { set(opts.copy(calendar = it)) } }
-        if (opts.calendar) SettingRow("Month grid", "This month with today marked") { AppSwitch(opts.month) { set(opts.copy(month = it)) } }
+        SettingRow("Calendar", "Your Proton events") { AppSwitch(opts.calendar) { set(opts.copy(calendar = it)) } }
+        if (opts.calendar) {
+            SettingRow("Tomorrow's events") { AppSwitch(opts.tomorrowEvents) { set(opts.copy(tomorrowEvents = it)) } }
+            SettingRow("Month grid", "This month with today marked") { AppSwitch(opts.month) { set(opts.copy(month = it)) } }
+        }
         SettingRow("To-dos", "Overdue and due today") { AppSwitch(opts.todo) { set(opts.copy(todo = it)) } }
         if (opts.todo) {
             SettingRow("Tomorrow's to-dos") { AppSwitch(opts.tomorrow) { set(opts.copy(tomorrow = it)) } }
