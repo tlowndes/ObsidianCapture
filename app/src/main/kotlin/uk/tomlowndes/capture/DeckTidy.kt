@@ -100,7 +100,7 @@ internal fun NextStepHero(
         }
         Text(t.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, lineHeight = 25.sp, modifier = Modifier.padding(top = 6.dp, bottom = 4.dp))
         if (meta.isNotEmpty()) Text(meta, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted)
-        val mins = Deck.minutes(t) ?: SHORT_MIN
+        val mins = Deck.minutes(t) ?: TaskViews.SHORT_MIN
         Row(Modifier.fillMaxWidth().padding(top = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             HeroButton("▶ Start ${mins}m", primary = true) { onStart(t, mins) }
             HeroButton("Later") { onLater(t) }
