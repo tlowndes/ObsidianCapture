@@ -210,21 +210,17 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisSpeed: Float
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
-    /** The last exchange, shown until you talk again: heard, reply, epoch millis. */
-    var jarvisLast: Triple<String, String, Long>?
-        get() = p.getString("jarvis_last_reply", null)?.let {
-            Triple(p.getString("jarvis_last_heard", "").orEmpty(), it, p.getLong("jarvis_last_at", 0))
-        }
-        set(v) {
-            p.edit().apply {
-                if (v == null) { remove("jarvis_last_heard"); remove("jarvis_last_reply"); remove("jarvis_last_at") }
-                else { putString("jarvis_last_heard", v.first); putString("jarvis_last_reply", v.second); putLong("jarvis_last_at", v.third) }
-            }.apply()
-        }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
         set(v) { p.edit().putString("jarvis_seen_done", v.takeLast(50).joinToString("\u0001")).apply() }
+    /** The chat with [worker]: its id (sent as "chat") and the messages kept on the phone. */
+    fun jarvisChat(worker: String): Jarvis.Chat = Jarvis.chatFromJson(p.getString("jarvis_chat_$worker", null))
+
+    fun setJarvisChat(worker: String, chat: Jarvis.Chat) {
+        p.edit().putString("jarvis_chat_$worker", Jarvis.chatToJson(chat))
+            .remove("jarvis_last_heard").remove("jarvis_last_reply").remove("jarvis_last_at").apply()
+    }
 
     fun draft(key: String): String = p.getString("draft_$key", "") ?: ""
     fun setDraft(key: String, text: String) {

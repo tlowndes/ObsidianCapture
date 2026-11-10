@@ -186,6 +186,38 @@ class JarvisTest {
         assertTrue(Jarvis.demoReply("jarvis", 40.0).sorted != null)
     }
 
+    @Test fun `the chat id goes with voice and text`() {
+        val bodies = mutableListOf<String>()
+        val (s, url) = server { h -> bodies += String(h.body); 200 to """{"transcript":"","reply":"ok"}""".toByteArray() }
+        val rec = File.createTempFile("rec", ".ogg")
+        try {
+            Jarvis.send(url, "t", rec, "jarvis", chat = "c-1")
+            Jarvis.sendText(url, "t", "hi", "jarvis", chat = "c-1")
+            Jarvis.sendText(url, "t", "hi", "jarvis")
+            assertTrue(bodies[0].contains("name=\"chat\"\r\n\r\nc-1\r\n"))
+            assertEquals("c-1", org.json.JSONObject(bodies[1]).getString("chat"))
+            assertFalse(org.json.JSONObject(bodies[2]).has("chat"))
+        } finally {
+            s.stop(0); rec.delete()
+        }
+    }
+
+    @Test fun `a chat survives the round trip and a broken one starts afresh`() {
+        val c = Jarvis.Chat("abc", listOf(
+            Jarvis.ChatMsg(true, "How's the vault?", 1L, spoken = true),
+            Jarvis.ChatMsg(false, "Good shape.", 2L, audio = "jarvis-2.ogg"),
+            Jarvis.ChatMsg(true, "Move them", 3L),
+        ))
+        assertEquals(c, Jarvis.chatFromJson(Jarvis.chatToJson(c)))
+        val fresh = Jarvis.chatFromJson("broken")
+        assertTrue(fresh.messages.isEmpty())
+        assertTrue(fresh.id.isNotBlank())
+        val long = Jarvis.Chat("x", (1..150).map { Jarvis.ChatMsg(it % 2 == 0, "m$it", it.toLong()) })
+        val back = Jarvis.chatFromJson(Jarvis.chatToJson(long))
+        assertEquals(Jarvis.CHAT_KEEP, back.messages.size)
+        assertEquals("m150", back.messages.last().text)
+    }
+
     @Test fun `speeds step round and read nicely`() {
         assertEquals("1×", Jarvis.speedLabel(1f))
         assertEquals("1.25×", Jarvis.speedLabel(1.25f))
