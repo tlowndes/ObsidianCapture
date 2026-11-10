@@ -253,7 +253,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },

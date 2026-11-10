@@ -208,9 +208,10 @@ object Jarvis {
 
     /**
      * One message in a chat. [mine] is what Tom said ([spoken] or typed); otherwise Jarvis's answer, with [audio]
-     * the cached reply file name, if there was one.
+     * the cached reply file name, if there was one. [via] names who answered when it wasn't the chat's own worker
+     * (a job the phone brain handed to the box), or "box" for the line saying it was sent.
      */
-    data class ChatMsg(val mine: Boolean, val text: String, val at: Long, val spoken: Boolean = false, val audio: String? = null)
+    data class ChatMsg(val mine: Boolean, val text: String, val at: Long, val spoken: Boolean = false, val audio: String? = null, val via: String? = null)
 
     /** A conversation with one worker: [id] goes to the server as "chat". */
     data class Chat(val id: String, val messages: List<ChatMsg>) {
@@ -224,6 +225,7 @@ object Jarvis {
 
     fun chatToJson(c: Chat): String = JSONObject().put("id", c.id).put("messages", JSONArray(c.messages.takeLast(CHAT_KEEP).map { m ->
         JSONObject().put("mine", m.mine).put("text", m.text).put("at", m.at).put("spoken", m.spoken).put("audio", m.audio ?: JSONObject.NULL)
+            .put("via", m.via ?: JSONObject.NULL)
     })).toString()
 
     fun chatFromJson(s: String?): Chat {
@@ -233,7 +235,8 @@ object Jarvis {
         return Chat(id, (0 until a.length()).mapNotNull { i ->
             val m = a.optJSONObject(i) ?: return@mapNotNull null
             ChatMsg(m.optBoolean("mine"), m.optString("text"), m.optLong("at"), m.optBoolean("spoken"),
-                m.optString("audio").takeIf { !m.isNull("audio") && it.isNotBlank() })
+                m.optString("audio").takeIf { !m.isNull("audio") && it.isNotBlank() },
+                m.optString("via").takeIf { !m.isNull("via") && it.isNotBlank() })
         })
     }
 

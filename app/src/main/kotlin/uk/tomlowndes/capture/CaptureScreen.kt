@@ -70,7 +70,7 @@ import java.util.Locale
  * note, it waits in [AppPrefs.jarvisFound] until Check and save. Nothing reaches the vault until Save.
  */
 @Composable
-fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan: () -> Unit = {}, onOpenSettings: () -> Unit) {
+fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan: () -> Unit = {}, onPrintToday: () -> Unit = {}, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var mode by remember { mutableIntStateOf(prefs.captureMode.coerceIn(0, 2)) }
@@ -108,7 +108,9 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
 
     if (mode == 2) {
         JarvisScreen(prefs, snack, onOpenSettings, title = "Capture", header = pill, found = found,
-            onFound = { setFound(it) }, onCheck = { checking = true })
+            // Tasks from several answers wait on one Check and save card until it's dealt with.
+            onFound = { r -> setFound(found?.let { o -> if (r.note == null && o.note == null) o.copy(tasks = o.tasks + r.tasks, ideas = o.ideas + r.ideas) else null } ?: r) },
+            onCheck = { checking = true }, onPrintToday = onPrintToday)
         return
     }
 

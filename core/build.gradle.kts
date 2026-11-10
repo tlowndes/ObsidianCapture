@@ -11,6 +11,8 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 
 dependencies {
     api("org.jsoup:jsoup:1.17.2")
+    // Jarvis's phone brain: Claude straight from the app, streamed (the key stays in the app's secure storage).
+    api("com.anthropic:anthropic-java:3.3.0")
     // Android has org.json built in; the desktop app adds the library itself.
     compileOnly("org.json:json:20240303")
 

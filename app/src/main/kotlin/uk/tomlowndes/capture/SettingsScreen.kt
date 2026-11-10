@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -96,6 +97,12 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var jvVoiceLabel by remember { mutableStateOf(prefs.jarvisVoiceLabel) }
     var jvPickVoice by remember { mutableStateOf(false) }
     var jvSpeed by remember { mutableStateOf(prefs.jarvisSpeed) }
+    var ckMasked by remember { mutableStateOf(secrets.claudeKey?.let { "••••" + it.takeLast(4) }) }
+    var editingCk by remember { mutableStateOf(false) }
+    var brainOn by remember { mutableStateOf(prefs.phoneBrain) }
+    var clever by remember { mutableStateOf(prefs.brainClever) }
+    var phSpeech by remember { mutableStateOf(prefs.phoneSpeech) }
+    var phVoice by remember { mutableStateOf(prefs.phoneVoice) }
     if (jvPickVoice) JarvisVoiceSheet(prefs, onPick = { id, label ->
         prefs.jarvisVoice = id; prefs.jarvisVoiceLabel = label; jvVoiceLabel = label; jvPickVoice = false
     }) { jvPickVoice = false }
@@ -123,6 +130,34 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                     if (ghMasked != null) { secrets.githubToken = null; ghMasked = null }
                     editingGh = false
                 }) { Text(if (ghMasked != null) "Remove" else "Cancel", color = Muted) }
+            }
+        )
+    }
+    if (editingCk) {
+        var draft by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingCk = false }, containerColor = Surface1,
+            title = { Text("Claude key") },
+            text = {
+                Column {
+                    OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
+                        visualTransformation = PasswordVisualTransformation(), placeholder = { Text("sk-ant-…") })
+                    Text("From console.anthropic.com › API keys. Kept encrypted on this phone only.", fontSize = 12.sp, color = Muted,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    secrets.claudeKey = draft
+                    ckMasked = secrets.claudeKey?.let { "••••" + it.takeLast(4) }
+                    editingCk = false
+                }, enabled = draft.isNotBlank()) { Text("Save", color = Primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (ckMasked != null) { secrets.claudeKey = null; ckMasked = null }
+                    editingCk = false
+                }) { Text(if (ckMasked != null) "Remove" else "Cancel", color = Muted) }
             }
         )
     }
@@ -225,6 +260,27 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         }
         SettingsPage.JARVIS -> {
             SubPageTitle("Jarvis", back)
+        GroupLabel("Brain")
+        SettingRow("⚡ Phone brain", if (ckMasked == null) "Add a Claude key to think on the phone. First words in about a second."
+            else "Claude straight from the app. The box only does Research, Coding and vault edits.") {
+            AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
+        }
+        SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingCk = true }) { Text(if (ckMasked == null) "Add" else "Change", color = Primary) }
+        }
+        Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
+        Text(if (clever) "Clever is Claude Sonnet: better at tricky asks, a bit slower." else "Fast is Claude Haiku: quickest replies, costs very little.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        SettingRow("This month", "Worked out on the phone from what Claude reports") {
+            Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(Modifier.height(8.dp))
+        GroupLabel("Voice")
+        SettingRow("Phone speech-to-text", "Android hears you, so messages don't wait on Whisper") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }
+        SettingRow("Phone voice", "Android reads replies. Off keeps the server's voice (slower).") { AppSwitch(phVoice) { phVoice = it; prefs.phoneVoice = it } }
+        Spacer(Modifier.height(8.dp))
+        GroupLabel("Oracle box")
         PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
         Text(
             "Tailscale name of the Oracle box (Tailscale on). Type demo to try without a server.",
@@ -243,7 +299,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             }, enabled = !jvTesting) { Text("Test", color = Primary) }
         }
         SettingRow("Play replies aloud", "When you talk. Typed messages stay quiet.") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
-        SettingRow("Voice", "Made on the server. Tap to hear each one.") {
+        if (!phVoice) SettingRow("Voice", "Made on the server. Tap to hear each one.") {
             TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
         }
         Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))

@@ -210,6 +210,26 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisSpeed: Float
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
+    /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
+    var phoneBrain: Boolean
+        get() = p.getBoolean("phone_brain", true)
+        set(v) { p.edit().putBoolean("phone_brain", v).apply() }
+    /** Settings › Jarvis › Model: false = Fast (Haiku), true = Clever (Sonnet). */
+    var brainClever: Boolean
+        get() = p.getBoolean("brain_clever", false)
+        set(v) { p.edit().putBoolean("brain_clever", v).apply() }
+    /** Android's own speech-to-text instead of recording for Whisper on the box. */
+    var phoneSpeech: Boolean
+        get() = p.getBoolean("phone_speech", true)
+        set(v) { p.edit().putBoolean("phone_speech", v).apply() }
+    /** Android's own voice for replies instead of Piper on the box. */
+    var phoneVoice: Boolean
+        get() = p.getBoolean("phone_voice", true)
+        set(v) { p.edit().putBoolean("phone_voice", v).apply() }
+    /** What the phone brain has cost this month (kept on the phone only). */
+    var brainSpend: PhoneBrain.Spend
+        get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
+        set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
