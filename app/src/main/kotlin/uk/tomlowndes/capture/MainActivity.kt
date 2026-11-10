@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -236,6 +236,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
                 sub == Sub.JOBS -> JobsScreen(vault, snack) { sub = null }
+                sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.SCAN -> ScanScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }

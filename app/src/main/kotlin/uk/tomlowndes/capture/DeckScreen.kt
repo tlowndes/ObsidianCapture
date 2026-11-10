@@ -246,7 +246,7 @@ fun DeckScreen(
 
     PullToRefreshBox(isRefreshing = pulling, onRefresh = { pulling = true; refresh++ }, modifier = Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings)
+        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) })
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
@@ -371,13 +371,15 @@ private fun DeckSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit) {
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
         Row {
+            // Daily Slip: today's printout for the pocket thermal printer.
+            IconButton(onClick = onPrint) { Text("🧾", fontSize = 19.sp) }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }
         }
