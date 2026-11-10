@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -188,7 +189,7 @@ fun VaultScreen(
             onBack = { open.removeAt(open.size - 1) }, onOpen = { open.add(it) }, onSaved = ::updated,
             onOpenTasks = onOpenTasks, onEditing = onEditing
         )
-        searching -> SearchNotes(notes, full, prefs, searchIn, startTag, onClose = { searching = false; startTag = null }) { open.add(it) }
+        searching -> SearchNotes(notes, full, prefs, searchIn, startTag, tags.map { it.first }, onClose = { searching = false; startTag = null }) { open.add(it) }
         folder != null -> FolderScreen(notes, folder!!, prefs, showHidden, onBack = { folder = parentOf(folder!!).takeIf { it.isNotEmpty() } },
             onFolder = { folder = it }, onSearch = { searchIn = folder; startTag = null; searching = true }) { open.add(it) }
         else -> VaultHome(
@@ -218,6 +219,8 @@ private fun VaultHome(
         para[ParaKind.PROJECTS]?.let { Para.quietProjects(notes, it, System.currentTimeMillis()) }.orEmpty().filter { it.first !in kept }.take(2)
     }
     var asking by remember { mutableStateOf<String?>(null) }
+    var quietOpen by remember { mutableStateOf(false) }
+    var foldersOpen by remember { mutableStateOf(false) }
     val recent = remember(notes, showHidden) { VaultBrowse.recent(notes, 3, showHidden) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
         item {
@@ -226,23 +229,25 @@ private fun VaultHome(
                 Pill("${"%,d".format(notes.size)} notes")
             }
             SearchBox("Search notes, text or #tag", onSearch)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                AppChip(false, onRead, { Text("📖 Read later" + if (unread > 0) " $unread" else "") })
-                AppChip(false, onProjects, { Text("💡 Projects") })
-                AppChip(false, onJobs, { Text("💼 Jobs" + if (jobsOpen > 0) " $jobsOpen" else "") })
-                (Tags.BUILT_IN.filter { b -> tags.any { it.first == b } } + tags.map { it.first }.filter { it !in Tags.BUILT_IN }.take(6))
-                    .forEach { t -> TagChip(t, false, onClick = { onTag(t) }) }
+        }
+        // Shortcuts (tidy-v1): Read later, Projects and Jobs as tiles. Tags now sit in search.
+        item {
+            SectionLabel("Shortcuts")
+            TileRow {
+                Tile("📖", "Read later", if (unread > 0) "$unread unread" else "all read", onClick = onRead)
+                Tile("💡", "Projects", if (quiet.isNotEmpty()) "${quiet.size} quiet" else "open", dot = quiet.isNotEmpty(), onClick = onProjects)
+                Tile("💼", "Jobs", if (jobsOpen > 0) "$jobsOpen open" else "none open", onClick = onJobs)
             }
         }
-        // PARA (paper-hybrid-v1): four doors over the vault's own folders.
+        // PARA (paper-hybrid-v1): four doors over the vault's own folders, as one 2×2 card.
         item {
-            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ParaKind.values().toList().chunked(2).forEach { pair ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        pair.forEach { k ->
+            SectionLabel("Browse")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(16.dp))) {
+                ParaKind.values().toList().chunked(2).forEachIndexed { r, pair ->
+                    if (r > 0) HorizontalDivider(color = Outline)
+                    Row(Modifier.height(IntrinsicSize.Min)) {
+                        pair.forEachIndexed { c, k ->
+                            if (c > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(Outline))
                             val dir = para[k]
                             val count = dir?.let { d -> top.firstOrNull { it.first == d }?.second }
                             ParaDoor(k, dir, count, Modifier.weight(1f)) {
@@ -252,9 +257,14 @@ private fun VaultHome(
                     }
                 }
             }
+            if (quiet.isNotEmpty()) Text(
+                (if (quietOpen) "▴ " else "▾ ") + "${quiet.size} quiet project" + (if (quiet.size > 1) "s" else ""),
+                fontSize = 12.5.sp, color = Amber, modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp))
+                    .clickable { quietOpen = !quietOpen }.padding(vertical = 4.dp, horizontal = 2.dp)
+            )
         }
-        if (quiet.isNotEmpty()) item {
-            Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)
+        if (quiet.isNotEmpty() && quietOpen) item {
+            Column(Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)
                 .border(1.dp, Outline, RoundedCornerShape(16.dp))) {
                 quiet.forEachIndexed { i, (p, last) ->
                     if (i > 0) HorizontalDivider(color = Outline)
@@ -271,15 +281,17 @@ private fun VaultHome(
             }
         }
         if (recent.isNotEmpty()) {
-            item { Box(Modifier.padding(top = 16.dp, bottom = 2.dp)) { GroupLabel("Recent") } }
+            item { SectionLabel("Recent") }
             items(recent, key = { "r-" + it.path }) { n -> NoteRow(n, showFolder = true, preview = false) { onNote(n.path) } }
         }
-        item { Box(Modifier.padding(top = 16.dp, bottom = 2.dp)) { GroupLabel("Folders") } }
+        item { SectionLabel("All folders", if (foldersOpen) "Hide ›" else "Show ›") { foldersOpen = !foldersOpen } }
+        if (foldersOpen) {
         items(view.folders, key = { "f-" + it.first }) { (f, n) -> FolderRow(f, "$n", onClick = { onFolder(f) }) }
         items(view.notes, key = { "n-" + it.path }) { n -> NoteRow(n, showFolder = false) { onNote(n.path) } }
         item {
             Text(if (showHidden) "Hide 99 folders" else "Show hidden folders", fontSize = 13.sp, color = Muted,
                 modifier = Modifier.padding(top = 14.dp).clickable(onClick = onToggleHidden).padding(vertical = 6.dp))
+        }
         }
     }
     asking?.let { p ->
@@ -298,8 +310,7 @@ private fun VaultHome(
 @Composable
 private fun ParaDoor(k: ParaKind, dir: String?, count: Int?, modifier: Modifier, onClick: () -> Unit) {
     Column(
-        modifier.clip(RoundedCornerShape(14.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(14.dp))
-            .clickable(enabled = dir != null || k == ParaKind.PROJECTS, onClick = onClick).padding(horizontal = 12.dp, vertical = 11.dp)
+        modifier.clickable(enabled = dir != null || k == ParaKind.PROJECTS, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(k.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (dir != null) TextMain else Muted, modifier = Modifier.weight(1f))
@@ -437,7 +448,7 @@ private fun marked(s: String, marks: List<IntRange>): AnnotatedString = buildAnn
 
 @Composable
 private fun SearchNotes(
-    notes: List<NoteInfo>, full: Boolean, prefs: AppPrefs, inFolder: String?, startTag: String?,
+    notes: List<NoteInfo>, full: Boolean, prefs: AppPrefs, inFolder: String?, startTag: String?, topTags: List<String>,
     onClose: () -> Unit, onOpen: (String) -> Unit,
 ) {
     var field by remember { mutableStateOf(TextFieldValue("")) }
@@ -489,6 +500,16 @@ private fun SearchNotes(
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
             if (!searched) {
+                // Tags (moved here from Vault home in tidy-v1): Work and Personal first, then the most used.
+                val shownTags = Tags.BUILT_IN.filter { it in topTags } + topTags.filter { it !in Tags.BUILT_IN }.take(8)
+                if (shownTags.isNotEmpty()) {
+                    item { Box(Modifier.padding(top = 16.dp, bottom = 8.dp)) { GroupLabel("Tags") } }
+                    item {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            shownTags.forEach { t -> TagChip(t, false, onClick = { if (t !in tags) tags.add(t) }) }
+                        }
+                    }
+                }
                 val recent = prefs.vaultSearches
                 if (recent.isNotEmpty()) {
                     item { Box(Modifier.padding(top = 16.dp, bottom = 8.dp)) { GroupLabel("Recent searches") } }
