@@ -364,8 +364,8 @@ fun TasksScreen(
                             ) {
                                 Column {
                                     if (i > 0) HorizontalDivider(color = Outline)
-                                    key(t.raw) { Swiped(t) {
                                     val kids = nested.children[t].orEmpty()
+                                    key(t.raw) { Swiped(t) {
                                     TaskRow(
                                         t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t },
                                         steps = kids.size, stepsOpen = t.raw in openSteps,
