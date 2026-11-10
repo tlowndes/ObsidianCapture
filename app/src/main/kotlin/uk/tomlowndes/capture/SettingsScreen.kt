@@ -161,6 +161,12 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingRow("Habits") { TextButton(onClick = onOpenHabits) { Text("›", color = Muted) } }
         var swipe by remember { mutableStateOf(prefs.taskSwipe) }
         SettingRow("Swipe on tasks", "Right to tick, left to reschedule, further left to remove") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
+        var inline by remember { mutableStateOf(prefs.subtasksInline) }
+        SettingRow("Subtasks open", "Tap \"3 steps\" on a task") {
+            TextButton(onClick = { inline = !inline; prefs.subtasksInline = inline }) {
+                Text(if (inline) "Under the task ▾" else "In a sheet ▾", color = Muted, fontSize = 13.sp)
+            }
+        }
 
         Text("", Modifier.padding(top = 8.dp))
         GroupLabel("Jarvis")

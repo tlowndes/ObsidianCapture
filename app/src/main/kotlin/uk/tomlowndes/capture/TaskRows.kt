@@ -146,6 +146,7 @@ internal fun TickBox(
 @Composable
 internal fun TaskRow(
     t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, sub: Boolean = false,
+    steps: Int = 0, stepsOpen: Boolean = false, onSteps: () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit
 ) {
     val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
@@ -173,7 +174,7 @@ internal fun TaskRow(
             )
             val tags = TaskViews.tags(t).take(2)
             val mins = Deck.minutes(t)
-            if (tags.isNotEmpty() || mins != null || t.recurrence != null) Row(
+            if (tags.isNotEmpty() || mins != null || t.recurrence != null || steps > 0) Row(
                 Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -186,6 +187,12 @@ internal fun TaskRow(
                     )
                 }
                 mins?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                // Subtasks pop out from here (subtasks-popout-v1): folded in place or in a sheet, per Settings.
+                if (steps > 0) Text(
+                    "$steps step${if (steps > 1) "s" else ""} ${if (stepsOpen) "▴" else "▾"}",
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary, maxLines = 1,
+                    modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable(onClick = onSteps).padding(horizontal = 8.dp, vertical = 1.dp)
+                )
                 t.recurrence?.let {
                     Text("↻ $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

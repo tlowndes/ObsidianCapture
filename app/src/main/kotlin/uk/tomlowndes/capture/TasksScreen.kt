@@ -87,6 +87,8 @@ fun TasksScreen(
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var tag by remember { mutableStateOf(prefs.tasksTag) }
     var filtering by remember { mutableStateOf(false) }
+    var openSteps by remember { mutableStateOf(setOf<String>()) }
+    var stepsOf by remember { mutableStateOf<TaskItem?>(null) }
     var filter by remember { mutableStateOf(TaskFilter.values().firstOrNull { it.name == prefs.tasksFilter }) }
     fun pickTag(t: String?) { tag = t; prefs.tasksTag = t }
     fun pickFilter(f: TaskFilter?) { filter = f; prefs.tasksFilter = f?.name }
@@ -363,7 +365,12 @@ fun TasksScreen(
                                 Column {
                                     if (i > 0) HorizontalDivider(color = Outline)
                                     key(t.raw) { Swiped(t) {
-                                    TaskRow(t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) {
+                                    val kids = nested.children[t].orEmpty()
+                                    TaskRow(
+                                        t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t },
+                                        steps = kids.size, stepsOpen = t.raw in openSteps,
+                                        onSteps = { if (prefs.subtasksInline) openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw else stepsOf = t }
+                                    ) {
                                         if (g == TaskGroup.TODAY) {
                                             (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
                                         } else {
@@ -372,8 +379,8 @@ fun TasksScreen(
                                         }
                                     }
                                     } }
-                                    // Its steps (Break it down), indented underneath.
-                                    nested.children[t].orEmpty().forEach { c ->
+                                    // Its steps (Break it down), folded out underneath when opened.
+                                    if (prefs.subtasksInline && t.raw in openSteps) kids.forEach { c ->
                                         AnimatedVisibility(
                                             c !in leaving, enter = EnterTransition.None,
                                             exit = shrinkVertically(tween(300)) + fadeOut(tween(250))
@@ -423,6 +430,34 @@ fun TasksScreen(
         )
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }
+    // Subtasks as a pop-up sheet (subtasks-popout-v1 B): the task's steps, Start next step and Add steps.
+    stepsOf?.let { p ->
+        val steps = Subtasks.nest(tasks.toList(), tasks.toList()).children[p].orEmpty()
+        ModalBottomSheet(onDismissRequest = { stepsOf = null }, containerColor = Bg) {
+            Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
+                Text(TaskViews.plainText(p), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    listOfNotNull(TaskViews.tags(p).firstOrNull(), "${steps.size} step${if (steps.size == 1) "" else "s"} left").joinToString(" · "),
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                if (steps.isNotEmpty()) ListCard {
+                    steps.forEachIndexed { i, c ->
+                        if (i > 0) HorizontalDivider(color = Outline)
+                        TaskRow(c, ticked = c in ticking || c in leaving, onTick = { tick(c) }, onOpen = { stepsOf = null; editing = c }) {
+                            Deck.minutes(c)?.let { m -> Text(TaskRules.minutesLabel(m), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                        }
+                    }
+                }
+                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    steps.firstOrNull { it !in ticking && it !in leaving }?.let { first ->
+                        val m = Deck.minutes(first) ?: TaskViews.SHORT_MIN
+                        DeckButton("▶ Start next step", primary = true, modifier = Modifier.weight(1f)) { stepsOf = null; onStartFocus(first, m) }
+                    }
+                    DeckButton("🌶 Add steps", primary = false, modifier = Modifier.weight(1f)) { stepsOf = null; breaking = p }
+                }
+            }
+        }
+    }
 }
 
 /** A group's bold title, its count bubble and a hairline to the edge. Overdue is red. */
