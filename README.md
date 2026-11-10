@@ -106,6 +106,7 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 - **Weekly review**: the last seven days: tasks done, overdue tasks to move to next Monday, one long-overdue task to drop, and next week's tasks and bills. Also opened from the Sunday reminder.
 - **Jobs**: open applications by follow-up date, closed ones (Rejected, Withdrawn) underneath. Add a job, or change status and the next date. Statuses are Shortlisted, Applied, Interview, Offer, Rejected and Withdrawn.
 - **Search** (the magnifying glass on Deck): find any note by name or folder, then add a task or a plain line to it.
+- **Daily Slip** (the receipt on Deck): today's printout for a Bluetooth pocket thermal printer (built for the Phomemo M02 Pro, 48 mm at 300 dpi; any BLE printer that takes ESC/POS raster should work). It shows the day, the weather, today's Proton events with a month grid, overdue, today's and tomorrow's to-dos with blank lines, and a daily sudoku. Each part has a switch, the preview updates as you go, and the printer is picked once from a scan. Nothing is written to the vault.
 
 ### Share sheet
 
