@@ -170,6 +170,7 @@ fun JarvisScreen(
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>() }
     var last by remember { mutableStateOf(prefs.jarvisLast) }
+    var summarising by remember { mutableStateOf(false) }
     var fresh by remember { mutableStateOf(false) }
     /** The recording that failed to send, kept for Retry. */
     var pending by remember { mutableStateOf<File?>(null) }
@@ -353,13 +354,17 @@ fun JarvisScreen(
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()).padding(bottom = 150.dp)) {
             ScreenTitle(title) {
-                Row(
-                    Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
-                        .clickable { picking = true }.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(worker.icon, fontSize = 13.sp)
-                    Text("${worker.label} ▾", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (last != null) Text("🧾", fontSize = 18.sp,
+                        modifier = Modifier.clip(CircleShape).clickable { summarising = true }.padding(horizontal = 10.dp, vertical = 6.dp))
+                    Row(
+                        Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
+                            .clickable { picking = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(worker.icon, fontSize = 13.sp)
+                        Text("${worker.label} ▾", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary)
+                    }
                 }
             }
             Box(Modifier.padding(top = 12.dp)) { header() }
@@ -636,6 +641,9 @@ fun JarvisScreen(
         )
     }
 
+    if (summarising) last?.let { (said, reply, _) ->
+        PrintSummarySheet(SummarySource.Chat(said, reply), snack) { summarising = false }
+    }
     if (picking) {
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { picking = false }, sheetState = sheet, containerColor = Surface1) {

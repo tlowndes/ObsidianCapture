@@ -62,12 +62,12 @@ private object SlipPrefs {
     fun load(ctx: Context) = p(ctx).let {
         SlipOptions(
             it.getBoolean("weather", true), it.getBoolean("calendar", true), it.getBoolean("month", true),
-            it.getBoolean("todo", true), it.getBoolean("tomorrow", true), it.getBoolean("blank", true), it.getBoolean("sudoku", true),
+            it.getBoolean("todo", true), it.getBoolean("tomorrow", true), it.getBoolean("blank", true), it.getBoolean("sudoku", true), it.getBoolean("brief", true),
         )
     }
     fun save(ctx: Context, o: SlipOptions) = p(ctx).edit()
         .putBoolean("weather", o.weather).putBoolean("calendar", o.calendar).putBoolean("month", o.month)
-        .putBoolean("todo", o.todo).putBoolean("tomorrow", o.tomorrow).putBoolean("blank", o.blank).putBoolean("sudoku", o.sudoku)
+        .putBoolean("todo", o.todo).putBoolean("tomorrow", o.tomorrow).putBoolean("blank", o.blank).putBoolean("sudoku", o.sudoku).putBoolean("brief", o.brief)
         .apply()
 }
 
@@ -86,6 +86,13 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var sources by remember { mutableStateOf<SlipSources?>(null) }
     var slip by remember { mutableStateOf<Bitmap?>(null) }
     var printer by remember { mutableStateOf(SlipPrinter.saved(ctx)) }
+    val jarvisAddress = remember { AppPrefs(ctx).jarvisAddress }
+    val jarvisToken = remember { SecretStore(ctx).jarvisToken.orEmpty() }
+    val jarvisDemo = Jarvis.isDemo(jarvisAddress)
+    val jarvisReady = jarvisDemo || (jarvisAddress.isNotBlank() && jarvisToken.isNotBlank())
+    /** Jarvis's In brief lines; null until asked, or when it couldn't be reached. */
+    var brief by remember { mutableStateOf<String?>(null) }
+    var briefNote by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
@@ -109,10 +116,30 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             SlipSources(tasks, events, weather)
         }
     }
-    LaunchedEffect(sources, opts) {
+    // In brief: asked once per visit, only while the switch is on.
+    LaunchedEffect(sources, opts.brief) {
+        val src = sources ?: return@LaunchedEffect
+        if (!opts.brief || brief != null) return@LaunchedEffect
+        if (!jarvisReady) { briefNote = "Set up Jarvis in Settings to use this"; return@LaunchedEffect }
+        briefNote = "Asking Jarvis…"
+        val today = LocalDate.now()
+        val r = withContext(Dispatchers.IO) {
+            runCatching {
+                if (jarvisDemo) Summary.demoBrief(today)
+                else Summary.brief(Jarvis.sendText(jarvisAddress, jarvisToken,
+                    Summary.dayPrompt(Slip.build(today, src.tasks, src.events, src.weather, SlipOptions())), "obsidian").reply)
+            }
+        }
+        brief = r.getOrNull()
+        briefNote = if (brief != null) null else "Couldn't reach Jarvis, so the slip prints without it"
+    }
+    LaunchedEffect(sources, opts, brief) {
         val src = sources ?: return@LaunchedEffect
         slip = withContext(Dispatchers.Default) {
-            runCatching { SlipRender.draw(Slip.build(LocalDate.now(), src.tasks, src.events, src.weather, opts), SLIP_OWNER) }.getOrNull()
+            runCatching {
+                val content = Slip.build(LocalDate.now(), src.tasks, src.events, src.weather, opts).copy(brief = brief?.takeIf { opts.brief })
+                SlipRender.draw(content, SLIP_OWNER)
+            }.getOrNull()
         }
     }
     fun set(o: SlipOptions) { opts = o; SlipPrefs.save(ctx, o) }
@@ -141,6 +168,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             modifier = Modifier.padding(bottom = 10.dp))
 
         GroupLabel("On the slip")
+        SettingRow("In brief", briefNote ?: "Jarvis sums up the day in 3 lines") { AppSwitch(opts.brief) { set(opts.copy(brief = it)) } }
         SettingRow("Weather", sources?.weather?.let { if (it.tomorrow) "Tomorrow's forecast (it's after sunset)" else it.headline }
             ?: "No forecast yet: allow location on the Deck") { AppSwitch(opts.weather) { set(opts.copy(weather = it)) } }
         SettingRow("Calendar", "Today's Proton events") { AppSwitch(opts.calendar) { set(opts.copy(calendar = it)) } }
@@ -190,7 +218,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
 /** Scans for nearby Bluetooth devices, printers first, and lets you tap one. */
 @Composable
-private fun PrinterPicker(onPick: (SlipPrinterInfo) -> Unit, onDismiss: () -> Unit) {
+internal fun PrinterPicker(onPick: (SlipPrinterInfo) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val found = remember { mutableStateListOf<SlipPrinterInfo>() }
     var scanning by remember { mutableStateOf(true) }

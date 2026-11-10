@@ -48,6 +48,7 @@ object SlipRender {
         val p = Pen(c)
         p.header(s)
         val sections = buildList<() -> Unit> {
+            if (s.brief != null) add { p.brief(s.brief!!) }
             if (s.weather != null) add { p.weather(s.weather!!) }
             if (s.show.calendar) add { p.calendar(s) }
             if (s.show.todo) add { p.todo(s) }
@@ -55,6 +56,19 @@ object SlipRender {
         }
         sections.forEachIndexed { i, f -> if (i > 0) p.dashed(); f() }
         p.footer(owner, now)
+        val h = (p.y + 40).toInt().coerceAtMost(MAX_HEIGHT)
+        return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
+    }
+
+    /** A Print summary slip (print-summary-v1): title, where it came from, then the points or paragraph. */
+    fun drawSummary(d: Summary.Doc, now: LocalDateTime = LocalDateTime.now()): Bitmap {
+        val tall = Bitmap.createBitmap(WIDTH, MAX_HEIGHT, Bitmap.Config.ARGB_8888)
+        val c = Canvas(tall)
+        c.drawColor(0xFFFFFFFF.toInt())
+        val p = Pen(c)
+        p.summary(d)
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", paint(SMALL), align = Layout.Alignment.ALIGN_CENTER)
         val h = (p.y + 40).toInt().coerceAtMost(MAX_HEIGHT)
         return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
     }
@@ -139,6 +153,27 @@ object SlipRender {
             val left = s.daysInYear - s.dayOfYear
             text("Week ${s.week}   Day ${s.dayOfYear}/${s.daysInYear}   $left days to go", paint(SMALL), align = Layout.Alignment.ALIGN_CENTER)
             solid()
+        }
+
+        fun brief(t: String) {
+            heading("In brief")
+            gap(4f)
+            text(t, paint(BODY), spacing = 1.15f)
+        }
+
+        fun summary(d: Summary.Doc) {
+            text(d.title, paint(52f, headFace), spacing = 0.95f)
+            gap(4f)
+            text(d.subtitle, paint(SMALL))
+            dashed()
+            if (d.bullets.isEmpty()) text(d.text, paint(BODY), spacing = 1.15f)
+            else d.bullets.forEach { b ->
+                val top = y
+                if (d.ticks) c.drawRect(M + 3f, top + 4f, M + 29f, top + 30f, stroke(3.5f))
+                else c.drawCircle(M + 14f, top + 17f, 6f, ink)
+                text(b, paint(BODY), M + 44f, inner - 44f, spacing = 1.1f)
+                y = maxOf(y, top + 34f) + 12f
+            }
         }
 
         fun weather(w: WeatherSummary) {
