@@ -29,6 +29,12 @@ class SlipTest {
         assertEquals(314, s.dayOfYear)
     }
 
+    @Test fun aTaskListedTwiceIsPrintedOnce() {
+        val t = task("Sort edc bag for car #home", day)
+        val s = Slip.build(day, listOf(t, t.copy(path = "01 - Inbox/other.md")), emptyList(), null, SlipOptions())
+        assertEquals(1, s.today.size)
+    }
+
     @Test fun calendarSplitsAllDayFromTimed() {
         val ev = listOf(
             CalEvent("p", "Lunch with Mum", day.atTime(12, 30), day.atTime(13, 30), false, "Dishoom"),

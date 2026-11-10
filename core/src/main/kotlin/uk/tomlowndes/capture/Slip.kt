@@ -44,8 +44,10 @@ object Slip {
     const val UNDATED_FILL = 6
 
     fun build(
-        date: LocalDate, tasks: List<TaskItem>, events: List<CalEvent>, weather: WeatherSummary?, o: SlipOptions,
+        date: LocalDate, all: List<TaskItem>, events: List<CalEvent>, weather: WeatherSummary?, o: SlipOptions,
     ): SlipContent {
+        // Quick Task can come back from both the note and the vault scan: keep one of each.
+        val tasks = all.distinctBy { Tags.strip(it.text).lowercase() to it.due }
         val todays = events.filter { it.on(date) }
         val allDay = todays.filter { it.allDay }.map { SlipEvent(it.title, null, null, it.location) }
         val timed = todays.filter { !it.allDay }.sortedBy { it.start }.map {
