@@ -352,7 +352,7 @@ fun JarvisScreen(
         }
         scope.launch {
             val r = withContext(Dispatchers.IO) {
-                runCatching { Jarvis.sendText(address, token, h.request, h.worker, prefs.jarvisVoice, chat = prefs.jarvisChat(h.worker).id) }
+                runCatching { Jarvis.sendText(address, token, h.request, h.worker, prefs.jarvisVoice, chat = prefs.jarvisChat(h.worker).id, speak = !phoneVoice) }
             }
             r.onSuccess { reply -> answered(reply.copy(sorted = reply.sorted), null, from, "", false, via = label) }
                 .onFailure { e -> answered(Jarvis.Reply("", "$label didn't answer: " + failed(e), null), null, from, "", false, via = "box") }
@@ -411,7 +411,7 @@ fun JarvisScreen(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     if (demo) Jarvis.demoText(w.id, t) to null
-                    else Jarvis.sendText(address, token, t, w.id, prefs.jarvisVoice, chat = id).let { r -> r to fetch(r) }
+                    else Jarvis.sendText(address, token, t, w.id, prefs.jarvisVoice, chat = id, speak = !phoneVoice).let { r -> r to fetch(r) }
                 }
             }
             phase = Phase.IDLE

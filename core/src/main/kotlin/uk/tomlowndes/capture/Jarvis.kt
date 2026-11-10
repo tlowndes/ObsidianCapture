@@ -94,7 +94,7 @@ object Jarvis {
     }
 
     /** Sends typed text instead of a recording. Same answer as [send]. */
-    fun sendText(address: String, token: String, text: String, worker: String, voice: String? = null, chat: String? = null): Reply {
+    fun sendText(address: String, token: String, text: String, worker: String, voice: String? = null, chat: String? = null, speak: Boolean = true): Reply {
         val c = open("${base(address)}/text", token, "POST", timeout = 120_000)
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -103,6 +103,7 @@ object Jarvis {
             val json = JSONObject().put("text", text).put("worker", worker)
             if (!voice.isNullOrBlank()) json.put("voice", voice)
             if (!chat.isNullOrBlank()) json.put("chat", chat)
+            if (!speak) json.put("speak", false)
             c.outputStream.use { it.write(json.toString().toByteArray()) }
             return parseReply(body(c))
         } finally {

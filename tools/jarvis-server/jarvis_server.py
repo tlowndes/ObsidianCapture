@@ -2,7 +2,8 @@
 
   POST /voice   multipart: file (OGG/Opus recording), worker; header Authorization: Bearer <token>
                 -> {"transcript", "reply", "audio_url", "sorted"?}
-  POST /text    JSON {"text", "worker", "voice"?}: the same, typed instead of spoken
+  POST /text    JSON {"text", "worker", "voice"?, "speak"?}: the same, typed instead of spoken
+                ("speak": false skips Piper when the phone reads the reply itself)
   Both take an optional "chat" id (a UUID from the app). Each chat is one Claude session: the first message starts
   it with --session-id, later ones --resume it, so Claude remembers the conversation until the app starts a new chat.
   GET  /audio/<id>.ogg   the spoken reply, same token
@@ -323,6 +324,7 @@ class Handler(BaseHTTPRequestHandler):
             worker = str(j.get("worker") or "jarvis").strip()
             voice = str(j.get("voice") or "").strip()
             chat = str(j.get("chat") or "").strip()
+            want_audio = j.get("speak", True) is not False
             if not heard:
                 self.send_json(400, {"error": "no text"})
                 return
@@ -332,6 +334,7 @@ class Handler(BaseHTTPRequestHandler):
             worker = (parts.get("worker") or b"jarvis").decode().strip()
             voice = (parts.get("voice") or b"").decode().strip()
             chat = (parts.get("chat") or b"").decode().strip()
+            want_audio = True
             if not audio:
                 self.send_json(400, {"error": "no file part"})
                 return
@@ -378,7 +381,7 @@ class Handler(BaseHTTPRequestHandler):
 
         audio_url = None
         try:
-            if speak(reply, AUDIO_DIR / f"{rid}.ogg", voice):
+            if want_audio and speak(reply, AUDIO_DIR / f"{rid}.ogg", voice):
                 audio_url = f"/audio/{rid}.ogg"
         except Exception as e:  # noqa: BLE001 - a text reply is still useful
             print(f"[{rid}] speech failed: {e}", flush=True)
