@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.tomlowndes.capture.Deck
+import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.RepeatSpec
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.Tags
@@ -65,7 +67,7 @@ fun RepeatDialog(current: String?, onPick: (String?) -> Unit, onDismiss: () -> U
 fun EditTaskDialog(
     t: TaskItem,
     pinned: List<String>,
-    onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?) -> Unit,
+    onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -73,6 +75,7 @@ fun EditTaskDialog(
     var due by remember(t.raw) { mutableStateOf(t.due) }
     var minutes by remember(t.raw) { mutableStateOf(Deck.minutes(t)) }
     var repeat by remember(t.raw) { mutableStateOf(t.recurrence) }
+    var priority by remember(t.raw) { mutableStateOf(Priority.of(t)) }
     var picking by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     DialogCard("Edit task", onDismiss) {
@@ -92,6 +95,8 @@ fun EditTaskDialog(
                     Chip(TaskRules.minutesLabel(m), minutes == m, small = true) { minutes = if (minutes == m) null else m }
                 }
             }
+            SmallLabel("Priority")
+            Box(Modifier.padding(bottom = 8.dp)) { PriorityRow(priority) { priority = it } }
             SmallLabel("Repeat")
             RepeatEditor(repeat) { repeat = it }
             SmallLabel("Tag", Modifier.padding(top = 8.dp))
@@ -100,7 +105,7 @@ fun EditTaskDialog(
             }
         }
         DialogButtons(onDismiss, onDelete = onRemove) {
-            PrimaryButton("Save", enabled = text.isNotBlank()) { onSave(text.trim(), due, repeat, minutes) }
+            PrimaryButton("Save", enabled = text.isNotBlank()) { onSave(text.trim(), due, repeat, minutes, priority) }
         }
     }
     if (picking) PickDateDialog(due, onPick = { picking = false; due = it }, onDismiss = { picking = false })

@@ -127,6 +127,13 @@ class VaultWriter(
         return updated
     }
 
+    /** Drag to a free gap (windows-catchup-v1): due [date] and a [start] time for its estimate. Returns the new line. */
+    fun planAt(t: TaskItem, date: LocalDate, start: java.time.LocalTime): String {
+        val updated = DayPlan.withTime(TaskRules.withDue(t.raw, date), start, DayPlan.minutes(t))
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
     /** Break it down: adds [steps] as indented subtasks under the task. */
     fun addSubtasks(t: TaskItem, steps: List<Step>) {
         if (steps.isEmpty()) return

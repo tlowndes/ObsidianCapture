@@ -22,9 +22,9 @@ object TaskGroups {
         }
     }
 
-    /** Non-empty groups in order, each sorted by due date. */
+    /** Non-empty groups in order, each with flagged tasks first, then by due date. */
     fun groups(tasks: List<TaskItem>, today: LocalDate): List<Pair<Bucket, List<TaskItem>>> =
         Bucket.values().mapNotNull { b ->
-            tasks.filter { bucketOf(it.due, today) == b }.sortedBy { it.due ?: LocalDate.MAX }.takeIf { it.isNotEmpty() }?.let { b to it }
+            tasks.filter { bucketOf(it.due, today) == b }.sortedWith(TaskViews.byPriority).takeIf { it.isNotEmpty() }?.let { b to it }
         }
 }

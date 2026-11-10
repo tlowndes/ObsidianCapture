@@ -21,6 +21,16 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = p.getBoolean("sort_by_due", true)
         set(v) { p.putBoolean("sort_by_due", v); p.flush() }
 
+    /** Tasks tab order (windows-catchup-v1): "due", "priority" or "note". */
+    var taskOrder: String
+        get() = p.get("task_order", null) ?: if (sortByDue) "due" else "note"
+        set(v) = put("task_order", v)
+
+    /** Tasks tab shows the Upcoming week instead of the list. */
+    var tasksUpcoming: Boolean
+        get() = p.getBoolean("tasks_upcoming", false)
+        set(v) { p.putBoolean("tasks_upcoming", v); p.flush() }
+
     /** Projects tab: last updated first (true) or by title A–Z (false). */
     var ideasByUpdated: Boolean
         get() = p.getBoolean("ideas_by_updated", true)
