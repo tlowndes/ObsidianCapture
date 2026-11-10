@@ -37,6 +37,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("migrated_month", null)
         set(v) { p.edit().putString("migrated_month", v).apply() }
     /** Tasks tab shows Upcoming (tasks + calendar, 7 days) instead of the List. */
+    /** Tasks list order (priority-flags-v1): DUE (day groups, flagged first) or PRIORITY (priority groups). */
+    var tasksSort: String?
+        get() = p.getString("tasks_sort", null)
+        set(v) { p.edit().putString("tasks_sort", v).apply() }
     var tasksUpcoming: Boolean
         get() = p.getBoolean("tasks_upcoming", false)
         set(v) { p.edit().putBoolean("tasks_upcoming", v).apply() }
