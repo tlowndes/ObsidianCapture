@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -228,11 +229,13 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         ))
 
         SectionLabel("Tasks")
-        var swipe by remember { mutableStateOf(prefs.taskSwipe) }
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
         DeckCard {
-            Box(Modifier.padding(horizontal = 14.dp)) {
-                SettingRow("Swipe on tasks", "Right ticks, left reschedules") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
+            // Swipes (multiselect-swipes-v1) have their own page: on/off and what each swipe does.
+            Box(Modifier.clickable { page = SettingsPage.SWIPES }.padding(horizontal = 14.dp)) {
+                SettingRow("Swipe on tasks", if (prefs.taskSwipe) "Right ${prefs.swipeRight.short.lowercase()}, left ${prefs.swipeLeft.short.lowercase()}" else "Off") {
+                    Text("›", fontSize = 18.sp, color = Muted)
+                }
             }
             HorizontalDivider(color = Outline)
             Box(Modifier.padding(horizontal = 14.dp)) {
@@ -254,6 +257,10 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         Box(Modifier.height(20.dp))
         }
 
+        SettingsPage.SWIPES -> {
+            SubPageTitle("Swipes", back)
+            SwipesSection(prefs)
+        }
         SettingsPage.REMINDERS -> {
             SubPageTitle("Reminders", back)
             RemindersSection(prefs)
@@ -418,7 +425,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     }
 }
 
-private enum class SettingsPage { MAIN, REMINDERS, CALENDARS, JARVIS, UPDATES, VAULT }
+private enum class SettingsPage { MAIN, SWIPES, REMINDERS, CALENDARS, JARVIS, UPDATES, VAULT }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable
@@ -455,5 +462,71 @@ private fun checkedAgo(at: Long): String {
         min < 60 -> "$min min ago"
         min < 24 * 60 -> "${min / 60} h ago"
         else -> "${min / (24 * 60)} days ago"
+    }
+}
+
+/** Settings › Swipes (multiselect-swipes-v1): swipes on or off, and what swipe right, left and long left each do. */
+@Composable
+private fun SwipesSection(prefs: AppPrefs) {
+    var on by remember { mutableStateOf(prefs.taskSwipe) }
+    var right by remember { mutableStateOf(prefs.swipeRight) }
+    var left by remember { mutableStateOf(prefs.swipeLeft) }
+    var longLeft by remember { mutableStateOf(prefs.swipeLongLeft) }
+    var picking by remember { mutableStateOf<String?>(null) }
+    DeckCard {
+        Box(Modifier.padding(horizontal = 14.dp)) {
+            SettingRow("Swipe on tasks", "Turn all swipes on or off") { AppSwitch(on) { on = it; prefs.taskSwipe = it } }
+        }
+    }
+    if (on) {
+        Box(Modifier.height(14.dp))
+        GroupLabel("What each swipe does")
+        Box(Modifier.height(8.dp))
+        DeckCard {
+            listOf(
+                Triple("Swipe right", "Short swipe from the left edge", right),
+                Triple("Swipe left", "Short swipe from the right edge", left),
+                Triple("Long swipe left", "Swipe past half way", longLeft),
+            ).forEachIndexed { i, (title, sub, c) ->
+                if (i > 0) HorizontalDivider(color = Outline)
+                Box(Modifier.clickable { picking = title }.padding(horizontal = 14.dp)) {
+                    SettingRow(title, sub) { Text(c.short + " ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+        }
+        Box(Modifier.height(14.dp))
+        GroupLabel("Preview")
+        Box(Modifier.height(8.dp))
+        SwipePreview(right, toRight = true)
+        Box(Modifier.height(8.dp))
+        SwipePreview(left.takeIf { it != SwipeChoice.NOTHING } ?: longLeft, toRight = false)
+        Text("Swipes only work in the list, and are off while you're selecting tasks.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 10.dp, bottom = 20.dp))
+    }
+    picking?.let { title ->
+        val current = when (title) { "Swipe right" -> right; "Swipe left" -> left; else -> longLeft }
+        SwipeChoiceSheet(title, current, onPick = { c ->
+            when (title) {
+                "Swipe right" -> { right = c; prefs.swipeRight = c }
+                "Swipe left" -> { left = c; prefs.swipeLeft = c }
+                else -> { longLeft = c; prefs.swipeLongLeft = c }
+            }
+            picking = null
+        }, onDismiss = { picking = null })
+    }
+}
+
+/** A row pulled part way, showing the colour and label of [c] behind it. */
+@Composable
+private fun SwipePreview(c: SwipeChoice, toRight: Boolean) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(Modifier.fillMaxWidth().height(46.dp).clip(shape).border(1.dp, Outline, shape).background(if (c == SwipeChoice.NOTHING) Surface2 else c.colour)) {
+        if (c != SwipeChoice.NOTHING) Text(
+            c.label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = OnPrimary,
+            modifier = Modifier.align(if (toRight) Alignment.CenterStart else Alignment.CenterEnd).padding(horizontal = 16.dp)
+        )
+        Box(
+            Modifier.fillMaxHeight().fillMaxWidth(0.68f).align(if (toRight) Alignment.CenterEnd else Alignment.CenterStart).background(Surface1)
+                .padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart
+        ) { Text(if (c == SwipeChoice.NOTHING) "Nothing happens" else "Book MOT", fontSize = 13.sp, color = if (c == SwipeChoice.NOTHING) Muted else TextMain) }
     }
 }
