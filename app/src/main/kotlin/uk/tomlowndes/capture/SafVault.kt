@@ -67,7 +67,7 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
             var n = 0
             while (n < max) { val k = r.read(buf, n, max - n); if (k < 0) break; n += k }
             String(buf, 0, n)
-        }.orEmpty()
+        } // null when the provider can't open it: never pass that off as an empty note
     }
 
     override fun writeOnce(path: String, text: String) = writeBytes(path, text.toByteArray())
