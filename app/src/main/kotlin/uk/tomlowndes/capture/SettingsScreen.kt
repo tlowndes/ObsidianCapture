@@ -102,6 +102,10 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var brainOn by remember { mutableStateOf(prefs.phoneBrain) }
     var clever by remember { mutableStateOf(prefs.brainClever) }
     var phSpeech by remember { mutableStateOf(prefs.phoneSpeech) }
+    var nanoOn by remember { mutableStateOf(prefs.nanoBrain) }
+    var nanoToBox by remember { mutableStateOf(prefs.nanoToBox) }
+    var nanoState by remember { mutableStateOf(PhoneNano.state) }
+    LaunchedEffect(nanoOn) { if (nanoOn) nanoState = withContext(Dispatchers.IO) { PhoneNano.ensure() } }
     var phVoice by remember { mutableStateOf(prefs.phoneVoice) }
     if (jvPickVoice) JarvisVoiceSheet(prefs, onPick = { id, label ->
         prefs.jarvisVoice = id; prefs.jarvisVoiceLabel = label; jvVoiceLabel = label; jvPickVoice = false
@@ -261,20 +265,17 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingsPage.JARVIS -> {
             SubPageTitle("Jarvis", back)
         GroupLabel("Brain")
-        SettingRow("⚡ Phone brain", if (ckMasked == null) "Add a Claude key to think on the phone. First words in about a second."
-            else "Claude straight from the app. The box only does Research, Coding and vault edits.") {
-            AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
+        SettingRow("📱 Phone brain", "Gemini Nano · " + if (nanoOn) PhoneNano.label(nanoState) else "off") {
+            AppSwitch(nanoOn) { nanoOn = it; prefs.nanoBrain = it }
         }
-        SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
-            TextButton(onClick = { editingCk = true }) { Text(if (ckMasked == null) "Add" else "Change", color = Primary) }
+        SettingRow("🛰 Send to the box when needed", "Vault, research, coding, long rambles") {
+            AppSwitch(nanoToBox) { nanoToBox = it; prefs.nanoToBox = it }
         }
-        Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
-        PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
-        Text(if (clever) "Clever is Claude Sonnet: better at tricky asks, a bit slower." else "Fast is Claude Haiku: quickest replies, costs very little.",
-            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
-        SettingRow("This month", "Worked out on the phone from what Claude reports") {
-            Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
-        }
+        Text(
+            "Nano is free and works offline. The box is used only when the ask needs it, or when you tap Ask the box." +
+                if (nanoState == PhoneNano.State.GETTING_READY) " Until Nano is ready, everything goes to the box." else "",
+            fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 4.dp)
+        )
         Spacer(Modifier.height(8.dp))
         GroupLabel("Voice")
         SettingRow("Phone speech-to-text", "Android hears you, so messages don't wait on Whisper") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }
@@ -306,7 +307,23 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
             jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
         }
-
+        Spacer(Modifier.height(16.dp))
+        GroupLabel("Advanced")
+        SettingRow("⚡ Claude from the phone", if (ckMasked == null) "Add a Claude key to think on the phone. First words in about a second."
+            else "Claude straight from the app instead of Nano. Pay as you go.") {
+            AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
+        }
+        SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingCk = true }) { Text(if (ckMasked == null) "Add" else "Change", color = Primary) }
+        }
+        Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
+        Text(if (clever) "Clever is Claude Sonnet: better at tricky asks, a bit slower." else "Fast is Claude Haiku: quickest replies, costs very little.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        SettingRow("This month", "Worked out on the phone from what Claude reports") {
+            Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(Modifier.height(8.dp))
         }
         SettingsPage.UPDATES -> {
             SubPageTitle("Updates", back)

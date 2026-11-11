@@ -212,9 +212,17 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
     var phoneBrain: Boolean
-        get() = p.getBoolean("phone_brain", true)
+        get() = p.getBoolean("phone_brain", false)
         set(v) { p.edit().putBoolean("phone_brain", v).apply() }
     /** Settings › Jarvis › Model: false = Fast (Haiku), true = Clever (Sonnet). */
+    /** Gemini Nano answers quick asks on the phone (mockup nano-brain-v1). */
+    var nanoBrain: Boolean
+        get() = p.getBoolean("nano_brain", true)
+        set(v) { p.edit().putBoolean("nano_brain", v).apply() }
+    /** Vault, research, coding and long rambles go to Claude on the box rather than Nano. */
+    var nanoToBox: Boolean
+        get() = p.getBoolean("nano_to_box", true)
+        set(v) { p.edit().putBoolean("nano_to_box", v).apply() }
     var brainClever: Boolean
         get() = p.getBoolean("brain_clever", false)
         set(v) { p.edit().putBoolean("brain_clever", v).apply() }

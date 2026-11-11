@@ -171,6 +171,11 @@ fun JarvisScreen(
     val claudeKey = remember { secrets.claudeKey.orEmpty() }
     val brainOn = !demo && prefs.phoneBrain && claudeKey.isNotBlank()
     fun usesBrain(w: Jarvis.Worker) = brainOn && w.id == "jarvis"
+    /** Gemini Nano on the phone answers quick asks to Jarvis; the box gets the rest (mockup nano-brain-v1). */
+    val nanoOn = !demo && prefs.nanoBrain
+    var nanoState by remember { mutableStateOf(PhoneNano.state) }
+    LaunchedEffect(nanoOn) { if (nanoOn) nanoState = withContext(Dispatchers.IO) { PhoneNano.ensure() } }
+    fun usesNano(w: Jarvis.Worker) = nanoOn && w.id == "jarvis" && !usesBrain(w) && nanoState == PhoneNano.State.READY
     val speechIn = remember { PhoneSpeech(ctx) }
     val phoneSpeech = remember { prefs.phoneSpeech && PhoneSpeech.available(ctx) }
     val phoneVoice = remember { prefs.phoneVoice }
@@ -179,12 +184,14 @@ fun JarvisScreen(
     val voiceOut = remember { PhoneVoiceOut(ctx) { id -> android.os.Handler(android.os.Looper.getMainLooper()).post { speakingId = id } } }
     /** The phone brain's answer so far, while it streams in. */
     var streaming by remember { mutableStateOf<String?>(null) }
+    /** Who is writing [streaming]: the Claude key brain (null) or Nano. */
+    var streamingVia by remember { mutableStateOf<String?>(null) }
     /** This hold-to-talk uses Android's speech-to-text rather than a recording. */
     var listening by remember { mutableStateOf(false) }
     var printing by remember { mutableStateOf(false) }
 
     var worker by remember { mutableStateOf(Jarvis.worker(prefs.jarvisWorker)) }
-    val ready = demo || usesBrain(worker) || boxReady
+    val ready = demo || usesBrain(worker) || usesNano(worker) || boxReady
     /** The conversation with [worker]; each worker keeps its own, and the server remembers it by its id. */
     var chat by remember { mutableStateOf(prefs.jarvisChat(worker.id)) }
     var picking by remember { mutableStateOf(false) }
@@ -293,11 +300,14 @@ fun JarvisScreen(
     }
 
     /** Adds what was said and the answer to [w]'s chat (it may not be the one on screen any more). */
-    fun answered(r: Jarvis.Reply, audio: File?, w: Jarvis.Worker, said: String, spoken: Boolean, via: String? = null, extra: List<Jarvis.ChatMsg> = emptyList()) {
+    fun answered(r: Jarvis.Reply, audio: File?, w: Jarvis.Worker, said: String, spoken: Boolean, via: String? = null, extra: List<Jarvis.ChatMsg> = emptyList(), route: String? = null) {
         val now = System.currentTimeMillis()
+        // A route line ("sent to Claude on the box") sits between what was said and the box's answer.
+        val replyAt = if (route != null) now + 2 else now + 1
         val add = listOfNotNull(
             Jarvis.ChatMsg(true, said, now, spoken = spoken).takeIf { said.isNotBlank() },
-            Jarvis.ChatMsg(false, r.reply, now + 1, audio = audio?.name, via = via).takeIf { r.reply.isNotBlank() },
+            route?.let { Jarvis.ChatMsg(false, it, now + 1, via = "box") },
+            Jarvis.ChatMsg(false, r.reply, replyAt, audio = audio?.name, via = via).takeIf { r.reply.isNotBlank() },
         ) + extra
         val onScreen = w.id == worker.id
         val base = if (onScreen) chat else prefs.jarvisChat(w.id)
@@ -310,7 +320,7 @@ fun JarvisScreen(
         if (demo && w.id == "research") markDone(listOf(Jarvis.Done("demo-$now", "Research finished (demo)", "This is what a finished background job looks like.")))
         // Only spoken messages are answered out loud; a typed one gets its ▶ to play by hand.
         if (audio != null && onScreen && spoken && prefs.jarvisSpeak) play(audio.name)
-        else if (audio == null && phoneVoice && onScreen && spoken && prefs.jarvisSpeak && r.reply.isNotBlank()) voiceOut.speak((now + 1).toString(), r.reply, speed)
+        else if (audio == null && phoneVoice && onScreen && spoken && prefs.jarvisSpeak && r.reply.isNotBlank()) voiceOut.speak(replyAt.toString(), r.reply, speed)
     }
 
     /** Server audio, unless the phone reads replies out itself (then there's nothing to wait for). */
@@ -364,7 +374,7 @@ fun JarvisScreen(
         val turns = chat.messages.filter { it.via != "box" }.map { PhoneBrain.Turn(it.mine, it.text) } + PhoneBrain.Turn(true, t)
         val model = PhoneBrain.model(prefs.brainClever)
         val main = android.os.Handler(android.os.Looper.getMainLooper())
-        streaming = ""
+        streaming = ""; streamingVia = null
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -396,17 +406,13 @@ fun JarvisScreen(
         }
     }
 
-    /** Typed text, or (with [spoken]) what the phone's speech-to-text heard. */
-    fun sendText(text: String, spoken: Boolean = false) {
-        val t = text.trim()
-        if (t.isEmpty() || phase != Phase.IDLE) return
-        if (!ready) { onOpenSettings(); return }
-        phase = Phase.SENDING; error = null; wasTyped = !spoken; sendingText = t
-        if (!spoken) { typed = ""; prefs.setDraft("capture", "") }
-        pauseAudio()
-        val w = worker
+    /**
+     * Sends [t] to [w] on the box. [route] adds a "sent to the box" line first; [record] false leaves Tom's message out
+     * of the chat (Ask the box resends one that's already there).
+     */
+    fun askBox(t: String, spoken: Boolean, w: Jarvis.Worker, route: String? = null, record: Boolean = true) {
         val id = chat.id
-        if (usesBrain(w)) { askBrain(t, spoken, w); return }
+        val via = if (usesNano(w) || route != null) "Claude · box" else null
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -418,9 +424,63 @@ fun JarvisScreen(
             sendingText = null
             result.onSuccess { (r, audio) ->
                 pendingText = null
-                answered(r, audio, w, t, spoken = spoken)
-            }.onFailure { e -> pendingText = t; error = failed(e) }
+                answered(r, audio, w, if (record) t else "", spoken = spoken, via = via, route = route)
+            }.onFailure { e -> pendingText = if (record) t else null; error = failed(e) }
         }
+    }
+
+    /** Gemini Nano on the phone; if it says the ask needs more (BOX) or fails, it goes to the box instead. */
+    fun askNano(t: String, spoken: Boolean, w: Jarvis.Worker) {
+        val turns = chat.messages.filter { it.via != "box" }.map { PhoneBrain.Turn(it.mine, it.text) }
+        val prompt = NanoRoute.prompt(turns, t, java.time.LocalDate.now(), listOf("#work", "#personal"))
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        streaming = ""; streamingVia = NanoRoute.VIA
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { PhoneNano.ask(prompt) { so -> main.post { streaming = NanoRoute.visible(so) } } }
+            }
+            streaming = null; streamingVia = null
+            val r = result.getOrNull()?.let(NanoRoute::parse)
+            if (r == null || r.toBox) {
+                val why = if (r == null) "Nano couldn't answer" else "Needs more than Nano"
+                if (boxReady && prefs.nanoToBox) { askBox(t, spoken, w, route = "🛰 $why · sent to Claude on the box"); return@launch }
+                phase = Phase.IDLE; sendingText = null
+                answered(Jarvis.Reply(t, "$why, and the box isn't set up. Add its address and token in Settings › Jarvis.", null), null, w, t, spoken, via = NanoRoute.VIA)
+                return@launch
+            }
+            phase = Phase.IDLE; sendingText = null; pendingText = null
+            val sorted = if (r.tasks.isEmpty()) null else SortResult(r.tasks, emptyList(), null)
+            answered(Jarvis.Reply(t, r.text, null, sorted = sorted), null, w, t, spoken, via = NanoRoute.VIA)
+        }
+    }
+
+    /** Ask the box: resends the message a Nano answer was for to Claude on the box. */
+    fun askTheBox(m: Jarvis.ChatMsg) {
+        if (phase != Phase.IDLE) return
+        val asked = chat.messages.takeWhile { it !== m }.lastOrNull { it.mine }?.text ?: return
+        if (!boxReady) { scope.launch { snack.showSnackbar("Add the box's address and token in Settings › Jarvis first") }; return }
+        phase = Phase.SENDING; error = null; wasTyped = true
+        pauseAudio()
+        askBox(asked, false, worker, route = "🛰 Asked Claude on the box", record = false)
+    }
+
+    /** Typed text, or (with [spoken]) what the phone's speech-to-text heard. */
+    fun sendText(text: String, spoken: Boolean = false) {
+        val t = text.trim()
+        if (t.isEmpty() || phase != Phase.IDLE) return
+        if (!ready) { onOpenSettings(); return }
+        phase = Phase.SENDING; error = null; wasTyped = !spoken; sendingText = t
+        if (!spoken) { typed = ""; prefs.setDraft("capture", "") }
+        pauseAudio()
+        val w = worker
+        if (usesBrain(w)) { askBrain(t, spoken, w); return }
+        if (usesNano(w)) {
+            val why = if (prefs.nanoToBox && boxReady) NanoRoute.needsBox(t) else null
+            if (why == null) { askNano(t, spoken, w); return }
+            askBox(t, spoken, w, route = "🛰 $why · sent to Claude on the box")
+            return
+        }
+        askBox(t, spoken, w)
     }
 
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
@@ -606,8 +666,8 @@ fun JarvisScreen(
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(scroll).padding(bottom = if (rec && inChat) 300.dp else 150.dp)) {
             ScreenTitle(title) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (usesBrain(worker)) Text(
-                        "⚡ phone", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                    if (usesBrain(worker) || usesNano(worker)) Text(
+                        if (usesBrain(worker)) "⚡ phone" else "📱 phone", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Primary,
                         modifier = Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
                             .padding(horizontal = 9.dp, vertical = 5.dp)
                     )
@@ -714,8 +774,20 @@ fun JarvisScreen(
                         Modifier.padding(end = 36.dp).clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).background(Surface1)
                             .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
                     ) {
-                        Text((m.via?.let { "🛰 $it" } ?: worker.label).uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
+                        val nano = m.via == NanoRoute.VIA
+                        Text(
+                            (m.via?.let { if (nano) "📱 Nano" else "🛰 $it" } ?: worker.label).uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp,
+                            fontFamily = FontFamily.Monospace, color = if (m.via != null && !nano) Amber else Primary
+                        )
                         Text(remember(m.text) { chatMarkdown(m.text) }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
+                        if (nano) {
+                            Text("on phone · free", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
+                            Text(
+                                "🛰 Ask the box", fontSize = 12.sp, color = if (phase == Phase.IDLE) Primary else Muted,
+                                modifier = Modifier.padding(top = 8.dp).clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
+                                    .clickable(enabled = phase == Phase.IDLE) { askTheBox(m) }.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                         if (m.audio == null && phoneVoice) {
                             val here = speakingId == m.at.toString()
                             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -759,9 +831,9 @@ fun JarvisScreen(
                     Modifier.padding(end = 36.dp).clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).background(Surface1)
                         .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
                 ) {
-                    Text(worker.label.uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
+                    Text((if (streamingVia == NanoRoute.VIA) "📱 Nano" else worker.label).uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
                     Text(remember(so) { chatMarkdown("$so ▍") }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
-                    Text("⚡ streaming…", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
+                    Text(if (streamingVia == NanoRoute.VIA) "📱 on phone…" else "⚡ streaming…", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
                 }
                 else if (phase == Phase.SENDING) Text(
                     "• • •", fontSize = 16.sp, color = Muted, letterSpacing = 3.sp,
