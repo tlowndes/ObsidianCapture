@@ -108,6 +108,10 @@ fun main(args: Array<String>) {
         }
 
         if (state.quickVisible) QuickCaptureWindow(state, icon)
+
+        // Reminders (windows-reminders-v1): checked every 30 s while the app runs; cards pop up above the clock.
+        LaunchedEffect(Unit) { DesktopReminders.run(state) }
+        if (DesktopReminders.showing.isNotEmpty()) ReminderWindow(state, icon)
     }
 }
 

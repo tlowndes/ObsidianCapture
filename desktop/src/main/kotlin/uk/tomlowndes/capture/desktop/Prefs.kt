@@ -1,5 +1,6 @@
 package uk.tomlowndes.capture.desktop
 
+import uk.tomlowndes.capture.ReminderSettings
 import uk.tomlowndes.capture.VaultPrefs
 import com.sun.jna.platform.win32.Crypt32Util
 import java.io.File
@@ -128,6 +129,31 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var updateLatest: String?
         get() = p.get("update_latest", null)
         set(v) = put("update_latest", v)
+
+    /** Settings › Reminders (windows-reminders-v1). */
+    var reminders: ReminderSettings
+        get() = ReminderSettings(
+            beforeOn = p.getBoolean("rem_before_on", true), beforeMinutes = p.getInt("rem_before_min", 10),
+            dueOn = p.getBoolean("rem_due_on", true), dueMinute = p.getInt("rem_due", 9 * 60),
+            morningOn = p.getBoolean("rem_morning_on", false), morningMinute = p.getInt("rem_morning", 8 * 60),
+            eveningOn = p.getBoolean("rem_evening_on", false), eveningMinute = p.getInt("rem_evening", 18 * 60 + 30),
+            weeklyOn = p.getBoolean("rem_weekly_on", false), weeklyMinute = p.getInt("rem_weekly", 17 * 60),
+        )
+        set(v) {
+            p.putBoolean("rem_before_on", v.beforeOn); p.putInt("rem_before_min", v.beforeMinutes)
+            p.putBoolean("rem_due_on", v.dueOn); p.putInt("rem_due", v.dueMinute)
+            p.putBoolean("rem_morning_on", v.morningOn); p.putInt("rem_morning", v.morningMinute)
+            p.putBoolean("rem_evening_on", v.eveningOn); p.putInt("rem_evening", v.eveningMinute)
+            p.putBoolean("rem_weekly_on", v.weeklyOn); p.putInt("rem_weekly", v.weeklyMinute)
+            p.flush()
+        }
+    var reminderSound: Boolean
+        get() = p.getBoolean("rem_sound", true)
+        set(v) { p.putBoolean("rem_sound", v); p.flush() }
+    /** Reminders already shown today (ReminderPlan keys). */
+    var remindersShown: Set<String>
+        get() = str("rem_shown", "").split("\n").filter { it.isNotEmpty() }.toSet()
+        set(v) = put("rem_shown", v.joinToString("\n").ifEmpty { null })
 
     fun draft(key: String): String = str("draft_${key.hashCode()}", "")
     fun setDraft(key: String, text: String) = put("draft_${key.hashCode()}", text.ifEmpty { null })

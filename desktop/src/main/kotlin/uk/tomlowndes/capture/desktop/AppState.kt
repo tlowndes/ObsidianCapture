@@ -37,6 +37,8 @@ class AppState(val prefs: DesktopPrefs) {
     var vault by mutableStateOf(prefs.vault?.takeIf { it.isDirectory }?.let(::FileVault))
         private set
     var tab by mutableStateOf(Tab.DECK)
+    /** The Settings page open on the left. */
+    var settingsPage by mutableStateOf(SettingsPage.GENERAL)
     /** A project to open when the Projects tab next shows (from the Projects card on Deck). */
     var openProject by mutableStateOf<String?>(null)
     /** The focus timer started from Deck; it keeps running while you switch tabs. */

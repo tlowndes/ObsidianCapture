@@ -17,7 +17,7 @@ object DesktopCalendar {
     private const val EVERY_MS = 30 * 60_000L
     private var cached: Pair<Long, Pair<List<CalendarSource>, List<CalEvent>>>? = null
 
-    private fun fetch(url: String): String {
+    fun fetch(url: String): String {
         val c = URL(CalendarConfig.fetchUrl(url)).openConnection() as HttpURLConnection
         c.connectTimeout = 15_000; c.readTimeout = 20_000
         try {
@@ -30,6 +30,8 @@ object DesktopCalendar {
 
     /** Sources and events for today and the 6 days after. Call off the UI thread. */
     @Synchronized
+    fun forget() { cached = null }
+
     fun load(v: Vault, force: Boolean = false): Pair<List<CalendarSource>, List<CalEvent>> {
         val now = System.currentTimeMillis()
         cached?.let { (at, data) -> if (!force && now - at < EVERY_MS) return data }

@@ -29,21 +29,101 @@ import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
 import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.Updater
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import uk.tomlowndes.capture.CalendarConfig
+import uk.tomlowndes.capture.CalendarSource
+import uk.tomlowndes.capture.DeckConfig
+import uk.tomlowndes.capture.DeckLayout
+import uk.tomlowndes.capture.ReminderPlan
+import uk.tomlowndes.capture.ReminderSettings
+
+/** Settings pages down the left (windows-settings-v1), like the phone's tidied Settings. */
+enum class SettingsPage(val label: String) {
+    GENERAL("General"), VAULT("Vault & folders"), DECK("Deck & weather"), CALENDARS("Calendars"),
+    REMINDERS("Reminders"), UPDATES("Updates")
+}
 
 @Composable
 fun SettingsPane(state: AppState) {
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.width(220.dp).fillMaxHeight().padding(horizontal = 12.dp, vertical = 22.dp)) {
+            SettingsPage.values().forEach { pg ->
+                val on = state.settingsPage == pg
+                Text(
+                    pg.label, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(10.dp))
+                        .background(if (on) PrimaryTint else Color.Transparent).hand().clickable { state.settingsPage = pg }
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                )
+            }
+        }
+        Box(Modifier.fillMaxHeight().width(1.dp).background(Outline))
+        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
+            H1(state.settingsPage.label, size = 26)
+            Column(Modifier.widthIn(max = 760.dp).padding(top = 10.dp)) {
+                when (state.settingsPage) {
+                    SettingsPage.GENERAL -> GeneralPage(state)
+                    SettingsPage.VAULT -> VaultPage(state)
+                    SettingsPage.DECK -> DeckPage(state)
+                    SettingsPage.CALENDARS -> CalendarsPage(state)
+                    SettingsPage.REMINDERS -> RemindersPage(state)
+                    SettingsPage.UPDATES -> UpdatesPage(state)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneralPage(state: AppState) {
     val p = state.prefs
     var recurring by remember { mutableStateOf(p.recurring) }
+    var autostart by remember { mutableStateOf(Autostart.enabled()) }
+    Setting("Quick capture shortcut",
+        if (state.hotkeyFailed) "Another app is using this one, pick another" else "Opens the capture popup from any app") {
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Hotkey.CHOICES.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { c -> Chip(c.label, c.label == state.hotkeyLabel, small = true) { p.hotkey = c.label; state.hotkeyLabel = c.label } }
+                }
+            }
+        }
+    }
+    Setting("Start with Windows", "Sits in the tray, ready for the shortcut and reminders") {
+        Toggle(autostart) { on -> runCatching { Autostart.set(on) }.onSuccess { autostart = on }.onFailure { state.say("Couldn't change it: ${it.message}") } }
+    }
+    Setting("Repeat recurring tasks", "Ticking a 🔁 task adds its next one, like the Tasks plugin") {
+        Toggle(recurring) { recurring = it; p.recurring = it }
+    }
+}
+
+@Composable
+private fun VaultPage(state: AppState) {
+    val p = state.prefs
     var ideas by remember { mutableStateOf(p.ideasDir) }
     var images by remember { mutableStateOf(p.imagesDir) }
-    var autostart by remember { mutableStateOf(Autostart.enabled()) }
+    Setting("Vault folder", p.vault?.absolutePath ?: "Not picked yet") { Chip("Change…", small = true) { pickVault(state) } }
+    Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
+    FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
+    Sub("The same folders as the phone app.", Modifier.padding(top = 10.dp))
+}
+
+@Composable
+private fun DeckPage(state: AppState) {
+    val p = state.prefs
     var town by remember { mutableStateOf(p.weatherPlace) }
     var finding by remember { mutableStateOf(false) }
-    var hasToken by remember { mutableStateOf(p.githubToken != null) }
-    var token by remember { mutableStateOf("") }
-    var checks by remember { mutableStateOf(p.updateChecks) }
-    val latest = DesktopUpdate.release?.tag ?: p.updateLatest
+    var layout by remember { mutableStateOf<DeckLayout?>(null) }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(state.vault) { layout = state.vault?.let { v -> state.io { DeckConfig.load(v) } } }
 
     fun findTown() {
         if (town.isBlank() || finding) return
@@ -58,85 +138,201 @@ fun SettingsPane(state: AppState) {
             state.changed()
         }
     }
+    fun save(l: DeckLayout) {
+        layout = l
+        val v = state.vault ?: return
+        scope.launch { state.io("Couldn't save the card order") { DeckConfig.save(v, l) }; state.changed() }
+    }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
-        H1("Settings")
-        Column(Modifier.widthIn(max = 720.dp).padding(top = 10.dp)) {
-            Setting("Vault folder", p.vault?.absolutePath ?: "Not picked yet") { Chip("Change…", small = true) { pickVault(state) } }
-            Setting("Quick capture shortcut",
-                if (state.hotkeyFailed) "Another app is using this one, pick another" else "Opens the capture popup from any app") {
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Hotkey.CHOICES.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.forEach { c -> Chip(c.label, c.label == state.hotkeyLabel, small = true) { p.hotkey = c.label; state.hotkeyLabel = c.label } }
-                        }
-                    }
+    Setting("Weather", if (p.weatherLatLon != null) "Deck shows today's forecast for ${p.weatherPlace}" else "The town Deck shows the forecast for") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Field(town, { town = it }, Modifier.width(220.dp).onKeys(enter = ::findTown), "Manchester")
+            Chip(if (finding) "Finding…" else "Set", small = true) { findTown() }
+        }
+    }
+    Text("CARDS ON THE DECK", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Sub("Shared with the phone through the vault. ↑ ↓ to reorder.", Modifier.padding(bottom = 6.dp))
+    val l = layout
+    if (l == null) Sub("Pick a vault first.") else l.order.forEachIndexed { i, card ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(card.label, fontSize = 14.sp, color = if (card in l.hidden) Muted else TextMain, modifier = Modifier.weight(1f))
+            TextAction("↑", if (i > 0) Primary else Faint) { if (i > 0) save(l.moved(i, i - 1)) }
+            TextAction("↓", if (i < l.order.lastIndex) Primary else Faint) { if (i < l.order.lastIndex) save(l.moved(i, i + 1)) }
+            Spacer(Modifier.width(10.dp))
+            Toggle(card !in l.hidden) { save(l.toggled(card)) }
+        }
+    }
+}
+
+private val CAL_COLOURS = listOf("#7aa2ff", "#f5c06a", "#5fd39a", "#b39dff", "#ff8a80")
+
+private fun hex(c: String): Color = runCatching { Color(0xFF000000 or c.removePrefix("#").toLong(16)) }.getOrDefault(Primary)
+
+@Composable
+private fun CalendarsPage(state: AppState) {
+    var sources by remember { mutableStateOf<List<CalendarSource>?>(null) }
+    var counts by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var url by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(state.vault, state.changes) {
+        val v = state.vault ?: return@LaunchedEffect
+        sources = state.io("Couldn't read the calendars") { CalendarConfig.load(v) }
+        counts = state.io { DesktopCalendar.load(v).second.groupingBy { it.calendarId }.eachCount() } ?: emptyMap()
+    }
+    fun save(list: List<CalendarSource>) {
+        val v = state.vault ?: return
+        sources = list
+        scope.launch {
+            state.io("Couldn't save the calendars") { CalendarConfig.save(v, list) }
+            DesktopCalendar.forget(); state.changed()
+        }
+    }
+    fun add() {
+        if (url.isBlank() || name.isBlank() || adding) return
+        adding = true
+        scope.launch {
+            val ok = state.io("Couldn't read that link") { DesktopCalendar.fetch(url.trim()); true } == true
+            adding = false
+            if (!ok) return@launch
+            val list = sources.orEmpty()
+            save(list + CalendarSource(System.currentTimeMillis().toString(), name.trim(), url.trim(), CAL_COLOURS[list.size % CAL_COLOURS.size]))
+            url = ""; name = ""
+            state.say("Calendar added")
+        }
+    }
+    Sub("The Proton calendars the Deck, Upcoming and reminders use. Shared with the phone through the vault.", Modifier.padding(bottom = 6.dp))
+    val list = sources
+    if (list == null) Sub("Pick a vault first.")
+    else if (list.isEmpty()) Sub("No calendars yet.", Modifier.padding(vertical = 10.dp))
+    else list.forEach { c ->
+        Column {
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(12.dp).clip(RoundedCornerShape(4.dp)).background(hex(c.colour)))
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(c.name, fontSize = 14.5.sp, color = TextMain)
+                    Text(if (!c.enabled) "Proton · switched off" else "Proton · ${counts[c.id] ?: 0} events this week", fontSize = 12.sp, color = Muted)
+                }
+                Toggle(c.enabled) { on -> save(list.map { if (it.id == c.id) it.copy(enabled = on) else it }) }
+                TextAction("Remove", Muted, Modifier.padding(start = 12.dp)) { save(list.filter { it.id != c.id }) }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+        }
+    }
+    Text("ADD A PROTON CALENDAR", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Field(url, { url = it }, Modifier.weight(1f), "https://calendar.proton.me/api/calendar/v1/url/…")
+        Field(name, { name = it }, Modifier.width(150.dp).onKeys(enter = ::add), "Name")
+        PrimaryButton(if (adding) "Checking…" else "Add", enabled = !adding) { add() }
+    }
+    Sub("In Proton Calendar: Share › Full view › copy the link.", Modifier.padding(top = 8.dp))
+}
+
+private fun hm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
+private fun parseHm(s: String): Int? = Regex("^(\\d{1,2}):?(\\d{2})$").find(s.trim())?.let { m ->
+    val h = m.groupValues[1].toInt(); val mi = m.groupValues[2].toInt()
+    if (h in 0..23 && mi in 0..59) h * 60 + mi else null
+}
+
+/** A HH:mm box that saves when the time is valid. */
+@Composable
+private fun TimeBox(minute: Int, onChange: (Int) -> Unit) {
+    var text by remember(minute) { mutableStateOf(hm(minute)) }
+    Field(text, { t -> text = t; parseHm(t)?.let(onChange) }, Modifier.width(86.dp), "09:00")
+}
+
+@Composable
+private fun RemindersPage(state: AppState) {
+    val p = state.prefs
+    var s by remember { mutableStateOf(p.reminders) }
+    var sound by remember { mutableStateOf(p.reminderSound) }
+    fun set(n: ReminderSettings) { s = n; p.reminders = n }
+    Setting("Before a timed task", "Tasks with a start time, like ones dragged into Upcoming") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ReminderPlan.LEADS.forEach { m -> Chip("${m}m", s.beforeMinutes == m, small = true) { set(s.copy(beforeMinutes = m)) } }
+            Spacer(Modifier.width(8.dp))
+            Toggle(s.beforeOn) { set(s.copy(beforeOn = it)) }
+        }
+    }
+    Setting("Task due alerts", "One card listing what's due today") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TimeBox(s.dueMinute) { set(s.copy(dueMinute = it)) }; Toggle(s.dueOn) { set(s.copy(dueOn = it)) }
+        }
+    }
+    Setting("Morning briefing", "Today's tasks and next event") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TimeBox(s.morningMinute) { set(s.copy(morningMinute = it)) }; Toggle(s.morningOn) { set(s.copy(morningOn = it)) }
+        }
+    }
+    Setting("Evening wrap-up", "Tick off or move the rest") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TimeBox(s.eveningMinute) { set(s.copy(eveningMinute = it)) }; Toggle(s.eveningOn) { set(s.copy(eveningOn = it)) }
+        }
+    }
+    Setting("Weekly review", "Sunday") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TimeBox(s.weeklyMinute) { set(s.copy(weeklyMinute = it)) }; Toggle(s.weeklyOn) { set(s.copy(weeklyOn = it)) }
+        }
+    }
+    Setting("Play a sound", "Windows' default notification sound") { Toggle(sound) { sound = it; p.reminderSound = it } }
+    Setting("Send a test", "Shows one now in the bottom-right") { Chip("Show one now", small = true) { DesktopReminders.show(state, Reminder.Test()) } }
+    Sub("Reminders only show while Flight Deck is running (it sits in the tray). Set separately on the phone and the PC.", Modifier.padding(top = 12.dp))
+}
+
+@Composable
+private fun UpdatesPage(state: AppState) {
+    val p = state.prefs
+    var hasToken by remember { mutableStateOf(p.githubToken != null) }
+    var token by remember { mutableStateOf("") }
+    var checks by remember { mutableStateOf(p.updateChecks) }
+    val latest = DesktopUpdate.release?.tag ?: p.updateLatest
+    val scope = rememberCoroutineScope()
+    Setting("GitHub token", if (hasToken) "Saved, encrypted for your Windows account" else "Read-only, for app updates and the GitHub line on projects. Fine-grained: ObsidianCapture, Contents read") {
+        if (hasToken) Chip("Remove", small = true) { p.githubToken = null; hasToken = false }
+        else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Field(token, { token = it }, Modifier.width(220.dp), "github_pat_…")
+            Chip("Save", small = true) {
+                if (token.isNotBlank()) runCatching { p.githubToken = token }
+                    .onSuccess { token = ""; hasToken = true; state.changed() }
+                    .onFailure { state.say("Couldn't save it: ${it.message}") }
+            }
+        }
+    }
+    Setting("Check for updates on launch", "Asks GitHub for a newer release when the app opens. Uses the GitHub token above") {
+        Toggle(checks) { checks = it; p.updateChecks = it }
+    }
+    Setting("Installed", "Latest: " + when {
+        DesktopUpdate.phase == DesktopUpdate.Phase.CHECKING -> "checking…"
+        latest == null -> "not checked yet"
+        Updater.isNewer(latest, DesktopUpdate.installed) -> "${latest.removePrefix("v")} available"
+        else -> "${latest.removePrefix("v")}, up to date"
+    } + (DesktopUpdate.error?.let { " · $it" } ?: "")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(DesktopUpdate.installed, fontSize = 13.sp, color = Muted)
+            val newer = latest != null && Updater.isNewer(latest, DesktopUpdate.installed)
+            when (DesktopUpdate.phase) {
+                DesktopUpdate.Phase.DOWNLOADING -> {
+                    val t = DesktopUpdate.total
+                    Text(if (t > 0) "Downloading ${(DesktopUpdate.done * 100 / t).toInt()}%" else "Downloading…", fontSize = 13.sp, color = Muted)
+                }
+                DesktopUpdate.Phase.READY -> PrimaryButton("Restart and install") { DesktopUpdate.restartAndInstall() }
+                DesktopUpdate.Phase.CHECKING -> {}
+                else -> if (newer) PrimaryButton("Update") { scope.launch { DesktopUpdate.update(p) } }
+            }
+            val busy = DesktopUpdate.phase == DesktopUpdate.Phase.DOWNLOADING || DesktopUpdate.phase == DesktopUpdate.Phase.READY
+            if (!busy) Chip("Check now", small = true) {
+                scope.launch {
+                    DesktopUpdate.check(p, force = true)
+                    if (DesktopUpdate.phase == DesktopUpdate.Phase.AVAILABLE) { p.updateSkip = null; DesktopUpdate.skip = null }
                 }
             }
-            Setting("Start with Windows", "Sits in the tray, ready for the shortcut") {
-                Toggle(autostart) { on -> runCatching { Autostart.set(on) }.onSuccess { autostart = on }.onFailure { state.say("Couldn't change it: ${it.message}") } }
-            }
-            Setting("Repeat recurring tasks", "Ticking a 🔁 task adds its next one, like the Tasks plugin") {
-                Toggle(recurring) { recurring = it; p.recurring = it }
-            }
-            Setting("Weather", if (p.weatherLatLon != null) "Deck shows today's forecast for ${p.weatherPlace}" else "The town Deck shows the forecast for") {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(town, { town = it }, Modifier.width(220.dp).onKeys(enter = ::findTown), "Manchester")
-                    Chip(if (finding) "Finding…" else "Set", small = true) { findTown() }
-                }
-            }
-            Setting("GitHub token", if (hasToken) "Saved, encrypted for your Windows account" else "Read-only, for app updates and the GitHub line on projects. Fine-grained: ObsidianCapture, Contents read") {
-                if (hasToken) Chip("Remove", small = true) { p.githubToken = null; hasToken = false }
-                else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(token, { token = it }, Modifier.width(220.dp), "github_pat_…")
-                    Chip("Save", small = true) {
-                        if (token.isNotBlank()) runCatching { p.githubToken = token }
-                            .onSuccess { token = ""; hasToken = true; state.changed() }
-                            .onFailure { state.say("Couldn't save it: ${it.message}") }
-                    }
-                }
-            }
-            Text("UPDATES", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
-            Setting("Check for updates on launch", "Asks GitHub for a newer release when the app opens. Uses the GitHub token above") {
-                Toggle(checks) { checks = it; p.updateChecks = it }
-            }
-            Setting("Installed", "Latest: " + when {
-                DesktopUpdate.phase == DesktopUpdate.Phase.CHECKING -> "checking…"
-                latest == null -> "not checked yet"
-                Updater.isNewer(latest, DesktopUpdate.installed) -> "${latest.removePrefix("v")} available"
-                else -> "${latest.removePrefix("v")}, up to date"
-            } + (DesktopUpdate.error?.let { " · $it" } ?: "")) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(DesktopUpdate.installed, fontSize = 13.sp, color = Muted)
-                    val newer = latest != null && Updater.isNewer(latest, DesktopUpdate.installed)
-                    when (DesktopUpdate.phase) {
-                        DesktopUpdate.Phase.DOWNLOADING -> {
-                            val t = DesktopUpdate.total
-                            Text(if (t > 0) "Downloading ${(DesktopUpdate.done * 100 / t).toInt()}%" else "Downloading…", fontSize = 13.sp, color = Muted)
-                        }
-                        DesktopUpdate.Phase.READY -> PrimaryButton("Restart and install") { DesktopUpdate.restartAndInstall() }
-                        DesktopUpdate.Phase.CHECKING -> {}
-                        else -> if (newer) PrimaryButton("Update") { scope.launch { DesktopUpdate.update(p) } }
-                    }
-                    val busy = DesktopUpdate.phase == DesktopUpdate.Phase.DOWNLOADING || DesktopUpdate.phase == DesktopUpdate.Phase.READY
-                    if (!busy) Chip("Check now", small = true) {
-                        scope.launch {
-                            DesktopUpdate.check(p, force = true)
-                            if (DesktopUpdate.phase == DesktopUpdate.Phase.AVAILABLE) { p.updateSkip = null; DesktopUpdate.skip = null }
-                        }
-                    }
-                }
-            }
-            Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
-            FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
-            FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
-            Sub("The same folders as the phone app.", Modifier.padding(top = 10.dp))
         }
     }
 }
 
 @Composable
-private fun Setting(title: String, sub: String, control: @Composable () -> Unit) {
+internal fun Setting(title: String, sub: String, control: @Composable () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 20.dp)) {
