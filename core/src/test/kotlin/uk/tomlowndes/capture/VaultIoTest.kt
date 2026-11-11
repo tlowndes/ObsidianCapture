@@ -78,6 +78,29 @@ class VaultIoTest {
         }
     }
 
+    @Test fun `an edit never writes over a note that reads blank but has bytes on disk`() {
+        val v = Script(reads = ArrayDeque(List(10) { "" }), size = 6388)
+        try {
+            VaultIo.edit(v, "01 - Inbox/⚡ Quick Task.md", none) { it.add("- [ ] #task new") }
+            fail("edit should have refused")
+        } catch (e: IllegalStateException) {
+            assertEquals("Couldn't read ⚡ Quick Task.md, try again", e.message)
+        }
+        assertEquals(emptyList<String>(), v.written)
+    }
+
+    @Test fun `a blank read mid-sync is read again before editing`() {
+        val v = Script(reads = ArrayDeque(listOf("", "## Active\n- [ ] a\n", "## Active\n- [ ] a\n")), size = 20)
+        VaultIo.edit(v, "Note.md", none) { it.add(2, "- [ ] b") }
+        assertEquals("## Active\n- [ ] a\n- [ ] b\n", v.written.single())
+    }
+
+    @Test fun `a note that really is empty can still be edited`() {
+        val v = Script(start = "")
+        VaultIo.edit(v, "Note.md", none) { it.add("- [ ] a") }
+        assertEquals("\n- [ ] a\n", v.written.single())
+    }
+
     /**
      * Reads come off [reads] when it isn't empty, otherwise the last thing written (or [start]).
      * The first [partials] writes store only a prefix; the first [empties] store nothing.
@@ -89,6 +112,7 @@ class VaultIoTest {
         private var empties: Int = 0,
         private val foreign: String? = null,
         private val alwaysForeign: Boolean = false,
+        private val size: Long? = null,
     ) : Vault {
         val written = mutableListOf<String>()
         val stored = mutableListOf<String>()
@@ -112,7 +136,7 @@ class VaultIoTest {
         }
 
         override fun writeBytes(path: String, bytes: ByteArray) = writeOnce(path, bytes.toString(Charsets.UTF_8))
-        override fun entry(path: String): Vault.Entry? = null
+        override fun entry(path: String): Vault.Entry? = size?.let { Vault.Entry(path, false, 0L, it) }
         override fun list(dir: String): List<Vault.Entry> = emptyList()
         override fun mkdirs(dir: String) {}
         override fun create(dir: String, base: String, ext: String) = "$base.$ext"
