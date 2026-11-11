@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS }
+enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -37,10 +37,14 @@ class AppState(val prefs: DesktopPrefs) {
     var vault by mutableStateOf(prefs.vault?.takeIf { it.isDirectory }?.let(::FileVault))
         private set
     var tab by mutableStateOf(Tab.DECK)
+    /** The Settings page open on the left. */
+    var settingsPage by mutableStateOf(SettingsPage.GENERAL)
     /** A project to open when the Projects tab next shows (from the Projects card on Deck). */
     var openProject by mutableStateOf<String?>(null)
     /** The focus timer started from Deck; it keeps running while you switch tabs. */
     var focus by mutableStateOf<FocusRun?>(null)
+    /** The routine running from the Routines pane; it keeps going while you switch tabs. */
+    var routine by mutableStateOf<RoutineRun?>(null)
     var windowVisible by mutableStateOf(true)
     var quickVisible by mutableStateOf(false)
     /** Bumped when notes may have changed outside the open tab (window refocused, quick capture saved). */
@@ -49,6 +53,16 @@ class AppState(val prefs: DesktopPrefs) {
     /** The quick capture shortcut, and whether Windows refused it (another app has it). */
     var hotkeyLabel by mutableStateOf(prefs.hotkey)
     var hotkeyFailed by mutableStateOf(false)
+    /** Jarvis chats and the microphone, made the first time Jarvis is opened. */
+    private var jarvisSession: JarvisSession? = null
+    val jarvis: JarvisSession get() = jarvisSession ?: JarvisSession(this).also { jarvisSession = it }
+    val jarvisOrNull: JarvisSession? get() = jarvisSession
+    /** A Print summary sheet to show (from the Vault reader or a Jarvis chat). */
+    var printSummaryOf by mutableStateOf<PrintSource?>(null)
+    /** The Daily Slip dialog (Deck 🧾, Ctrl+P on Deck, tray menu). */
+    var slipOpen by mutableStateOf(false)
+    /** Bumped by Ctrl+P while the Daily Slip is open, to print it. */
+    var slipPrint by mutableIntStateOf(0)
     /** Shows a Windows notification from the tray icon. */
     var notify: (String, String) -> Unit = { _, _ -> }
     /** Counts for the sidebar. */

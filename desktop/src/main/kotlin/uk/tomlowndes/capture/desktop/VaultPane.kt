@@ -153,6 +153,11 @@ fun VaultPane(state: AppState) {
                 (Tags.BUILT_IN.filter { b -> tags.any { it.first == b } } + tags.map { it.first }.filter { it !in Tags.BUILT_IN }.take(8))
                     .forEach { t -> TagChip(t, tag == t, tags.firstOrNull { it.first == t }?.second) { tag = if (tag == t) null else t } }
             }
+            Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip("💼 Jobs", small = true) { state.tab = Tab.JOBS }
+                Chip("🔁 Routines", small = true) { state.tab = Tab.ROUTINES }
+                Chip("🗓 Weekly review", small = true) { state.tab = Tab.WEEKLY }
+            }
             if (notes == null) Sub("Reading the vault…")
             val searching = query.isNotBlank() || tag != null
             if (searching) {
@@ -302,6 +307,7 @@ private fun NoteView(
                 startEdit(start..lines.indexOfLast { it.isNotBlank() }.coerceAtLeast(start - 1))
             }
             Chip("＃ Tag", small = true) { tagging = !tagging }
+            Chip("🧾 Print", small = true) { state.printSummaryOf = PrintSource.Note(VaultTasks.noteName(path), t) }
             Chip("↗ Open in Obsidian", small = true) { state.openInObsidian(path) }
         }
         Text(path.removeSuffix(".md") + " · updated " + shortDate(state.vault?.entry(path)?.modified ?: 0), fontSize = 12.sp, color = Muted,
