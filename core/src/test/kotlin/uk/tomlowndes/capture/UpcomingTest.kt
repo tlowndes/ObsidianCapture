@@ -74,4 +74,16 @@ class UpcomingTest {
         // On a Saturday "This weekend" is next Saturday's, as tomorrow already covers Sunday.
         assertEquals(LocalDate.of(2026, 11, 21), Upcoming.presets(LocalDate.of(2026, 11, 14))[2].second)
     }
+
+    @Test fun `a planned task sits in today's timeline and splits the free gap`() {
+        val planned = TaskItem("- [ ] 12:30 - 13:15 #task Write case study 📅 2026-11-09", "Write case study", today)
+        val day = Upcoming.days(listOf(planned, task("Call Mum", today)), listOf(ev("Review", 9, 11, 0, 90)), now)[0]
+        val items = day.items
+        assertEquals("Call Mum", (items[0] as AgendaItem.Task).task.text)
+        val p = items.filterIsInstance<AgendaItem.Task>().single { it.at != null }
+        assertEquals(java.time.LocalTime.of(12, 30), p.at!!.start)
+        val gaps = items.filterIsInstance<AgendaItem.Gap>()
+        assertTrue(gaps.none { it.start.toLocalTime() < java.time.LocalTime.of(13, 15) && it.end.toLocalTime() > java.time.LocalTime.of(12, 30) })
+        assertTrue(items.indexOf(p) > items.indexOfFirst { it is AgendaItem.Event })
+    }
 }

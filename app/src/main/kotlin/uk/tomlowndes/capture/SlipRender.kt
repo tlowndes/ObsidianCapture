@@ -26,6 +26,9 @@ object SlipRender {
     private const val M = 6           // side margin
     private const val BODY = 27f
     private const val SMALL = 22f
+    /** Tick box size and where the text after it starts (Tom asked for bigger boxes, 2026-11-11). */
+    private const val BOX = 42f
+    private const val TEXT_X = 60f
 
     private val headFace = Typeface.create("sans-serif-condensed", Typeface.BOLD)
     private val mono = Typeface.MONOSPACE
@@ -48,6 +51,7 @@ object SlipRender {
         val p = Pen(c)
         p.header(s)
         val sections = buildList<() -> Unit> {
+            if (s.brief != null) add { p.brief(s.brief!!) }
             if (s.weather != null) add { p.weather(s.weather!!) }
             if (s.show.calendar) add { p.calendar(s) }
             if (s.show.todo) add { p.todo(s) }
@@ -55,6 +59,19 @@ object SlipRender {
         }
         sections.forEachIndexed { i, f -> if (i > 0) p.dashed(); f() }
         p.footer(owner, now)
+        val h = (p.y + 40).toInt().coerceAtMost(MAX_HEIGHT)
+        return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
+    }
+
+    /** A Print summary slip (print-summary-v1): title, where it came from, then the points or paragraph. */
+    fun drawSummary(d: Summary.Doc, now: LocalDateTime = LocalDateTime.now()): Bitmap {
+        val tall = Bitmap.createBitmap(WIDTH, MAX_HEIGHT, Bitmap.Config.ARGB_8888)
+        val c = Canvas(tall)
+        c.drawColor(0xFFFFFFFF.toInt())
+        val p = Pen(c)
+        p.summary(d)
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", paint(SMALL), align = Layout.Alignment.ALIGN_CENTER)
         val h = (p.y + 40).toInt().coerceAtMost(MAX_HEIGHT)
         return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
     }
@@ -141,6 +158,32 @@ object SlipRender {
             solid()
         }
 
+        /** A tick box to fill in with a pen: [BOX] dots square (about 3.5 mm), its top at [top]. */
+        fun tickBox(top: Float) {
+            c.drawRect(M + 3f, top + 2f, M + 1f + BOX, top + BOX, stroke(4f))
+        }
+
+        fun brief(t: String) {
+            heading("In brief")
+            gap(4f)
+            text(t, paint(BODY), spacing = 1.15f)
+        }
+
+        fun summary(d: Summary.Doc) {
+            text(d.title, paint(52f, headFace), spacing = 0.95f)
+            gap(4f)
+            text(d.subtitle, paint(SMALL))
+            dashed()
+            if (d.bullets.isEmpty()) text(d.text, paint(BODY), spacing = 1.15f)
+            else d.bullets.forEach { b ->
+                val top = y
+                if (d.ticks) tickBox(top) else c.drawCircle(M + 14f, top + 17f, 6f, ink)
+                val indent = if (d.ticks) TEXT_X else 44f
+                text(b, paint(BODY), M + indent, inner - indent, spacing = 1.1f)
+                y = maxOf(y, top + if (d.ticks) BOX + 6f else 34f) + 12f
+            }
+        }
+
         fun weather(w: WeatherSummary) {
             heading("Weather", if (w.tomorrow) "Tomorrow" else "Today")
             gap(6f)
@@ -180,9 +223,18 @@ object SlipRender {
 
         fun calendar(s: SlipContent) {
             val n = s.allDay.size + s.events.size
+            val next = s.nextAllDay.size + s.nextEvents.size
             heading("Calendar", if (n == 0) "clear" else "$n event" + if (n == 1) "" else "s")
             gap(6f)
-            s.allDay.forEach { e ->
+            if (next > 0) { gap(2f); dayLabel("TODAY", s.date) }
+            events(s.allDay, s.events)
+            if (n == 0) { text("Nothing in the calendar today.", paint(BODY)); gap(8f) }
+            if (next > 0) { gap(8f); dayLabel("TOMORROW", s.date.plusDays(1)); events(s.nextAllDay, s.nextEvents) }
+            if (s.show.month) { gap(6f); month(s.date) }
+        }
+
+        fun events(allDay: List<SlipEvent>, timed: List<SlipEvent>) {
+            allDay.forEach { e ->
                 val top = y
                 gap(8f)
                 text("ALL DAY · " + e.title, paint(SMALL + 1), M + 12f, inner - 24f)
@@ -191,7 +243,7 @@ object SlipRender {
                 gap(10f)
             }
             val tw = 108f
-            s.events.forEach { e ->
+            timed.forEach { e ->
                 val top = y
                 c.drawText(e.start ?: "", M.toFloat(), top + BODY, paint(BODY, monoBold))
                 y = top
@@ -200,8 +252,6 @@ object SlipRender {
                 if (sub.isNotEmpty()) text(sub, paint(SMALL - 1), M + tw, inner - tw)
                 gap(12f)
             }
-            if (n == 0) { text("Nothing in the calendar today.", paint(BODY)); gap(8f) }
-            if (s.show.month) { gap(6f); month(s.date) }
         }
 
         fun month(d: LocalDate) {
@@ -254,18 +304,18 @@ object SlipRender {
 
         fun task(t: SlipTask) {
             val top = y
-            c.drawRect(M + 3f, top + 4f, M + 29f, top + 30f, stroke(3.5f))
-            text(t.text, paint(BODY), M + 44f, inner - 44f)
+            tickBox(top)
+            text(t.text, paint(BODY), M + TEXT_X, inner - TEXT_X)
             val sub = (t.tags + listOfNotNull(t.late?.let { "was due " + Slip.shortDate(it) })).joinToString(" · ")
-            if (sub.isNotEmpty()) text(sub, paint(18f), M + 44f, inner - 44f)
-            y = maxOf(y, top + 34f) + 12f
+            if (sub.isNotEmpty()) text(sub, paint(18f), M + TEXT_X, inner - TEXT_X)
+            y = maxOf(y, top + BOX + 6f) + 12f
         }
 
         fun blankLine() {
             val top = y
-            c.drawRect(M + 3f, top + 4f, M + 29f, top + 30f, stroke(3.5f))
-            c.drawLine(M + 44f, top + 30f, WIDTH - M - 4f, top + 30f, stroke(2f))
-            y = top + 46f
+            tickBox(top)
+            c.drawLine(M + TEXT_X, top + BOX, WIDTH - M - 4f, top + BOX, stroke(2f))
+            y = top + BOX + 18f
         }
 
         fun sudoku(p: String) {

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -144,13 +145,16 @@ internal fun TickBox(
  * and [trailing] gives way to "✓ Done".
  */
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 internal fun TaskRow(
     t: TaskItem, ticked: Boolean, onTick: () -> Unit, onOpen: () -> Unit, sub: Boolean = false,
     steps: Int = 0, stepsOpen: Boolean = false, onSteps: () -> Unit = {},
+    select: Boolean? = null, onLongPress: (() -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit
 ) {
     val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
-    val bg by animateColorAsState(if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
+    // Select mode (multiselect-swipes-v1): a round select mark replaces the tick box and the whole row toggles.
+    val bg by animateColorAsState(if (select == true) SelectTint else if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
     val edge by animateColorAsState(if (ticked) Green else side, tween(250), label = "rowEdge")
     val textColour by animateColorAsState(if (ticked) Muted else TextMain, tween(200), label = "rowText")
     Row(
@@ -166,8 +170,9 @@ internal fun TaskRow(
             .padding(start = if (sub) 42.dp else 16.dp, end = 14.dp, top = if (sub) 8.dp else 12.dp, bottom = if (sub) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        TickBox(ticked, onTick, size = if (sub) 20.dp else 24.dp, radius = if (sub) 6.dp else 8.dp, outline = side)
-        Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
+        if (select != null) SelectMark(select, onOpen, if (sub) 20.dp else 24.dp)
+        else TickBox(ticked, onTick, size = if (sub) 20.dp else 24.dp, radius = if (sub) 6.dp else 8.dp, outline = side)
+        Column(Modifier.weight(1f).combinedClickable(onClick = onOpen, onLongClick = onLongPress)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PriorityFlag(Priority.of(t))
                 Text(
@@ -202,7 +207,21 @@ internal fun TaskRow(
             }
         }
         if (ticked) Text("✓ Done", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Green)
-        else trailing()
+        else if (select == null) trailing()
+    }
+}
+
+internal val SelectTint = Color(0xFF1A2440)
+
+/** The round select mark in select mode: an empty ring, or filled blue with a tick. */
+@Composable
+internal fun SelectMark(on: Boolean, onClick: () -> Unit, size: Dp = 24.dp) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(if (on) Primary else Color.Transparent)
+            .border(1.5.dp, if (on) Primary else Muted, CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (on) Text("✓", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnPrimary)
     }
 }
 

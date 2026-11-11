@@ -66,7 +66,7 @@ Three modes, and it reopens on the last one used:
 
 - **Task**: adds to Quick Task, with Today / Tomorrow / a picked date, a time estimate (5, 15, 30, 60 or 120 minutes) and a repeat (daily, weekly, monthly, or a custom rule).
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
-- **Jarvis**: hold to talk or type to the Oracle server (below). Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
+- **Jarvis**: a chat with the Oracle server (below): hold to talk or type, and every message and answer stays on screen, with a ▶ on each spoken answer. Each worker keeps its own chat, which Claude remembers until **New chat**. Hold the mic and slide up onto the 🔒 to keep recording hands-free. Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
 
 ### Jarvis
 
@@ -125,6 +125,10 @@ Five home-screen widgets:
 ### Reminders
 
 Scheduled with WorkManager (they survive a reboot, and may fire a few minutes late). Each has Snooze 1h. Defaults: morning briefing 08:00 (opens Deck), evening wrap-up 21:00 (opens Tasks), task due alerts off until switched on (09:00, and only when something is due), weekly review Sunday 19:00 (opens the review).
+
+### Piholegotchi
+
+Flight Deck can show your day on [Piholegotchi](https://github.com/tlowndes/piholegotchi), the e-ink screen at home. In Settings › Piholegotchi, put its address (`piholegotchi.local`, or the IP shown on its screen) and tap Test. After that, every Deck refresh sends the next step, tasks due, focus minutes, habits, water and the next job follow-up, and Focus sends the session when it starts, pauses or ends. It's a small JSON `POST /api/deck` over the home Wi-Fi, made in `PiDeck` (core) and sent by `Piholegotchi.kt`. Away from home it fails quietly. Nothing is written to the vault.
 
 ## Windows
 

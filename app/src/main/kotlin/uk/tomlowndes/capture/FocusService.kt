@@ -81,10 +81,14 @@ object Focus {
         val s = state(ctx)
         save(ctx, null)
         ctx.stopService(Intent(ctx, FocusService::class.java))
+        Piholegotchi.sendFocus(ctx)
         return s
     }
 
-    private fun kick(ctx: Context) = ContextCompat.startForegroundService(ctx, Intent(ctx, FocusService::class.java))
+    private fun kick(ctx: Context) {
+        ContextCompat.startForegroundService(ctx, Intent(ctx, FocusService::class.java))
+        Piholegotchi.sendFocus(ctx)
+    }
 }
 
 /** Keeps the Focus countdown in a notification and says when time is up. */

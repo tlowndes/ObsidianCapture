@@ -32,6 +32,8 @@ object SlipPrinter {
     private val SERVICES = listOf("0000ff00", "000018f0", "0000ffe0", "0000fee7", "49535343", "e7810a71")
     private const val PREFERRED_CHAR = "0000ff02"
     private const val MAX_CHUNK = 180
+    /** The first M02 Pro print lost its last third at ~15 KB/s; this sends about half as fast. */
+    private const val BYTES_PER_SECOND = 7_000
 
     private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences("slip", Context.MODE_PRIVATE)
 
@@ -118,13 +120,15 @@ object SlipPrinter {
                 val status = withTimeoutOrNull(if (noResponse) 1_500 else 5_000) { done.await() }
                 if (status == null && !noResponse) error("${printer.name} stopped answering")
                 if (status != null && status != BluetoothGatt.GATT_SUCCESS) error("${printer.name} turned down the data (code $status)")
-                // The head prints slower than Bluetooth sends, so give it a moment between pieces.
-                delay(if (noResponse) 12 else 3)
+                // The head prints slower than Bluetooth sends and the printer drops what overflows its buffer,
+                // so keep to about [BYTES_PER_SECOND] (roughly the M02 Pro's print speed).
+                delay(maxOf(3L, piece.size * 1000L / BYTES_PER_SECOND))
                 i += piece.size
                 val pc = i * 100 / job.size
                 if (pc != last) { last = pc; progress(pc) }
             }
-            delay(1_000)
+            // Let the last of the buffer print before hanging up: some printers drop it on disconnect.
+            delay(4_000)
         } finally {
             runCatching { gatt.disconnect() }
             delay(200)

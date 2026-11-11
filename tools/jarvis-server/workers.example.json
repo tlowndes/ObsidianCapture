@@ -1,8 +1,8 @@
 {
   "jarvis":   { "cwd": "~/jarvis",   "prompt": "You are Jarvis, Tom's general assistant." },
-  "coding":   { "cwd": "~/code",     "prompt": "You help Tom with code in this folder.", "permission_mode": "acceptEdits" },
-  "obsidian": { "cwd": "~/vault",    "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it.", "permission_mode": "acceptEdits" },
+  "coding":   { "cwd": "~/code",     "prompt": "You help Tom with code in this folder." },
+  "obsidian": { "cwd": "~/vault",    "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it." },
   "research": { "cwd": "~/research", "prompt": "Research what Tom asks and write up what you find.", "background": true,
-                "allowed_tools": ["WebSearch", "WebFetch", "Write"] },
-  "odd-jobs": { "cwd": "~/jarvis",   "prompt": "Help Tom with whatever he asks." }
+                "allowed_tools": ["WebSearch", "WebFetch", "Read", "Write", "Edit"] },
+  "oddjobs":  { "cwd": "~/jarvis",   "prompt": "Help Tom with whatever he asks." }
 }

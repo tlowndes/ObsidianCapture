@@ -7,7 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,6 +98,16 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     var jvVoiceLabel by remember { mutableStateOf(prefs.jarvisVoiceLabel) }
     var jvPickVoice by remember { mutableStateOf(false) }
     var jvSpeed by remember { mutableStateOf(prefs.jarvisSpeed) }
+    var ckMasked by remember { mutableStateOf(secrets.claudeKey?.let { "••••" + it.takeLast(4) }) }
+    var editingCk by remember { mutableStateOf(false) }
+    var brainOn by remember { mutableStateOf(prefs.phoneBrain) }
+    var clever by remember { mutableStateOf(prefs.brainClever) }
+    var phSpeech by remember { mutableStateOf(prefs.phoneSpeech) }
+    var nanoOn by remember { mutableStateOf(prefs.nanoBrain) }
+    var nanoToBox by remember { mutableStateOf(prefs.nanoToBox) }
+    var nanoState by remember { mutableStateOf(PhoneNano.state) }
+    LaunchedEffect(nanoOn) { if (nanoOn) nanoState = withContext(Dispatchers.IO) { PhoneNano.ensure() } }
+    var phVoice by remember { mutableStateOf(prefs.phoneVoice) }
     if (jvPickVoice) JarvisVoiceSheet(prefs, onPick = { id, label ->
         prefs.jarvisVoice = id; prefs.jarvisVoiceLabel = label; jvVoiceLabel = label; jvPickVoice = false
     }) { jvPickVoice = false }
@@ -123,6 +135,34 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                     if (ghMasked != null) { secrets.githubToken = null; ghMasked = null }
                     editingGh = false
                 }) { Text(if (ghMasked != null) "Remove" else "Cancel", color = Muted) }
+            }
+        )
+    }
+    if (editingCk) {
+        var draft by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingCk = false }, containerColor = Surface1,
+            title = { Text("Claude key") },
+            text = {
+                Column {
+                    OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
+                        visualTransformation = PasswordVisualTransformation(), placeholder = { Text("sk-ant-…") })
+                    Text("From console.anthropic.com › API keys. Kept encrypted on this phone only.", fontSize = 12.sp, color = Muted,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    secrets.claudeKey = draft
+                    ckMasked = secrets.claudeKey?.let { "••••" + it.takeLast(4) }
+                    editingCk = false
+                }, enabled = draft.isNotBlank()) { Text("Save", color = Primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (ckMasked != null) { secrets.claudeKey = null; ckMasked = null }
+                    editingCk = false
+                }) { Text(if (ckMasked != null) "Remove" else "Cancel", color = Muted) }
             }
         )
     }
@@ -189,11 +229,13 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         ))
 
         SectionLabel("Tasks")
-        var swipe by remember { mutableStateOf(prefs.taskSwipe) }
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
         DeckCard {
-            Box(Modifier.padding(horizontal = 14.dp)) {
-                SettingRow("Swipe on tasks", "Right ticks, left reschedules") { AppSwitch(swipe) { swipe = it; prefs.taskSwipe = it } }
+            // Swipes (multiselect-swipes-v1) have their own page: on/off and what each swipe does.
+            Box(Modifier.clickable { page = SettingsPage.SWIPES }.padding(horizontal = 14.dp)) {
+                SettingRow("Swipe on tasks", if (prefs.taskSwipe) "Right ${prefs.swipeRight.short.lowercase()}, left ${prefs.swipeLeft.short.lowercase()}" else "Off") {
+                    Text("›", fontSize = 18.sp, color = Muted)
+                }
             }
             HorizontalDivider(color = Outline)
             Box(Modifier.padding(horizontal = 14.dp)) {
@@ -209,12 +251,18 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         val newer = latest != null && Updater.isNewer(latest, installed)
         RowsCard(listOf(
             { QuietRow("🎙", "Jarvis", (if (jvSet) "● set up" else "not set up") + " ›", if (jvSet) Green else Muted, onClick = { page = SettingsPage.JARVIS }) },
+            { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "● on" else "off") + " ›",
+                if (prefs.piholegotchiAddress.isNotBlank()) Green else Muted, onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
             { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },
             { QuietRow("🗄", "Vault & sync", (if (prefs.serverFallback) "fallback on" else "fallback off") + " ›", onClick = { page = SettingsPage.VAULT }) },
         ))
         Box(Modifier.height(20.dp))
         }
 
+        SettingsPage.SWIPES -> {
+            SubPageTitle("Swipes", back)
+            SwipesSection(prefs)
+        }
         SettingsPage.REMINDERS -> {
             SubPageTitle("Reminders", back)
             RemindersSection(prefs)
@@ -223,8 +271,30 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
             SubPageTitle("Calendars", back)
             CalendarSection(vault)
         }
+        SettingsPage.PIHOLEGOTCHI -> {
+            SubPageTitle("Piholegotchi", back)
+            PiholegotchiSection(prefs)
+        }
         SettingsPage.JARVIS -> {
             SubPageTitle("Jarvis", back)
+        GroupLabel("Brain")
+        SettingRow("📱 Phone brain", "Gemini Nano · " + if (nanoOn) PhoneNano.label(nanoState) else "off") {
+            AppSwitch(nanoOn) { nanoOn = it; prefs.nanoBrain = it }
+        }
+        SettingRow("🛰 Send to the box when needed", "Vault, research, coding, long rambles") {
+            AppSwitch(nanoToBox) { nanoToBox = it; prefs.nanoToBox = it }
+        }
+        Text(
+            "Nano is free and works offline. The box is used only when the ask needs it, or when you tap Ask the box." +
+                if (nanoState == PhoneNano.State.GETTING_READY) " Until Nano is ready, everything goes to the box." else "",
+            fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        GroupLabel("Voice")
+        SettingRow("Phone speech-to-text", "Android hears you, so messages don't wait on Whisper") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }
+        SettingRow("Phone voice", "Android reads replies. Off keeps the server's voice (slower).") { AppSwitch(phVoice) { phVoice = it; prefs.phoneVoice = it } }
+        Spacer(Modifier.height(8.dp))
+        GroupLabel("Oracle box")
         PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
         Text(
             "Tailscale name of the Oracle box (Tailscale on). Type demo to try without a server.",
@@ -242,15 +312,31 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                 }
             }, enabled = !jvTesting) { Text("Test", color = Primary) }
         }
-        SettingRow("Play replies aloud") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
-        SettingRow("Voice", "Made on the server. Tap to hear each one.") {
+        SettingRow("Play replies aloud", "When you talk. Typed messages stay quiet.") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
+        if (!phVoice) SettingRow("Voice", "Made on the server. Tap to hear each one.") {
             TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
         }
         Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
         PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
             jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
         }
-
+        Spacer(Modifier.height(16.dp))
+        GroupLabel("Advanced")
+        SettingRow("⚡ Claude from the phone", if (ckMasked == null) "Add a Claude key to think on the phone. First words in about a second."
+            else "Claude straight from the app instead of Nano. Pay as you go.") {
+            AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
+        }
+        SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingCk = true }) { Text(if (ckMasked == null) "Add" else "Change", color = Primary) }
+        }
+        Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
+        Text(if (clever) "Clever is Claude Sonnet: better at tricky asks, a bit slower." else "Fast is Claude Haiku: quickest replies, costs very little.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+        SettingRow("This month", "Worked out on the phone from what Claude reports") {
+            Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(Modifier.height(8.dp))
         }
         SettingsPage.UPDATES -> {
             SubPageTitle("Updates", back)
@@ -345,7 +431,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     }
 }
 
-private enum class SettingsPage { MAIN, REMINDERS, CALENDARS, JARVIS, UPDATES, VAULT }
+private enum class SettingsPage { MAIN, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable
@@ -382,5 +468,101 @@ private fun checkedAgo(at: Long): String {
         min < 60 -> "$min min ago"
         min < 24 * 60 -> "${min / 60} h ago"
         else -> "${min / (24 * 60)} days ago"
+    }
+}
+
+/** Settings › Swipes (multiselect-swipes-v1): swipes on or off, and what swipe right, left and long left each do. */
+@Composable
+private fun SwipesSection(prefs: AppPrefs) {
+    var on by remember { mutableStateOf(prefs.taskSwipe) }
+    var right by remember { mutableStateOf(prefs.swipeRight) }
+    var left by remember { mutableStateOf(prefs.swipeLeft) }
+    var longLeft by remember { mutableStateOf(prefs.swipeLongLeft) }
+    var picking by remember { mutableStateOf<String?>(null) }
+    DeckCard {
+        Box(Modifier.padding(horizontal = 14.dp)) {
+            SettingRow("Swipe on tasks", "Turn all swipes on or off") { AppSwitch(on) { on = it; prefs.taskSwipe = it } }
+        }
+    }
+    if (on) {
+        Box(Modifier.height(14.dp))
+        GroupLabel("What each swipe does")
+        Box(Modifier.height(8.dp))
+        DeckCard {
+            listOf(
+                Triple("Swipe right", "Short swipe from the left edge", right),
+                Triple("Swipe left", "Short swipe from the right edge", left),
+                Triple("Long swipe left", "Swipe past half way", longLeft),
+            ).forEachIndexed { i, (title, sub, c) ->
+                if (i > 0) HorizontalDivider(color = Outline)
+                Box(Modifier.clickable { picking = title }.padding(horizontal = 14.dp)) {
+                    SettingRow(title, sub) { Text(c.short + " ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+        }
+        Box(Modifier.height(14.dp))
+        GroupLabel("Preview")
+        Box(Modifier.height(8.dp))
+        SwipePreview(right, toRight = true)
+        Box(Modifier.height(8.dp))
+        SwipePreview(left.takeIf { it != SwipeChoice.NOTHING } ?: longLeft, toRight = false)
+        Text("Swipes only work in the list, and are off while you're selecting tasks.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 10.dp, bottom = 20.dp))
+    }
+    picking?.let { title ->
+        val current = when (title) { "Swipe right" -> right; "Swipe left" -> left; else -> longLeft }
+        SwipeChoiceSheet(title, current, onPick = { c ->
+            when (title) {
+                "Swipe right" -> { right = c; prefs.swipeRight = c }
+                "Swipe left" -> { left = c; prefs.swipeLeft = c }
+                else -> { longLeft = c; prefs.swipeLongLeft = c }
+            }
+            picking = null
+        }, onDismiss = { picking = null })
+    }
+}
+
+/** A row pulled part way, showing the colour and label of [c] behind it. */
+@Composable
+private fun SwipePreview(c: SwipeChoice, toRight: Boolean) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(Modifier.fillMaxWidth().height(46.dp).clip(shape).border(1.dp, Outline, shape).background(if (c == SwipeChoice.NOTHING) Surface2 else c.colour)) {
+        if (c != SwipeChoice.NOTHING) Text(
+            c.label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = OnPrimary,
+            modifier = Modifier.align(if (toRight) Alignment.CenterStart else Alignment.CenterEnd).padding(horizontal = 16.dp)
+        )
+        Box(
+            Modifier.fillMaxHeight().fillMaxWidth(0.68f).align(if (toRight) Alignment.CenterEnd else Alignment.CenterStart).background(Surface1)
+                .padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart
+        ) { Text(if (c == SwipeChoice.NOTHING) "Nothing happens" else "Book MOT", fontSize = 13.sp, color = if (c == SwipeChoice.NOTHING) Muted else TextMain) }
+    }
+}
+
+/** The e-ink screen at home: where it is, and a test. */
+@Composable
+private fun PiholegotchiSection(prefs: AppPrefs) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    var addr by remember { mutableStateOf(prefs.piholegotchiAddress) }
+    Text(
+        "Shows your next step, tasks due, focus, habits and job follow-ups on the Piholegotchi screen, and a Focus " +
+            "session while it runs. Sent over your home Wi-Fi when Deck refreshes. Leave blank to turn it off.",
+        fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 8.dp)
+    )
+    PathField("Address", addr) { prefs.piholegotchiAddress = it; addr = it.trim(); result = null }
+    Text(
+        "piholegotchi.local, or the IP address the Pi shows on its screen if that doesn't connect.",
+        fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
+    )
+    SettingRow("Test connection", result ?: if (testing) "Checking…" else null) {
+        TextButton(onClick = {
+            testing = true; result = null
+            scope.launch {
+                result = withContext(Dispatchers.IO) { Piholegotchi.test(addr) }
+                testing = false
+                if (result == "Connected") DeckCache.load(ctx)?.let { withContext(Dispatchers.IO) { Piholegotchi.sendDeck(ctx, it) } }
+            }
+        }, enabled = !testing && addr.isNotBlank()) { Text("Test", color = Primary) }
     }
 }

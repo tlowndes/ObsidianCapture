@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -230,7 +231,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             }
         }
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
+        // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
+        Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
             when {
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
@@ -251,7 +253,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },

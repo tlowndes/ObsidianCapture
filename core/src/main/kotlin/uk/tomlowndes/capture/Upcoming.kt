@@ -9,7 +9,8 @@ import java.time.temporal.TemporalAdjusters
 
 /** One line in an Upcoming day: a task (no time), a timed calendar event, or a free gap between events. */
 sealed class AgendaItem {
-    data class Task(val task: TaskItem, val late: Boolean = false) : AgendaItem()
+    /** A task; [at] is its planned time when it has one (drag-to-slot-v1), so it sits in the day's timeline. */
+    data class Task(val task: TaskItem, val late: Boolean = false, val at: TimedTask? = null) : AgendaItem()
     data class Event(val event: CalEvent) : AgendaItem()
     data class Gap(val start: LocalDateTime, val end: LocalDateTime) : AgendaItem() {
         val minutes get() = Duration.between(start, end).toMinutes().toInt()
@@ -44,23 +45,34 @@ object Upcoming {
             val timed = dayEvents.filter { !it.allDay }
             val late = if (i == 0) tasks.filter { it.due != null && it.due.isBefore(today) }.sortedBy { it.due }
                 .map { AgendaItem.Task(it, late = true) } else emptyList()
-            val due = tasks.filter { it.due == d }.map { AgendaItem.Task(it) }
-            val timeline = if (i == 0) withGaps(timed, now) else timed.map { AgendaItem.Event(it) }
+            val dueToday = tasks.filter { it.due == d }
+            val planned = dueToday.mapNotNull { t -> DayPlan.timeOf(t)?.let { AgendaItem.Task(t, at = it) } }
+            val due = dueToday.filter { t -> planned.none { it.task == t } }.map { AgendaItem.Task(it) }
+            val timeline = if (i == 0) withGaps(timed, now, planned) else blocks(timed, planned, d).map { it.third }
             AgendaDay(d, allDay, late + due + timeline)
         }
     }
 
-    /** Timed events with the free gaps (of [MIN_GAP] minutes or more, after [now], inside the day window) put between them. */
-    fun withGaps(timed: List<CalEvent>, now: LocalDateTime): List<AgendaItem> {
+    /** Events and planned tasks on [d] as (start, end, item), in time order. */
+    private fun blocks(timed: List<CalEvent>, planned: List<AgendaItem.Task>, d: LocalDate): List<Triple<LocalDateTime, LocalDateTime, AgendaItem>> =
+        (timed.map { Triple(it.start, it.end, AgendaItem.Event(it) as AgendaItem) } +
+            planned.mapNotNull { p -> p.at?.let { Triple(d.atTime(it.start), d.atTime(it.end), p as AgendaItem) } })
+            .sortedBy { it.first }
+
+    /**
+     * Timed events and [planned] tasks with the free gaps (of [MIN_GAP] minutes or more, after [now], inside the day
+     * window) put between them.
+     */
+    fun withGaps(timed: List<CalEvent>, now: LocalDateTime, planned: List<AgendaItem.Task> = emptyList()): List<AgendaItem> {
         val d = now.toLocalDate()
         val windowEnd = d.atTime(DAY_END)
         var free = maxOf(d.atTime(DAY_START), now.withSecond(0).withNano(0))
         val out = mutableListOf<AgendaItem>()
-        for (e in timed.sortedBy { it.start }) {
-            val gapEnd = minOf(e.start, windowEnd)
+        for ((start, end, item) in blocks(timed, planned, d)) {
+            val gapEnd = minOf(start, windowEnd)
             if (Duration.between(free, gapEnd).toMinutes() >= MIN_GAP) out += AgendaItem.Gap(free, gapEnd)
-            out += AgendaItem.Event(e)
-            if (e.end.isAfter(free)) free = e.end
+            out += item
+            if (end.isAfter(free)) free = end
         }
         if (Duration.between(free, windowEnd).toMinutes() >= MIN_GAP) out += AgendaItem.Gap(free, windowEnd)
         return out
