@@ -65,6 +65,10 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import androidx.compose.runtime.key
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 
 /** Tasks tab: every open `#task` in the vault, filtered by tag, side or length, grouped by when it's due. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -99,6 +103,16 @@ fun TasksScreen(
     var query by remember { mutableStateOf("") }
     var upcoming by remember { mutableStateOf(prefs.tasksUpcoming) }
     val swipe = remember { prefs.taskSwipe }
+    val swipes = remember { Triple(prefs.swipeRight, prefs.swipeLeft, prefs.swipeLongLeft) }
+    // Select mode (multiselect-swipes-v1): long-press a row; the selected lines, by their raw text.
+    val selected = remember { mutableStateListOf<String>() }
+    val selecting = selected.isNotEmpty()
+    fun toggleSelect(t: TaskItem) { if (t.raw in selected) selected.remove(t.raw) else selected.add(t.raw) }
+    var flagging by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var tagging by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var bulkDate by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var removingAll by remember { mutableStateOf<List<TaskItem>?>(null) }
+    BackHandler(enabled = selecting) { selected.clear() }
     var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
     var dayView by remember { mutableStateOf(prefs.upcomingDay) }
     var billsOpen by remember { mutableStateOf(false) }
@@ -236,6 +250,23 @@ fun TasksScreen(
         }
     }
 
+    /** Drag to a free gap (drag-to-slot-v1): due [date] at [start] for its estimate, with Undo. */
+    fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) {
+        val uri = vault ?: return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).planAt(t, date, start) } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            r.onSuccess { newRaw ->
+                val day = if (date == LocalDate.now()) "today" else if (date == LocalDate.now().plusDays(1)) "tomorrow" else dayChip(date)
+                if (snack.showSnackbar("Planned for ${"%02d:%02d".format(start.hour, start.minute)} $day", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
+                    reload()
+                }
+            }
+        }
+    }
+
     /** Visual day: gives [t] a time today (keeping its length), or clears it. */
     fun setTime(t: TaskItem, time: java.time.LocalTime?) {
         val uri = vault ?: return
@@ -247,11 +278,67 @@ fun TasksScreen(
         }
     }
 
-    /** A task row with the swipes: right ticks, left opens the reschedule sheet, further left removes. */
+    /**
+     * Runs [op] on each of [items] in turn, then offers one Undo for all of them (multiselect-swipes-v1).
+     * [op] does the write and returns how to take it back; the undos run newest first so line numbers hold.
+     */
+    fun bulk(items: List<TaskItem>, done: (Int) -> String, op: (VaultWriter, TaskItem) -> (VaultWriter) -> Unit) {
+        val uri = vault ?: return
+        selected.clear()
+        if (items.isEmpty()) return
+        scope.launch {
+            val undos = mutableListOf<(VaultWriter) -> Unit>()
+            val failed = withContext(Dispatchers.IO) {
+                val w = VaultWriter(ctx, uri)
+                items.count { t -> runCatching { op(w, t) }.onSuccess { undos.add(it) }.isFailure }
+            }
+            reload()
+            if (undos.isEmpty()) { snack.showSnackbar("Couldn't change ${items.size} task${if (items.size == 1) "" else "s"}"); return@launch }
+            val msg = done(undos.size) + if (failed > 0) " · $failed failed" else ""
+            if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                withContext(Dispatchers.IO) { val w = VaultWriter(ctx, uri); undos.asReversed().forEach { u -> runCatching { u(w) } } }
+                reload()
+            }
+        }
+    }
+    fun plural(n: Int) = "$n task${if (n == 1) "" else "s"}"
+    fun bulkDue(items: List<TaskItem>, due: LocalDate) = bulk(items, { n ->
+        "${if (n == 1) "1" else "$n"} moved to " + if (due == LocalDate.now() || due == LocalDate.now().plusDays(1)) dueLabel(due).lowercase() else dayChip(due)
+    }) { w, t -> val raw = w.editTask(t, t.text, due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) } }
+    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items, { n -> if (p == Priority.NONE) "Flag cleared on ${plural(n)}" else "${plural(n)} flagged ${p.title.lowercase()}" }) { w, t ->
+        val raw = w.editTask(t, t.text, t.due, t.recurrence, Deck.minutes(t), p); { u -> u.restoreTask(t, null, raw) }
+    }
+    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items, { n -> "$tag added to ${plural(n)}" }) { w, t ->
+        val raw = w.editTask(t, Tags.add(t.text, tag), t.due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) }
+    }
+    fun bulkDone(items: List<TaskItem>) = bulk(items, { n -> "${plural(n)} done" }) { w, t ->
+        val c = w.completeTask(t, prefs.recurring)
+        prefs.logTick(c.doneLine, c.nextLine);
+        { u -> u.restoreTask(t, c) }
+    }
+    fun bulkRemove(items: List<TaskItem>) = bulk(items, { n -> "${plural(n)} removed" }) { w, t ->
+        val at = w.deleteTask(t); { u -> u.restoreTask(t, null, at = at) }
+    }
+
+    /** What a swipe does, as set in Settings › Swipes. */
+    fun swiped(t: TaskItem, c: SwipeChoice) {
+        when (c) {
+            SwipeChoice.DONE -> tick(t)
+            SwipeChoice.RESCHEDULE -> rescheduling = t
+            SwipeChoice.TOMORROW -> move(t, LocalDate.now().plusDays(1))
+            SwipeChoice.TODAY -> move(t, LocalDate.now())
+            SwipeChoice.PRIORITY -> flagging = listOf(t)
+            SwipeChoice.FOCUS -> onStartFocus(t, Deck.minutes(t) ?: TaskViews.SHORT_MIN)
+            SwipeChoice.REMOVE -> remove(t)
+            SwipeChoice.NOTHING -> {}
+        }
+    }
+
+    /** A task row with the swipes chosen in Settings. Off while selecting. */
     @Composable
-    fun Swiped(t: TaskItem, content: @Composable () -> Unit) = SwipeRow(
-        enabled = swipe && t !in ticking && t !in leaving,
-        onDone = { tick(t) }, onMove = { rescheduling = t }, onRemove = { remove(t) }, content = content
+    fun Swiped(t: TaskItem, off: Boolean = false, content: @Composable () -> Unit) = SwipeRow(
+        enabled = swipe && !off && !selecting && t !in ticking && t !in leaving,
+        right = swipes.first, left = swipes.second, longLeft = swipes.third, onAction = { swiped(t, it) }, content = content
     )
 
     val today = LocalDate.now()
@@ -264,8 +351,11 @@ fun TasksScreen(
         TaskViews.groups(nested.top, today).map { (g, items) -> TaskSection("g-$g", g.title, items, group = g) }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Row(
+        if (selecting) SelectBar(selected.size, onClose = { selected.clear() }, onAll = {
+            (nested.top + nested.children.values.flatten()).forEach { if (it.raw !in selected) selected.add(it.raw) }
+        }) else Row(
             Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -276,7 +366,7 @@ fun TasksScreen(
         }
         val todayCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.TODAY }
         val overdueCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.OVERDUE }
-        Text(
+        if (!selecting) Text(
             listOfNotNull(
                 "${tasks.size} open",
                 todayCount.takeIf { it > 0 }?.let { "$it today" },
@@ -290,7 +380,7 @@ fun TasksScreen(
         val triage = Triage.candidates(tasks, today).size
         // One control row (tidy-v1): List / Upcoming and a Filter button; the chips open in a sheet.
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TasksViewSwitch(upcoming, Modifier.weight(1f)) { upcoming = it; prefs.tasksUpcoming = it }
+            TasksViewSwitch(upcoming, Modifier.weight(1f)) { upcoming = it; prefs.tasksUpcoming = it; selected.clear() }
             val active: String? = note?.let { VaultTasks.noteName(it) } ?: when (filter) {
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
@@ -367,15 +457,19 @@ fun TasksScreen(
                 colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
                 travel = travel, onFit = { fitting = it },
                 top = billsTop,
-            ) { t, late ->
+                onDrop = { t, d -> if (d.start != null) plan(t, d.date, d.start) else move(t, d.date) },
+            ) { item, lifted ->
+                val t = item.task
                 AnimatedVisibility(t !in leaving, enter = EnterTransition.None, exit = shrinkVertically(tween(300)) + fadeOut(tween(250))) {
-                    Swiped(t) { AgendaTaskRow(t, late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) }
+                    Swiped(t, off = lifted) {
+                        AgendaTaskRow(t, item.late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }, at = item.at)
+                    }
                 }
             }
         } else {
         val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
         val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
-        LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = if (selecting) 96.dp else 16.dp, top = 4.dp)) {
             sections.forEach { s ->
                 val g = s.group
                 item(key = "h-${s.key}") {
@@ -395,7 +489,10 @@ fun TasksScreen(
                                     val kids = nested.children[t].orEmpty()
                                     key(t.raw) { Swiped(t) {
                                     TaskRow(
-                                        t, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t },
+                                        t, ticked = t in ticking || t in leaving, onTick = { tick(t) },
+                                        onOpen = { if (selecting) toggleSelect(t) else editing = t },
+                                        select = if (selecting) t.raw in selected else null,
+                                        onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggleSelect(t) },
                                         steps = kids.size, stepsOpen = t.raw in openSteps,
                                         onSteps = { if (prefs.subtasksInline) openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw else stepsOf = t }
                                     ) {
@@ -414,7 +511,12 @@ fun TasksScreen(
                                             exit = shrinkVertically(tween(300)) + fadeOut(tween(250))
                                         ) {
                                             key(c.raw) { Swiped(c) {
-                                                TaskRow(c, ticked = c in ticking || c in leaving, onTick = { tick(c) }, onOpen = { editing = c }, sub = true) {
+                                                TaskRow(
+                                                    c, ticked = c in ticking || c in leaving, onTick = { tick(c) }, sub = true,
+                                                    onOpen = { if (selecting) toggleSelect(c) else editing = c },
+                                                    select = if (selecting) c.raw in selected else null,
+                                                    onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggleSelect(c) },
+                                                ) {
                                                     Deck.minutes(c)?.let { m -> StartPill(m) { onStartFocus(c, m) } }
                                                 }
                                             } }
@@ -441,11 +543,51 @@ fun TasksScreen(
         }
     }
 
+    // The action bar (multiselect-swipes-v1): each action covers every selected task, then select mode ends.
+    if (selecting && !upcoming) {
+        val picked = (tasks.toList()).filter { it.raw in selected }
+        BulkActionBar(Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp)) { a ->
+            val today = LocalDate.now()
+            when (a) {
+                BulkAction.TODAY -> bulkDue(picked, today)
+                BulkAction.TOMORROW -> bulkDue(picked, today.plusDays(1))
+                BulkAction.DATE -> bulkDate = picked
+                BulkAction.FLAG -> flagging = picked
+                BulkAction.TAG -> tagging = picked
+                BulkAction.DONE -> bulkDone(picked)
+                BulkAction.REMOVE -> removingAll = picked
+            }
+        }
+    }
+    }
+
+    bulkDate?.let { items ->
+        PickDateDialog(LocalDate.now().plusDays(1), onPick = { d -> bulkDate = null; if (d != null) bulkDue(items, d) }, onDismiss = { bulkDate = null })
+    }
+    flagging?.let { items ->
+        PrioritySheet(items.size, items.singleOrNull()?.let { Priority.of(it) }, onPick = { p ->
+            flagging = null
+            if (items.size == 1 && !selecting) save(items[0], items[0].text, items[0].due, items[0].recurrence, Deck.minutes(items[0]), p) else bulkPriority(items, p)
+        }, onDismiss = { flagging = null })
+    }
+    tagging?.let { items ->
+        BulkTagSheet(items.size, tagData, onPick = { tag -> tagging = null; bulkTag(items, tag) }, onDismiss = { tagging = null })
+    }
+    removingAll?.let { items ->
+        AlertDialog(
+            onDismissRequest = { removingAll = null }, containerColor = Surface1,
+            title = { Text("Remove ${plural(items.size)}?") },
+            text = { Text("They come out of their notes. You can undo straight after.", color = Muted) },
+            confirmButton = { TextButton(onClick = { removingAll = null; bulkRemove(items) }) { Text("Remove", color = Warn) } },
+            dismissButton = { TextButton(onClick = { removingAll = null }) { Text("Cancel", color = Muted) } },
+        )
+    }
+
     rescheduling?.let { t ->
         RescheduleSheet(t, tasks, cal.flatMap { it.events }, onMove = { d -> rescheduling = null; move(t, d) }, onDismiss = { rescheduling = null })
     }
     fitting?.let { g ->
-        FitTaskSheet(g, shown, onPick = { t -> fitting = null; move(t, g.start.toLocalDate()) }, onDismiss = { fitting = null })
+        FitTaskSheet(g, shown, onPick = { t -> fitting = null; plan(t, g.start.toLocalDate(), g.start.toLocalTime()) }, onDismiss = { fitting = null })
     }
 
     editing?.let { t ->

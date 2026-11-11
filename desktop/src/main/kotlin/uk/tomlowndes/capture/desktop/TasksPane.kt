@@ -44,6 +44,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
+import uk.tomlowndes.capture.VaultWriter
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.text.style.TextDecoration
 import kotlinx.coroutines.delay
 import uk.tomlowndes.capture.CalEvent
@@ -158,6 +162,45 @@ fun TasksPane(state: AppState) {
         state.say("Added ${steps.size} step${if (steps.size == 1) "" else "s"}")
     }
 
+    // Multi-select (multiselect-swipes-v1): Ctrl-click or Shift-click rows; the selected lines by raw text.
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var anchor by remember { mutableStateOf<String?>(null) }
+    var bulkDate by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var bulkFlag by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var bulkTagFor by remember { mutableStateOf<List<TaskItem>?>(null) }
+    var bulkRemove by remember { mutableStateOf<List<TaskItem>?>(null) }
+
+    /** Runs [op] on each task, then one Undo for them all (newest first, so line numbers hold). */
+    fun bulk(items: List<TaskItem>, msg: (Int) -> String, op: (VaultWriter, TaskItem) -> (VaultWriter) -> Unit) = scope.launch {
+        selected = emptySet(); anchor = null
+        val undos = state.io("Couldn't change the tasks") {
+            val w = state.writer()!!
+            items.mapNotNull { t -> runCatching { op(w, t) }.getOrNull() }
+        } ?: return@launch
+        reload()
+        if (undos.isEmpty()) { state.say("Couldn't change the tasks"); return@launch }
+        val failed = items.size - undos.size
+        state.offerUndo(msg(undos.size) + if (failed > 0) " · $failed failed" else "") {
+            state.io { val w = state.writer()!!; undos.asReversed().forEach { u -> runCatching { u(w) } } }; reload()
+        }
+    }
+    fun plural(n: Int) = "$n task${if (n == 1) "" else "s"}"
+    fun bulkDue(items: List<TaskItem>, d: LocalDate) = bulk(items, { "${plural(it)} moved to ${dueLabel(d)}" }) { w, t ->
+        val raw = w.rescheduleTask(t, d); { u -> u.restoreTask(t, null, raw) }
+    }
+    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items, { if (p == Priority.NONE) "Flag cleared on ${plural(it)}" else "${plural(it)} flagged ${p.title.lowercase()}" }) { w, t ->
+        val raw = w.editTask(t, t.text, t.due, t.recurrence, Deck.minutes(t), p); { u -> u.restoreTask(t, null, raw) }
+    }
+    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items, { "$tag added to ${plural(it)}" }) { w, t ->
+        val raw = w.editTask(t, Tags.add(t.text, tag), t.due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) }
+    }
+    fun bulkDone(items: List<TaskItem>) = bulk(items, { "${plural(it)} done" }) { w, t ->
+        val c = w.completeTask(t, state.prefs.recurring); { u -> u.restoreTask(t, c) }
+    }
+    fun bulkDelete(items: List<TaskItem>) = bulk(items, { "${plural(it)} removed" }) { w, t ->
+        val at = w.deleteTask(t); { u -> u.restoreTask(t, null, at = at) }
+    }
+
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var picking by remember { mutableStateOf<TaskItem?>(null) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
@@ -178,7 +221,23 @@ fun TasksPane(state: AppState) {
     }
     val nested = Subtasks.nest(shown, all)
     val today = LocalDate.now()
+    // The rows in the order they're drawn, for Shift-click ranges.
+    val visible = when (order) {
+        "note" -> nested.top
+        "priority" -> TaskViews.priorityGroups(nested.top).flatMap { it.second }
+        else -> TaskGroups.groups(nested.top, today).flatMap { it.second }
+    }.flatMap { t -> listOf(t) + if (t.raw in openSteps) nested.children[t].orEmpty() else emptyList() }
+    val selecting = selected.isNotEmpty() && !upcoming
+    fun select(t: TaskItem, range: Boolean) {
+        val from = anchor?.let { a -> visible.indexOfFirst { it.raw == a } } ?: -1
+        val to = visible.indexOf(t)
+        selected = if (range && from >= 0 && to >= 0) selected + visible.subList(minOf(from, to), maxOf(from, to) + 1).map { it.raw }
+        else if (t.raw in selected) selected - t.raw else selected + t.raw
+        anchor = t.raw
+    }
+    val sel = SelectState(selecting, selected, ::select)
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -196,7 +255,7 @@ fun TasksPane(state: AppState) {
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Pill(listOf("List", "Upcoming"), if (upcoming) 1 else 0, Modifier.width(200.dp)) { upcoming = it == 1; state.prefs.tasksUpcoming = upcoming }
+                Pill(listOf("List", "Upcoming"), if (upcoming) 1 else 0, Modifier.width(200.dp)) { upcoming = it == 1; state.prefs.tasksUpcoming = upcoming; selected = emptySet() }
                 if (!upcoming) {
                     Chip("📅 Due", order == "due", small = true) { order = "due"; state.prefs.taskOrder = order }
                     Chip("! Priority", order == "priority", small = true) { order = "priority"; state.prefs.taskOrder = order }
@@ -223,9 +282,9 @@ fun TasksPane(state: AppState) {
             @Composable
             fun rows(items: List<TaskItem>) = items.forEach { t ->
                 val kids = nested.children[t].orEmpty()
-                TaskRow(t, ::tick, actions, steps = kids.size, stepsOpen = t.raw in openSteps,
+                TaskRow(t, ::tick, actions, sel, steps = kids.size, stepsOpen = t.raw in openSteps,
                     onSteps = { openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw })
-                if (t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sub = true) }
+                if (t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sel, sub = true) }
             }
             when (order) {
                 "note" -> rows(nested.top)
@@ -261,6 +320,32 @@ fun TasksPane(state: AppState) {
                 }
                 recent.forEach { d -> DoneRow(d) { untick(d) } }
             }
+            if (selecting) Box(Modifier.height(90.dp))
+        }
+    }
+    if (selecting) {
+        val picked = all.filter { it.raw in selected }
+        BulkBar(picked.size, onAction = { a ->
+            when (a) {
+                BulkAction.TODAY -> bulkDue(picked, LocalDate.now())
+                BulkAction.TOMORROW -> bulkDue(picked, LocalDate.now().plusDays(1))
+                BulkAction.DATE -> bulkDate = picked
+                BulkAction.FLAG -> bulkFlag = picked
+                BulkAction.TAG -> bulkTagFor = picked
+                BulkAction.DONE -> bulkDone(picked)
+                BulkAction.REMOVE -> bulkRemove = picked
+            }
+        }, onAll = { selected = selected + visible.map { it.raw } }, onClose = { selected = emptySet(); anchor = null },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp))
+    }
+    }
+    bulkDate?.let { items -> PickDateDialog(LocalDate.now().plusDays(1), onPick = { d -> bulkDate = null; if (d != null) bulkDue(items, d) }, onDismiss = { bulkDate = null }) }
+    bulkFlag?.let { items -> BulkPriorityDialog(items.size, onPick = { p -> bulkFlag = null; bulkPriority(items, p) }, onDismiss = { bulkFlag = null }) }
+    bulkTagFor?.let { items -> BulkTagDialog(items.size, pinned, onPick = { tag -> bulkTagFor = null; bulkTag(items, tag) }, onDismiss = { bulkTagFor = null }) }
+    bulkRemove?.let { items ->
+        DialogCard("Remove ${plural(items.size)}?", { bulkRemove = null }) {
+            Sub("They come out of their notes. You can undo straight after.", Modifier.padding(bottom = 14.dp))
+            DialogButtons({ bulkRemove = null }) { PrimaryButton("Remove") { bulkRemove = null; bulkDelete(items) } }
         }
     }
     editing?.let { t ->
@@ -363,28 +448,39 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TaskRow(
-    t: TaskItem, onTick: (TaskItem) -> Unit, a: TaskActions, sub: Boolean = false,
+    t: TaskItem, onTick: (TaskItem) -> Unit, a: TaskActions, sel: SelectState, sub: Boolean = false,
     steps: Int = 0, stepsOpen: Boolean = false, onSteps: () -> Unit = {},
 ) {
     val today = LocalDate.now()
     val overdue = t.due?.isBefore(today) == true
     var menu by remember { mutableStateOf(false) }
+    // Ctrl or Shift held on the last press: the click selects instead of opening the task.
+    var modded by remember { mutableStateOf(false) }
+    var shift by remember { mutableStateOf(false) }
+    val on = t.raw in sel.selected
+    fun open() { if (modded || sel.active) sel.toggle(t, shift) else a.edit(t) }
     HoverRow(Modifier.fillMaxWidth().padding(start = if (sub) 34.dp else 0.dp, bottom = 6.dp)) { hovered ->
         val shape = RoundedCornerShape(12.dp)
         Row(
-            Modifier.fillMaxWidth().clip(shape).background(if (hovered || menu) Surface2 else Surface1)
-                .then(if (hovered || menu) Modifier.border(1.5.dp, Primary, shape) else Modifier)
-                // Right-click opens the task menu (the desktop stand-in for swipes).
-                .onPointerEvent(PointerEventType.Press) { if (it.buttons.isSecondaryPressed) menu = true }
+            Modifier.fillMaxWidth().clip(shape).background(if (on) PrimaryTint else if (hovered || menu) Surface2 else Surface1)
+                .then(if (on || hovered || menu) Modifier.border(1.5.dp, Primary, shape) else Modifier)
+                // Right-click opens the task menu (the desktop stand-in for swipes); Ctrl/Shift-click selects.
+                .onPointerEvent(PointerEventType.Press) {
+                    if (it.buttons.isSecondaryPressed) menu = true
+                    shift = it.keyboardModifiers.isShiftPressed
+                    modded = it.keyboardModifiers.isCtrlPressed || shift
+                }
+                .then(if (sel.active) Modifier.hand().clickable { sel.toggle(t, shift) } else Modifier)
                 .padding(start = 13.dp, top = if (sub) 6.dp else 8.dp, bottom = if (sub) 6.dp else 8.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(Modifier.size(if (sub) 17.dp else 20.dp).clip(CircleShape).border(2.dp, if (sub) Muted else Primary, CircleShape).hand().clickable { onTick(t) })
+            if (sel.active) SelectMark(on, if (sub) 17 else 20) { sel.toggle(t, shift) }
+            else Box(Modifier.size(if (sub) 17.dp else 20.dp).clip(CircleShape).border(2.dp, if (sub) Muted else Primary, CircleShape).hand().clickable { if (modded) sel.toggle(t, shift) else onTick(t) })
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 PriorityFlag(Priority.of(t), Modifier.padding(end = 7.dp))
                 Text(
                     Tags.strip(t.text).ifBlank { t.text }, fontSize = if (sub) 13.sp else 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).hand().clickable { a.edit(t) }
+                    modifier = Modifier.weight(1f, fill = false).hand().clickable { open() }
                 )
                 TaskViews.tags(t).take(3).forEach { TagMini(it) }
                 Deck.minutes(t)?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp)) }
@@ -398,7 +494,7 @@ private fun TaskRow(
                     modifier = Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box {
-                if (hovered || menu) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if ((hovered || menu) && !sel.active) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     HoverAction("✎ Edit") { a.edit(t) }
                     HoverAction("⋯") { menu = true }
                     HoverAction("🗑") { a.remove(t) }
@@ -418,3 +514,6 @@ private fun TaskRow(
 private fun HoverAction(text: String, onClick: () -> Unit) =
     Text(text, fontSize = 12.sp, color = Muted, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Bg)
         .hand().clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp))
+
+/** Multi-select as the rows see it: whether it's on, what's picked, and how a click picks (range with Shift). */
+private class SelectState(val active: Boolean, val selected: Set<String>, val toggle: (TaskItem, Boolean) -> Unit)

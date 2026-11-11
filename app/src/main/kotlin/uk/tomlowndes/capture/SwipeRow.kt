@@ -34,43 +34,60 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** What letting go of a swiped row does. */
-private enum class SwipeAction(val label: String, val colour: Color) {
-    DONE("✓ Done", Green), MOVE("Reschedule ⟶", Primary), REMOVE("Remove 🗑", Warn)
+/**
+ * What a swipe does (multiselect-swipes-v1). Each of swipe right, swipe left and long swipe left is set to one of
+ * these in Settings › Swipes; [label] shows behind the row as it moves.
+ */
+enum class SwipeChoice(val title: String, val short: String, val label: String, val icon: String, val colour: Color) {
+    DONE("Done", "Done", "✓ Done", "✓", Green),
+    RESCHEDULE("Reschedule (pick a day)", "Reschedule", "Reschedule 📅", "📅", Primary),
+    TOMORROW("Move to tomorrow", "Tomorrow", "Tomorrow →", "→", Amber),
+    TODAY("Move to today", "Today", "Today ☀", "☀", Teal),
+    PRIORITY("Set priority", "Priority", "Priority !", "!", Color(0xFFFFA36B)),
+    FOCUS("Start focus", "Focus", "Focus ▶", "▶", Purple),
+    REMOVE("Remove", "Remove", "Remove 🗑", "🗑", Warn),
+    NOTHING("Nothing", "Nothing", "", "–", Muted);
+
+    companion object {
+        fun of(name: String?, fallback: SwipeChoice) = values().firstOrNull { it.name == name } ?: fallback
+    }
 }
 
-/** Share of the row's width a swipe must pass: right past [DONE_AT] ticks, left past [MOVE_AT] reschedules, past [REMOVE_AT] removes. */
-private const val DONE_AT = 0.25f
-private const val MOVE_AT = 0.25f
-private const val REMOVE_AT = 0.55f
+/** Share of the row's width a swipe must pass: right past [RIGHT_AT], left past [LEFT_AT], long left past [LONG_AT]. */
+private const val RIGHT_AT = 0.25f
+private const val LEFT_AT = 0.25f
+private const val LONG_AT = 0.55f
 
-private fun actionAt(f: Float): SwipeAction? = when {
-    f > DONE_AT -> SwipeAction.DONE
-    f < -REMOVE_AT -> SwipeAction.REMOVE
-    f < -MOVE_AT -> SwipeAction.MOVE
+/** The action a swipe of [f] (share of the width, right positive) lands on, or null for none yet. */
+internal fun swipeAt(f: Float, right: SwipeChoice, left: SwipeChoice, longLeft: SwipeChoice): SwipeChoice? = when {
+    f > RIGHT_AT -> right
+    f < -LONG_AT -> if (longLeft != SwipeChoice.NOTHING) longLeft else left
+    f < -LEFT_AT -> left
     else -> null
-}
+}.takeIf { it != SwipeChoice.NOTHING }
 
 /**
- * A task row that can be swiped (tasks-swipe-v1): right to tick, left to open the reschedule sheet, further left to remove.
- * The colour shows behind the row as it moves (dim until the threshold, with a buzz as each one is crossed).
- * Letting go early snaps back. With [enabled] false the row is shown as it is.
+ * A task row that can be swiped (tasks-swipe-v1, multiselect-swipes-v1): right, left and further left each do the
+ * action chosen in Settings. The action's colour shows behind the row as it moves (dim until the threshold, with a
+ * buzz as each one is crossed). Letting go early snaps back. With [enabled] false the row is shown as it is.
  */
 @Composable
 internal fun SwipeRow(
-    enabled: Boolean, onDone: () -> Unit, onMove: () -> Unit, onRemove: () -> Unit, bg: Color = Surface1,
-    content: @Composable () -> Unit,
+    enabled: Boolean, right: SwipeChoice, left: SwipeChoice, longLeft: SwipeChoice, onAction: (SwipeChoice) -> Unit,
+    bg: Color = Surface1, content: @Composable () -> Unit,
 ) {
-    if (!enabled) { content(); return }
+    val canRight = right != SwipeChoice.NOTHING
+    val canLeft = left != SwipeChoice.NOTHING || longLeft != SwipeChoice.NOTHING
+    if (!enabled || (!canRight && !canLeft)) { content(); return }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val offset = remember { Animatable(0f) }
     var width by remember { mutableFloatStateOf(1f) }
-    val done by rememberUpdatedState(onDone)
-    val move by rememberUpdatedState(onMove)
-    val remove by rememberUpdatedState(onRemove)
-    val action = actionAt(offset.value / width)
-    var felt by remember { mutableStateOf<SwipeAction?>(null) }
+    val act by rememberUpdatedState(onAction)
+    val choices by rememberUpdatedState(Triple(right, left, longLeft))
+    fun at(f: Float) = swipeAt(f, choices.first, choices.second, choices.third)
+    val action = at(offset.value / width)
+    var felt by remember { mutableStateOf<SwipeChoice?>(null) }
     LaunchedEffect(action) {
         if (action != null && action != felt) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         felt = action
@@ -78,41 +95,40 @@ internal fun SwipeRow(
 
     Box(Modifier.fillMaxWidth().onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }) {
         if (offset.value != 0f) {
-            val right = offset.value > 0
-            val shown = action ?: if (right) SwipeAction.DONE else SwipeAction.MOVE
+            val toRight = offset.value > 0
+            val shown = action ?: if (toRight) right else left.takeIf { it != SwipeChoice.NOTHING } ?: longLeft
             Row(
                 Modifier.matchParentSize().background(if (action == null) shown.colour.copy(alpha = 0.45f) else shown.colour)
                     .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (right) Arrangement.Start else Arrangement.End
+                horizontalArrangement = if (toRight) Arrangement.Start else Arrangement.End
             ) {
                 Text(shown.label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = OnPrimary)
             }
         }
         Box(
             Modifier.fillMaxWidth().graphicsLayer { translationX = offset.value }.background(bg)
-                .pointerInput(Unit) {
+                .pointerInput(canLeft, canRight) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            val a = actionAt(offset.value / width)
+                            val a = at(offset.value / width)
                             scope.launch {
                                 when (a) {
-                                    SwipeAction.REMOVE -> {
-                                        offset.animateTo(-width, tween(180))
-                                        remove()
+                                    SwipeChoice.REMOVE -> {
+                                        offset.animateTo(if (offset.value > 0) width else -width, tween(180))
+                                        act(a)
                                         delay(400) // the row folds away meanwhile
                                         offset.snapTo(0f)
                                     }
-                                    SwipeAction.DONE -> { offset.animateTo(0f, tween(180)); done() }
-                                    SwipeAction.MOVE -> { offset.animateTo(0f, tween(180)); move() }
                                     null -> offset.animateTo(0f, tween(180))
+                                    else -> { offset.animateTo(0f, tween(180)); act(a) }
                                 }
                             }
                         },
                         onDragCancel = { scope.launch { offset.animateTo(0f, tween(180)) } },
                     ) { change, amount ->
                         change.consume()
-                        scope.launch { offset.snapTo((offset.value + amount).coerceIn(-width, width)) }
+                        scope.launch { offset.snapTo((offset.value + amount).coerceIn(if (canLeft) -width else 0f, if (canRight) width else 0f)) }
                     }
                 }
         ) { content() }

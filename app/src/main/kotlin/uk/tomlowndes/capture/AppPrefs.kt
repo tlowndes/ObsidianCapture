@@ -67,6 +67,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var taskSwipe: Boolean
         get() = p.getBoolean("task_swipe", true)
         set(v) { p.edit().putBoolean("task_swipe", v).apply() }
+    /** What each swipe does (multiselect-swipes-v1); defaults are the old fixed ones. */
+    var swipeRight: SwipeChoice
+        get() = SwipeChoice.of(p.getString("swipe_right", null), SwipeChoice.DONE)
+        set(v) { p.edit().putString("swipe_right", v.name).apply() }
+    var swipeLeft: SwipeChoice
+        get() = SwipeChoice.of(p.getString("swipe_left", null), SwipeChoice.RESCHEDULE)
+        set(v) { p.edit().putString("swipe_left", v.name).apply() }
+    var swipeLongLeft: SwipeChoice
+        get() = SwipeChoice.of(p.getString("swipe_long_left", null), SwipeChoice.REMOVE)
+        set(v) { p.edit().putString("swipe_long_left", v.name).apply() }
 
     /** Ticking a 🔁 task also creates its next occurrence. */
     var recurring: Boolean
