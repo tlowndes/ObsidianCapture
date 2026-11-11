@@ -16,6 +16,8 @@ data class SlipOptions(
     val blank: Boolean = true,
     val sudoku: Boolean = true,
     val tomorrowEvents: Boolean = true,
+    /** "In brief": a few lines from Jarvis about the day, at the top (print-summary-v1). */
+    val brief: Boolean = true,
 )
 
 /** One to-do on the slip. [late] is the date it was due when that's before today. */
@@ -36,6 +38,8 @@ data class SlipContent(
     val show: SlipOptions = SlipOptions(),
     /** Tomorrow's calendar, shown under today's. */
     val nextAllDay: List<SlipEvent> = emptyList(), val nextEvents: List<SlipEvent> = emptyList(),
+    /** Jarvis's In brief lines, filled in by the app after [Slip.build] when [SlipOptions.brief] is on. */
+    val brief: String? = null,
 )
 
 /** The Daily Slip: a till-roll printout of today's weather, calendar and to-dos, for a pocket thermal printer. */

@@ -188,13 +188,16 @@ fun JarvisScreen(
     var streamingVia by remember { mutableStateOf<String?>(null) }
     /** This hold-to-talk uses Android's speech-to-text rather than a recording. */
     var listening by remember { mutableStateOf(false) }
-    var printing by remember { mutableStateOf(false) }
 
     var worker by remember { mutableStateOf(Jarvis.worker(prefs.jarvisWorker)) }
     val ready = demo || usesBrain(worker) || usesNano(worker) || boxReady
     /** The conversation with [worker]; each worker keeps its own, and the server remembers it by its id. */
     var chat by remember { mutableStateOf(prefs.jarvisChat(worker.id)) }
     var picking by remember { mutableStateOf(false) }
+    /** The latest question and answer in this chat, for 🧾 Print summary (print-summary-v1). */
+    val last = chat.messages.lastOrNull { !it.mine && it.via != "box" }?.let { a ->
+        Triple(chat.messages.takeWhile { it !== a }.lastOrNull { it.mine }?.text.orEmpty(), a.text, a.at)
+    }
     var phase by remember { mutableStateOf(Phase.IDLE) }
     var cancelling by remember { mutableStateOf(false) }
     /** Thumb is over the 🔒 while holding; [locked] once let go there (records hands-free until Send). */
@@ -205,6 +208,7 @@ fun JarvisScreen(
     var startedAt by remember { mutableLongStateOf(0L) }
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>() }
+    var summarising by remember { mutableStateOf(false) }
     /** The recording that failed to send, kept for Retry. */
     var pending by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -671,11 +675,8 @@ fun JarvisScreen(
                         modifier = Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
                             .padding(horizontal = 9.dp, vertical = 5.dp)
                     )
-                    Text(
-                        "🖨", fontSize = 13.sp,
-                        modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { printing = true }
-                            .padding(horizontal = 9.dp, vertical = 4.dp)
-                    )
+                    if (last != null) Text("🧾", fontSize = 18.sp,
+                        modifier = Modifier.clip(CircleShape).clickable { summarising = true }.padding(horizontal = 10.dp, vertical = 6.dp))
                     Row(
                         Modifier.clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
                             .clickable { picking = true }.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -957,10 +958,6 @@ fun JarvisScreen(
         }
     }
 
-    if (printing) PrintSummarySheet(
-        chat.messages.map { PhoneBrain.Turn(it.mine, it.text) }, claudeKey,
-        onToday = onPrintToday, onDismiss = { printing = false }
-    )
 
     openDone?.let { d ->
         AlertDialog(
@@ -971,6 +968,9 @@ fun JarvisScreen(
         )
     }
 
+    if (summarising) last?.let { (said, reply, _) ->
+        PrintSummarySheet(SummarySource.Chat(said, reply), snack) { summarising = false }
+    }
     if (picking) {
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { picking = false }, sheetState = sheet, containerColor = Surface1) {
