@@ -420,7 +420,7 @@ private fun JobRow(state: AppState, j: Job, today: LocalDate, onStatus: (String)
                     Jobs.STATUSES.forEach { s -> DropdownMenuItem({ Text(s) }, { menu = false; onStatus(s) }) }
                 }
             }
-            Text(j.next?.format(DAY) ?: "–", fontSize = 13.sp, color = if (j.next != null && !j.next.isAfter(today)) Amber else if (j.next == null) Muted else TextMain,
+            Text(j.next?.format(DAY) ?: "–", fontSize = 13.sp, color = j.next.let { n -> if (n != null && !n.isAfter(today)) Amber else if (n == null) Muted else TextMain },
                 modifier = Modifier.weight(1.1f).hand().clickable(onClick = onNext))
             Text(j.applied?.format(SHORT) ?: "–", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.weight(0.7f))
         }
