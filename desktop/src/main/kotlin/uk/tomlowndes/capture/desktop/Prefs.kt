@@ -73,6 +73,14 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         set(v) { put("later_day", java.time.LocalDate.now().toString()); put("later", v.joinToString("\n")) }
 
     /** Weather card: the Morning / Afternoon / Evening strip is open. */
+    /** The day Plan today / Shut down was last done (yyyy-mm-dd), so the Now line stops asking. */
+    var plannedOn: String
+        get() = str("planned_on", "")
+        set(v) = put("planned_on", v)
+    var shutDownOn: String
+        get() = str("shut_down_on", "")
+        set(v) = put("shut_down_on", v)
+
     var weatherStrip: Boolean
         get() = p.getBoolean("weather_strip", false)
         set(v) { p.putBoolean("weather_strip", v); p.flush() }
