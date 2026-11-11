@@ -251,6 +251,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         val newer = latest != null && Updater.isNewer(latest, installed)
         RowsCard(listOf(
             { QuietRow("🎙", "Jarvis", (if (jvSet) "● set up" else "not set up") + " ›", if (jvSet) Green else Muted, onClick = { page = SettingsPage.JARVIS }) },
+            { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "● on" else "off") + " ›",
+                if (prefs.piholegotchiAddress.isNotBlank()) Green else Muted, onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
             { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },
             { QuietRow("🗄", "Vault & sync", (if (prefs.serverFallback) "fallback on" else "fallback off") + " ›", onClick = { page = SettingsPage.VAULT }) },
         ))
@@ -268,6 +270,10 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         SettingsPage.CALENDARS -> {
             SubPageTitle("Calendars", back)
             CalendarSection(vault)
+        }
+        SettingsPage.PIHOLEGOTCHI -> {
+            SubPageTitle("Piholegotchi", back)
+            PiholegotchiSection(prefs)
         }
         SettingsPage.JARVIS -> {
             SubPageTitle("Jarvis", back)
@@ -425,7 +431,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     }
 }
 
-private enum class SettingsPage { MAIN, SWIPES, REMINDERS, CALENDARS, JARVIS, UPDATES, VAULT }
+private enum class SettingsPage { MAIN, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable
@@ -528,5 +534,35 @@ private fun SwipePreview(c: SwipeChoice, toRight: Boolean) {
             Modifier.fillMaxHeight().fillMaxWidth(0.68f).align(if (toRight) Alignment.CenterEnd else Alignment.CenterStart).background(Surface1)
                 .padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart
         ) { Text(if (c == SwipeChoice.NOTHING) "Nothing happens" else "Book MOT", fontSize = 13.sp, color = if (c == SwipeChoice.NOTHING) Muted else TextMain) }
+    }
+}
+
+/** The e-ink screen at home: where it is, and a test. */
+@Composable
+private fun PiholegotchiSection(prefs: AppPrefs) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    var addr by remember { mutableStateOf(prefs.piholegotchiAddress) }
+    Text(
+        "Shows your next step, tasks due, focus, habits and job follow-ups on the Piholegotchi screen, and a Focus " +
+            "session while it runs. Sent over your home Wi-Fi when Deck refreshes. Leave blank to turn it off.",
+        fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 8.dp)
+    )
+    PathField("Address", addr) { prefs.piholegotchiAddress = it; addr = it.trim(); result = null }
+    Text(
+        "piholegotchi.local, or the IP address the Pi shows on its screen if that doesn't connect.",
+        fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
+    )
+    SettingRow("Test connection", result ?: if (testing) "Checking…" else null) {
+        TextButton(onClick = {
+            testing = true; result = null
+            scope.launch {
+                result = withContext(Dispatchers.IO) { Piholegotchi.test(addr) }
+                testing = false
+                if (result == "Connected") DeckCache.load(ctx)?.let { withContext(Dispatchers.IO) { Piholegotchi.sendDeck(ctx, it) } }
+            }
+        }, enabled = !testing && addr.isNotBlank()) { Text("Test", color = Primary) }
     }
 }

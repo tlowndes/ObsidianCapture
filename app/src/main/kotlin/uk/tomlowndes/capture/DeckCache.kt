@@ -31,6 +31,7 @@ internal object DeckCache {
         d.habits?.let { h -> o.put("habits", habitsText(h)) }
         d.calendars?.let { o.put("calendars", CalendarConfig.withSources(null, it)) }
         p(ctx).edit().putString("deck", o.toString()).apply()
+        Piholegotchi.sendDeck(ctx, d)
     }
 
     fun load(ctx: Context): DeckData? = runCatching {

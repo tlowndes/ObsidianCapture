@@ -126,6 +126,10 @@ Five home-screen widgets:
 
 Scheduled with WorkManager (they survive a reboot, and may fire a few minutes late). Each has Snooze 1h. Defaults: morning briefing 08:00 (opens Deck), evening wrap-up 21:00 (opens Tasks), task due alerts off until switched on (09:00, and only when something is due), weekly review Sunday 19:00 (opens the review).
 
+### Piholegotchi
+
+Flight Deck can show your day on [Piholegotchi](https://github.com/tlowndes/piholegotchi), the e-ink screen at home. In Settings › Piholegotchi, put its address (`piholegotchi.local`, or the IP shown on its screen) and tap Test. After that, every Deck refresh sends the next step, tasks due, focus minutes, habits, water and the next job follow-up, and Focus sends the session when it starts, pauses or ends. It's a small JSON `POST /api/deck` over the home Wi-Fi, made in `PiDeck` (core) and sent by `Piholegotchi.kt`. Away from home it fails quietly. Nothing is written to the vault.
+
 ## Windows
 
 Compose Desktop, installed per user from an MSI (still named Vault Capture, so it upgrades the installed copy). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
