@@ -85,7 +85,7 @@ private fun calColour(hex: String?): Color = runCatching {
 private fun slots(day: LocalDate, tasks: List<TaskItem>, events: List<CalEvent>, now: LocalDateTime): List<Slot> {
     val today = now.toLocalDate()
     val due = tasks.filter { it.due == day }.sortedWith(TaskViews.byPriority)
-    val late = if (day == today) tasks.filter { it.due != null && it.due.isBefore(today) }.sortedWith(TaskViews.byPriority) else emptyList()
+    val late = if (day == today) tasks.filter { it.due?.isBefore(today) == true }.sortedWith(TaskViews.byPriority) else emptyList()
     val timed = due.mapNotNull { DayPlan.timeOf(it) }
     val untimed = late.map { Slot.Task(it, LocalTime.MIN, false, late = true) } +
         due.filter { t -> timed.none { it.task == t } }.map { Slot.Task(it, LocalTime.MIN, false) }
