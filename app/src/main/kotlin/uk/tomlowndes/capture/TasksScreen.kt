@@ -250,6 +250,23 @@ fun TasksScreen(
         }
     }
 
+    /** Drag to a free gap (drag-to-slot-v1): due [date] at [start] for its estimate, with Undo. */
+    fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) {
+        val uri = vault ?: return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).planAt(t, date, start) } }
+            reload()
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            r.onSuccess { newRaw ->
+                val day = if (date == LocalDate.now()) "today" else if (date == LocalDate.now().plusDays(1)) "tomorrow" else dayChip(date)
+                if (snack.showSnackbar("Planned for ${"%02d:%02d".format(start.hour, start.minute)} $day", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
+                    reload()
+                }
+            }
+        }
+    }
+
     /** Visual day: gives [t] a time today (keeping its length), or clears it. */
     fun setTime(t: TaskItem, time: java.time.LocalTime?) {
         val uri = vault ?: return
@@ -319,8 +336,8 @@ fun TasksScreen(
 
     /** A task row with the swipes chosen in Settings. Off while selecting. */
     @Composable
-    fun Swiped(t: TaskItem, content: @Composable () -> Unit) = SwipeRow(
-        enabled = swipe && !selecting && t !in ticking && t !in leaving,
+    fun Swiped(t: TaskItem, off: Boolean = false, content: @Composable () -> Unit) = SwipeRow(
+        enabled = swipe && !off && !selecting && t !in ticking && t !in leaving,
         right = swipes.first, left = swipes.second, longLeft = swipes.third, onAction = { swiped(t, it) }, content = content
     )
 
@@ -440,9 +457,13 @@ fun TasksScreen(
                 colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
                 travel = travel, onFit = { fitting = it },
                 top = billsTop,
-            ) { t, late ->
+                onDrop = { t, d -> if (d.start != null) plan(t, d.date, d.start) else move(t, d.date) },
+            ) { item, lifted ->
+                val t = item.task
                 AnimatedVisibility(t !in leaving, enter = EnterTransition.None, exit = shrinkVertically(tween(300)) + fadeOut(tween(250))) {
-                    Swiped(t) { AgendaTaskRow(t, late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }) }
+                    Swiped(t, off = lifted) {
+                        AgendaTaskRow(t, item.late, ticked = t in ticking || t in leaving, onTick = { tick(t) }, onOpen = { editing = t }, at = item.at)
+                    }
                 }
             }
         } else {
@@ -566,7 +587,7 @@ fun TasksScreen(
         RescheduleSheet(t, tasks, cal.flatMap { it.events }, onMove = { d -> rescheduling = null; move(t, d) }, onDismiss = { rescheduling = null })
     }
     fitting?.let { g ->
-        FitTaskSheet(g, shown, onPick = { t -> fitting = null; move(t, g.start.toLocalDate()) }, onDismiss = { fitting = null })
+        FitTaskSheet(g, shown, onPick = { t -> fitting = null; plan(t, g.start.toLocalDate(), g.start.toLocalTime()) }, onDismiss = { fitting = null })
     }
 
     editing?.let { t ->
