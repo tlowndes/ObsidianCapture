@@ -14,12 +14,16 @@ object NanoRoute {
     /** [Jarvis.ChatMsg.via] for an answer that came from the phone. */
     const val VIA = "nano"
     const val KEEP_TURNS = 8
-    private const val MAX_CHARS = 6000
+    private const val MAX_CHARS = 10_000
+    private const val NOTE_CHARS = 1_400
+    private val STOP = setOf("what", "whats", "what's", "when", "where", "which", "about", "have", "does", "with", "this", "that", "there",
+        "they", "them", "then", "than", "from", "into", "your", "mine", "tell", "show", "give", "summarise", "summarize", "summary",
+        "please", "could", "would", "should", "today", "tomorrow", "week", "anything", "something", "going", "happening", "need", "my")
     private const val RAMBLE_WORDS = 40
     private val DAY = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.UK)
 
     private val rules = listOf(
-        Regex("\\b(vault|obsidian|my notes?|a note|the note|inbox|projects?|portfolio|journal|bible|read later|my tasks|to-?do list|what'?s on my|what is on my|next step)\\b") to "Needs your vault",
+        Regex("\\b(save|write|add|put|move|rename|delete|tidy)\\b.*\\b(note|notes|vault|obsidian|inbox|project)\\b") to "Vault edit",
         Regex("\\b(research|look up|look into|search (the )?(web|internet|online)|google it|latest|news|price of|prices|compare|reviews?)\\b") to "Research job",
         Regex("\\b(code|coding|github|pull request|pr|bug|script|compile|repo|deploy|the app)\\b") to "Coding job",
     )
@@ -31,12 +35,88 @@ object NanoRoute {
         return rules.firstOrNull { (re, _) -> re.containsMatchIn(t) }?.second
     }
 
-    fun prompt(turns: List<PhoneBrain.Turn>, text: String, today: LocalDate, tags: List<String>): String {
+    private val HM = DateTimeFormatter.ofPattern("HH:mm")
+    private val SHORT = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
+
+    /**
+     * What Tom has on, for Nano to answer "what's on tomorrow?" and the like: today's and tomorrow's calendar, tasks
+     * that are late, due today or tomorrow (plus a few undated ones), and the weather card's write-up.
+     */
+    fun context(today: LocalDate, events: List<CalEvent>, tasks: List<TaskItem>, weather: WeatherSummary?): String = buildString {
+        val tomorrow = today.plusDays(1)
+        fun day(label: String, d: LocalDate) {
+            val on = events.filter { it.on(d) }.sortedWith(compareBy({ !it.allDay }, { it.start }))
+            append("$label (${d.format(SHORT)}): ")
+            append(if (on.isEmpty()) "nothing in the calendar" else on.take(12).joinToString("; ") { e ->
+                (if (e.allDay) "all day " else "${e.start.format(HM)}–${e.end.format(HM)} ") + e.title + (e.location?.takeIf { it.isNotBlank() }?.let { " at $it" } ?: "")
+            })
+            append("\n")
+        }
+        day("Today", today)
+        day("Tomorrow", tomorrow)
+        fun list(label: String, ts: List<TaskItem>, max: Int) {
+            if (ts.isNotEmpty()) append("$label: ").append(ts.take(max).joinToString("; ") { it.text }).append(if (ts.size > max) " (+${ts.size - max} more)" else "").append("\n")
+        }
+        list("Overdue tasks", tasks.filter { it.due != null && it.due < today }, 6)
+        list("Tasks due today", tasks.filter { it.due == today }, 10)
+        list("Tasks due tomorrow", tasks.filter { it.due == tomorrow }, 10)
+        list("Tasks with no date", tasks.filter { it.due == null }, 6)
+        weather?.let { w ->
+            append(if (w.tomorrow) "Weather tomorrow: " else "Weather today: ")
+            append("${w.high}° / ${w.low}°, ${w.headline}. ${w.detail}")
+            w.tip?.let { append(" ").append(it) }
+            w.tonight?.let { append(" ").append(it) }
+            append("\n")
+        }
+    }.trim()
+
+    /** The words in [question] worth searching the vault for. */
+    fun keywords(question: String): List<String> =
+        question.lowercase(Locale.UK).split(Regex("[^\\p{L}\\p{N}'-]+")).map { it.trim('\'', '-') }
+            .filter { it.length >= 4 && it !in STOP }.distinct()
+
+    /**
+     * The few notes that best match [question], as "## Title (path)" plus the part of each round the words, kept
+     * small enough for Nano. Notes in hidden 99 folders and templates are skipped.
+     */
+    fun vaultContext(notes: List<NoteInfo>, question: String, max: Int = 3): String {
+        val words = keywords(question)
+        if (words.isEmpty()) return ""
+        val scored = notes.asSequence()
+            .filter { !it.path.startsWith("99 ") && !it.path.contains("/99 ") && it.text.isNotBlank() }
+            .map { n ->
+                val title = n.path.lowercase(Locale.UK)
+                val text = n.text.lowercase(Locale.UK)
+                val score = words.sumOf { w -> (if (title.contains(w)) 6 else 0) + Regex(Regex.escape(w)).findAll(text).take(5).count() }
+                n to score
+            }
+            .filter { it.second > 0 }
+            .sortedWith(compareByDescending<Pair<NoteInfo, Int>> { it.second }.thenByDescending { it.first.modified })
+            .take(max).toList()
+        return scored.joinToString("\n\n") { (n, _) -> "## ${n.title} (${n.path})\n" + excerpt(n.text, words) }
+    }
+
+    /** Up to [NOTE_CHARS] of [text]: from a little before the first matching line, frontmatter left out. */
+    fun excerpt(text: String, words: List<String>): String {
+        val lines = Md.fmBody(NoteText.lines(text)).filter { it.isNotBlank() }
+        val first = lines.indexOfFirst { l -> words.any { l.lowercase(Locale.UK).contains(it) } }.coerceAtLeast(0)
+        val from = (first - 3).coerceAtLeast(0)
+        val out = StringBuilder()
+        for (l in lines.drop(from)) {
+            if (out.length + l.length > NOTE_CHARS) break
+            out.append(l.trimEnd()).append('\n')
+        }
+        return out.toString().trim().ifEmpty { lines.joinToString("\n").take(NOTE_CHARS) }
+    }
+
+    fun prompt(turns: List<PhoneBrain.Turn>, text: String, today: LocalDate, tags: List<String>, context: String = "", notes: String = ""): String {
         val head = """
             You are Jarvis, Tom's assistant on his phone. Use UK English. Keep answers short and friendly: one to three
             sentences unless he asks for more. Answers may be read aloud, so no tables or headings. Today is ${today.format(DAY)}.
-            You can't see Tom's notes, files, calendar, tasks or the web. If a good answer needs any of those, current
-            facts, or code, reply with only the word BOX.
+            Below is what Tom has on today and tomorrow (calendar, tasks, weather) and the notes from his Obsidian vault
+            that best match his question. Use them to answer; don't make up anything that isn't there. If a good answer
+            needs more than this (other notes, other dates, the web, current facts, code, or changing a note), reply
+            with only the word BOX.
             When Tom asks you to add, remember or remind him of something to do, confirm it in a few words, then end with
             one line per task:
             TASK: <short task> | <YYYY-MM-DD, or blank> | <one of ${tags.joinToString(" ")}, or blank>
@@ -45,9 +125,11 @@ object NanoRoute {
             .map { (if (it.mine) "Tom: " else "Jarvis: ") + it.text.trim() }
         // Oldest turns go first when the prompt would be too long for Nano's small window.
         var past = lines
-        while (past.isNotEmpty() && (past.sumOf { it.length } + text.length + head.length) > MAX_CHARS) past = past.drop(1)
+        while (past.isNotEmpty() && (past.sumOf { it.length } + text.length + head.length + context.length + notes.length) > MAX_CHARS) past = past.drop(1)
         return buildString {
             append(head).append("\n\n")
+            if (context.isNotBlank()) append("What Tom has on:\n").append(context.trim()).append("\n\n")
+            if (notes.isNotBlank()) append("Matching notes from his vault:\n").append(notes.trim()).append("\n\n")
             if (past.isNotEmpty()) append("Conversation so far:\n").append(past.joinToString("\n")).append("\n")
             append("Tom: ").append(text.trim()).append("\nJarvis:")
         }

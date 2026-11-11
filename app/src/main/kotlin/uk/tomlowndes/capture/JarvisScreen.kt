@@ -436,12 +436,16 @@ fun JarvisScreen(
     /** Gemini Nano on the phone; if it says the ask needs more (BOX) or fails, it goes to the box instead. */
     fun askNano(t: String, spoken: Boolean, w: Jarvis.Worker) {
         val turns = chat.messages.filter { it.via != "box" }.map { PhoneBrain.Turn(it.mine, it.text) }
-        val prompt = NanoRoute.prompt(turns, t, java.time.LocalDate.now(), listOf("#work", "#personal"))
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         streaming = ""; streamingVia = NanoRoute.VIA
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { PhoneNano.ask(prompt) { so -> main.post { streaming = NanoRoute.visible(so) } } }
+                runCatching {
+                    // Calendar, tasks, weather and the best-matching notes go in with every question.
+                    val (day, notes) = runCatching { NanoContext.gather(ctx, prefs.vault, t) }.getOrDefault("" to "")
+                    val prompt = NanoRoute.prompt(turns, t, java.time.LocalDate.now(), listOf("#work", "#personal"), day, notes)
+                    PhoneNano.ask(prompt) { so -> main.post { streaming = NanoRoute.visible(so) } }
+                }
             }
             streaming = null; streamingVia = null
             val r = result.getOrNull()?.let(NanoRoute::parse)
