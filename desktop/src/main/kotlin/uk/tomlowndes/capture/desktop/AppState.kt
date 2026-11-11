@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS }
+enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -43,6 +43,8 @@ class AppState(val prefs: DesktopPrefs) {
     var openProject by mutableStateOf<String?>(null)
     /** The focus timer started from Deck; it keeps running while you switch tabs. */
     var focus by mutableStateOf<FocusRun?>(null)
+    /** The routine running from the Routines pane; it keeps going while you switch tabs. */
+    var routine by mutableStateOf<RoutineRun?>(null)
     var windowVisible by mutableStateOf(true)
     var quickVisible by mutableStateOf(false)
     /** Bumped when notes may have changed outside the open tab (window refocused, quick capture saved). */

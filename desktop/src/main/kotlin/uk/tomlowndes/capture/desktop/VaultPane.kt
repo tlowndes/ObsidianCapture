@@ -153,6 +153,11 @@ fun VaultPane(state: AppState) {
                 (Tags.BUILT_IN.filter { b -> tags.any { it.first == b } } + tags.map { it.first }.filter { it !in Tags.BUILT_IN }.take(8))
                     .forEach { t -> TagChip(t, tag == t, tags.firstOrNull { it.first == t }?.second) { tag = if (tag == t) null else t } }
             }
+            Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip("💼 Jobs", small = true) { state.tab = Tab.JOBS }
+                Chip("🔁 Routines", small = true) { state.tab = Tab.ROUTINES }
+                Chip("🗓 Weekly review", small = true) { state.tab = Tab.WEEKLY }
+            }
             if (notes == null) Sub("Reading the vault…")
             val searching = query.isNotBlank() || tag != null
             if (searching) {

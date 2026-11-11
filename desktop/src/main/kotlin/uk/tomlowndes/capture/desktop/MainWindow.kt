@@ -54,6 +54,9 @@ fun MainWindow(state: AppState) {
                 Tab.READ -> ReadPane(state)
                 Tab.FIND -> FindPane(state)
                 Tab.SETTINGS -> SettingsPane(state)
+                Tab.WEEKLY -> WeeklyPane(state)
+                Tab.ROUTINES -> RoutinesPane(state)
+                Tab.JOBS -> JobsPane(state)
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
                 Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
@@ -104,6 +107,9 @@ private fun Sidebar(state: AppState) {
         TagNav(state)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
+        state.routine?.let { r ->
+            NavItem(state, Tab.ROUTINES, "⏱", r.routine.name) { Text("${r.step + 1}/${r.routine.steps.size}", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
+        }
         NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
         NavItem(state, Tab.FIND, "🔍", "Find a note") { Text("Ctrl K", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }

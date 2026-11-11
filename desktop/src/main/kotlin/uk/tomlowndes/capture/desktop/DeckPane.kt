@@ -59,6 +59,7 @@ import uk.tomlowndes.capture.HabitDay
 import uk.tomlowndes.capture.Habits
 import uk.tomlowndes.capture.HabitsNote
 import uk.tomlowndes.capture.HomeCard
+import uk.tomlowndes.capture.Jobs
 import uk.tomlowndes.capture.IdeaSummary
 import uk.tomlowndes.capture.ReadNote
 import uk.tomlowndes.capture.TaskItem
@@ -83,7 +84,7 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
  * Now line; Stuck? is a button on Next step; Jobs stays on the phone.
  */
 private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.TOP_TASKS, HomeCard.HABITS)
-private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS)
+private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.JOBS)
 
 private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -93,6 +94,7 @@ private data class DeckData(
     val focusMin: Int = 0,
     val habits: HabitsNote? = null,
     val routines: Int = 0,
+    val jobs: Int = 0,
     val events: List<CalEvent> = emptyList(),
 )
 
@@ -128,6 +130,7 @@ fun DeckPane(state: AppState) {
                 focusMin = runCatching { FlightNotes.loadToday(v).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(v) }.getOrNull(),
                 routines = runCatching { Routines.load(v).size }.getOrDefault(0),
+                jobs = runCatching { Jobs.list(v).count { !it.closed } }.getOrDefault(0),
                 events = runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
             )
         } ?: return@launch
@@ -189,7 +192,7 @@ fun DeckPane(state: AppState) {
                 CardHead("Today", if (data.events.isEmpty()) "calendar from the phone" else "${data.events.count { it.on(today) }} events")
                 TodayRows(data.events, TaskViews.billsDue(data.tasks, today)) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
-            HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.openInObsidian(Routines.PATH) }
+            HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.tab = Tab.ROUTINES }
             HomeCard.HIGHLIGHTS -> RowCard("✨ Daily highlights", "open ›") { state.openInObsidian(Highlights.PATH) }
             HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).takeIf { it.isNotEmpty() }?.let { bills ->
                 BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
@@ -203,6 +206,7 @@ fun DeckPane(state: AppState) {
             }
             HomeCard.PROJECTS -> data.project?.let { p -> ProjectCard(p) { state.openProjects(p.title) } }
             HomeCard.READ_LATER -> RowCard("Read it later", "${data.unread} ›") { state.tab = Tab.READ }
+            HomeCard.JOBS -> if (data.jobs > 0) RowCard("💼 Jobs", "${data.jobs} open ›") { state.tab = Tab.JOBS }
             else -> Unit
         }
     }
@@ -250,6 +254,7 @@ fun DeckPane(state: AppState) {
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
             DeckPill("Focus today ${data.focusMin}m", TaskGreen) { state.openInObsidian(FlightNotes.FOCUS_LOG) }
+            if (today.dayOfWeek.value >= 5) DeckPill("Weekly review", Primary) { state.tab = Tab.WEEKLY }
             DeckPill(data.habits?.progress(today)?.let { (done, total) -> "Habits $done/$total" } ?: "Habits", Purple) {
                 state.openInObsidian(Habits.PATH)
             }

@@ -251,8 +251,8 @@ private fun ReminderCard(state: AppState, r: Reminder, modifier: Modifier) {
                     )
                 }
                 ReminderSlot.WEEKLY -> {
-                    head = "Sunday"; title = "Weekly review"; edge = Purple; onBody = { open(Tab.DECK) }
-                    actions = listOf(Action("Start review", Primary) { open(Tab.DECK) }, Action("Snooze 1h", Muted) { DesktopReminders.snooze(r, 60) })
+                    head = "Sunday"; title = "Weekly review"; edge = Purple; onBody = { open(Tab.WEEKLY) }
+                    actions = listOf(Action("Start review", Primary) { open(Tab.WEEKLY) }, Action("Snooze 1h", Muted) { DesktopReminders.snooze(r, 60) })
                 }
                 ReminderSlot.DUE -> {
                     head = "Due today"; title = "Tasks due today"; edge = Primary; onBody = { open(Tab.TASKS) }
