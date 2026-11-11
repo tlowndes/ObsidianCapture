@@ -214,21 +214,45 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisSpeed: Float
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
-    /** The last exchange, shown until you talk again: heard, reply, epoch millis. */
-    var jarvisLast: Triple<String, String, Long>?
-        get() = p.getString("jarvis_last_reply", null)?.let {
-            Triple(p.getString("jarvis_last_heard", "").orEmpty(), it, p.getLong("jarvis_last_at", 0))
-        }
-        set(v) {
-            p.edit().apply {
-                if (v == null) { remove("jarvis_last_heard"); remove("jarvis_last_reply"); remove("jarvis_last_at") }
-                else { putString("jarvis_last_heard", v.first); putString("jarvis_last_reply", v.second); putLong("jarvis_last_at", v.third) }
-            }.apply()
-        }
+    /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
+    var phoneBrain: Boolean
+        get() = p.getBoolean("phone_brain", false)
+        set(v) { p.edit().putBoolean("phone_brain", v).apply() }
+    /** Settings › Jarvis › Model: false = Fast (Haiku), true = Clever (Sonnet). */
+    /** Gemini Nano answers quick asks on the phone (mockup nano-brain-v1). */
+    var nanoBrain: Boolean
+        get() = p.getBoolean("nano_brain", true)
+        set(v) { p.edit().putBoolean("nano_brain", v).apply() }
+    /** Vault, research, coding and long rambles go to Claude on the box rather than Nano. */
+    var nanoToBox: Boolean
+        get() = p.getBoolean("nano_to_box", true)
+        set(v) { p.edit().putBoolean("nano_to_box", v).apply() }
+    var brainClever: Boolean
+        get() = p.getBoolean("brain_clever", false)
+        set(v) { p.edit().putBoolean("brain_clever", v).apply() }
+    /** Android's own speech-to-text instead of recording for Whisper on the box. */
+    var phoneSpeech: Boolean
+        get() = p.getBoolean("phone_speech", true)
+        set(v) { p.edit().putBoolean("phone_speech", v).apply() }
+    /** Android's own voice for replies instead of Piper on the box. */
+    var phoneVoice: Boolean
+        get() = p.getBoolean("phone_voice", true)
+        set(v) { p.edit().putBoolean("phone_voice", v).apply() }
+    /** What the phone brain has cost this month (kept on the phone only). */
+    var brainSpend: PhoneBrain.Spend
+        get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
+        set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
         set(v) { p.edit().putString("jarvis_seen_done", v.takeLast(50).joinToString("\u0001")).apply() }
+    /** The chat with [worker]: its id (sent as "chat") and the messages kept on the phone. */
+    fun jarvisChat(worker: String): Jarvis.Chat = Jarvis.chatFromJson(p.getString("jarvis_chat_$worker", null))
+
+    fun setJarvisChat(worker: String, chat: Jarvis.Chat) {
+        p.edit().putString("jarvis_chat_$worker", Jarvis.chatToJson(chat))
+            .remove("jarvis_last_heard").remove("jarvis_last_reply").remove("jarvis_last_at").apply()
+    }
 
     fun draft(key: String): String = p.getString("draft_$key", "") ?: ""
     fun setDraft(key: String, text: String) {

@@ -195,7 +195,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
 /** Scans for nearby Bluetooth devices, printers first, and lets you tap one. */
 @Composable
-private fun PrinterPicker(onPick: (SlipPrinterInfo) -> Unit, onDismiss: () -> Unit) {
+internal fun PrinterPicker(onPick: (SlipPrinterInfo) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val found = remember { mutableStateListOf<SlipPrinterInfo>() }
     var scanning by remember { mutableStateOf(true) }

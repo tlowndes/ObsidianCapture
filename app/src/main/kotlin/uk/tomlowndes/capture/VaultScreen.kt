@@ -557,6 +557,7 @@ private fun NoteScreen(
     var adding by remember(path) { mutableStateOf(false) }
     var clash by remember(path) { mutableStateOf<Clash?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var printing by remember(path) { mutableStateOf(false) }
     fun v() = appVault(ctx, vault)
 
     suspend fun load() {
@@ -634,6 +635,7 @@ private fun NoteScreen(
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("‹", fontSize = 26.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 16.dp, top = 4.dp, bottom = 4.dp))
                     Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { printing = true }) { Text("🖨", fontSize = 17.sp) }
                     Box {
                         TextButton(onClick = { menu = true }) { Text("⋯", fontSize = 20.sp, color = Muted) }
                         DropdownMenu(menu, { menu = false }) {
@@ -716,6 +718,7 @@ private fun NoteScreen(
         }
     }
 
+    if (printing) text?.let { md -> NotePrintSheet(VaultTasks.noteName(path), md) { printing = false } }
     if (tagging) NoteTagSheet(noteTags, tags, onDismiss = { tagging = false }) { wanted, toProps ->
         tagging = false
         change(if (wanted.size == 1) "Saved 1 tag" else "Saved ${wanted.size} tags") { NoteTags.set(it, wanted, toProps) }
@@ -1208,6 +1211,21 @@ private fun QueryTaskRow(qt: QueryTask, today: LocalDate, onTick: () -> Unit, on
                 Text((if (mark.isNotEmpty() || label.isNotEmpty()) " · " else "") + qt.note, fontSize = 11.5.sp, color = Faint,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+/** 🖨 in the reader: the note as a slip (shortened by Claude when it's long and there's a key). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotePrintSheet(name: String, markdown: String, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val key = remember { SecretStore(ctx).claudeKey.orEmpty() }
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {
+        Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
+            Text("🖨 Print this note", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+            SummaryPrintPanel("Note", name) { noteSummary(name, markdown, key) }
         }
     }
 }
