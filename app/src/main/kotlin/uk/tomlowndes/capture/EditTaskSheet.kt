@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -32,12 +36,12 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 /** Edit the wording, due date, estimate, recurrence and tags of a task already in the vault. Tags live in the wording. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun EditTaskSheet(
     t: TaskItem,
     tags: TagData,
-    onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?) -> Unit,
+    onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
     onBreakDown: (() -> Unit)? = null,
@@ -46,6 +50,7 @@ internal fun EditTaskSheet(
     var due by remember(t.raw) { mutableStateOf(t.due) }
     var minutes by remember(t.raw) { mutableStateOf(Deck.minutes(t)) }
     var repeat by remember(t.raw) { mutableStateOf(t.recurrence) }
+    var priority by remember(t.raw) { mutableStateOf(Priority.of(t)) }
     var picking by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -73,6 +78,18 @@ internal fun EditTaskSheet(
                     AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) })
                 }
             }
+            // Priority (priority-flags-v1): writes the Tasks plugin mark (🔺 ⏫ 🔼 🔽 ⏬); None takes it out.
+            Text("PRIORITY", fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = Muted, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Priority.CHOICES.forEach { p ->
+                    AppChip(priority == p, { priority = p }, {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PriorityFlag(p)
+                            Text(if (p == Priority.NONE) "None" else p.title)
+                        }
+                    })
+                }
+            }
             RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
             TagRow(tags, Tags.inText(text)) { tag -> text = Tags.toggle(text, tag) }
             if (onBreakDown != null) Text(
@@ -88,7 +105,7 @@ internal fun EditTaskSheet(
                 "Save", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 4.dp).fillMaxWidth().clip(CircleShape)
                     .background(if (text.isBlank()) Primary.copy(alpha = 0.4f) else Primary)
-                    .clickable(enabled = text.isNotBlank()) { onSave(text.trim(), due, repeat, minutes) }
+                    .clickable(enabled = text.isNotBlank()) { onSave(text.trim(), due, repeat, minutes, priority) }
                     .padding(vertical = 14.dp)
             )
         }

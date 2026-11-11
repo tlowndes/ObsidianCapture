@@ -17,6 +17,8 @@ import java.util.UUID
  *  POST {base}/text    JSON {"text", "worker", "voice"?} → the same reply as /voice (typed instead of spoken)
  *  Either reply may carry "sorted": {"tasks", "ideas", "note"} (see [Sorting]) when a ramble had things to keep;
  *  the app shows Check and save for it. "note" may be {"title", "markdown"}: a tidied note of its own.
+ *  Both take an optional "chat" id (a UUID the app makes per conversation); the server keeps one Claude session per
+ *  chat, so Claude remembers the conversation until the app starts a new one.
  *  GET  {base}/audio/<id>.ogg  same token
  *  GET  {base}/done    optional: background jobs that finished, [{"id","title","detail"}]. 404 means "not offered".
  *  GET  {base}/voices  optional: [{"id","label","detail","sample_url"}] (or plain ids). The picked id goes back as
@@ -33,10 +35,13 @@ object Jarvis {
         Worker("coding", "Coding", "⌨️", "Repo work, PRs, builds"),
         Worker("obsidian", "Obsidian", "🪨", "Tasks, notes and the vault"),
         Worker("research", "Research", "🔎", "Looks things up, reports back later"),
-        Worker("odd-jobs", "Odd jobs", "🧰", "Everything else"),
+        Worker("oddjobs", "Odd jobs", "🧰", "Everything else"),
     )
 
-    fun worker(id: String?): Worker = WORKERS.firstOrNull { it.id == id } ?: WORKERS[0]
+    fun worker(id: String?): Worker {
+        val key = if (id == "odd-jobs") "oddjobs" else id // old saved id
+        return WORKERS.firstOrNull { it.id == key } ?: WORKERS[0]
+    }
 
     /** A background job the server says has finished. */
     data class Done(val id: String, val title: String, val detail: String)
@@ -89,7 +94,7 @@ object Jarvis {
     }
 
     /** Sends typed text instead of a recording. Same answer as [send]. */
-    fun sendText(address: String, token: String, text: String, worker: String, voice: String? = null): Reply {
+    fun sendText(address: String, token: String, text: String, worker: String, voice: String? = null, chat: String? = null, speak: Boolean = true): Reply {
         val c = open("${base(address)}/text", token, "POST", timeout = 120_000)
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -97,6 +102,8 @@ object Jarvis {
         try {
             val json = JSONObject().put("text", text).put("worker", worker)
             if (!voice.isNullOrBlank()) json.put("voice", voice)
+            if (!chat.isNullOrBlank()) json.put("chat", chat)
+            if (!speak) json.put("speak", false)
             c.outputStream.use { it.write(json.toString().toByteArray()) }
             return parseReply(body(c))
         } finally {
@@ -111,7 +118,7 @@ object Jarvis {
     }
 
     /** Sends one recording. Throws [HttpError] for a non-2xx answer, or an IOException when the box can't be reached. */
-    fun send(address: String, token: String, audio: File, worker: String, voice: String? = null): Reply {
+    fun send(address: String, token: String, audio: File, worker: String, voice: String? = null, chat: String? = null): Reply {
         val boundary = "----jarvis" + UUID.randomUUID().toString().replace("-", "")
         val c = open("${base(address)}/voice", token, "POST", timeout = 120_000)
         c.doOutput = true
@@ -129,6 +136,12 @@ object Jarvis {
                     line("Content-Disposition: form-data; name=\"voice\"")
                     line("")
                     line(voice)
+                }
+                if (!chat.isNullOrBlank()) {
+                    line("--$boundary")
+                    line("Content-Disposition: form-data; name=\"chat\"")
+                    line("")
+                    line(chat)
                 }
                 line("--$boundary")
                 line("Content-Disposition: form-data; name=\"file\"; filename=\"${audio.name}\"")
@@ -193,6 +206,40 @@ object Jarvis {
         Voice("en_GB-alan-medium", "Alan", "UK, male (demo)", null),
         Voice("en_GB-jenny_dioco-medium", "Jenny", "UK, female (demo)", null),
     )
+
+    /**
+     * One message in a chat. [mine] is what Tom said ([spoken] or typed); otherwise Jarvis's answer, with [audio]
+     * the cached reply file name, if there was one. [via] names who answered when it wasn't the chat's own worker
+     * (a job the phone brain handed to the box), or "box" for the line saying it was sent.
+     */
+    data class ChatMsg(val mine: Boolean, val text: String, val at: Long, val spoken: Boolean = false, val audio: String? = null, val via: String? = null)
+
+    /** A conversation with one worker: [id] goes to the server as "chat". */
+    data class Chat(val id: String, val messages: List<ChatMsg>) {
+        companion object {
+            fun new() = Chat(UUID.randomUUID().toString(), emptyList())
+        }
+    }
+
+    /** Most messages kept on the phone per chat; older ones drop off (the server still remembers them). */
+    const val CHAT_KEEP = 100
+
+    fun chatToJson(c: Chat): String = JSONObject().put("id", c.id).put("messages", JSONArray(c.messages.takeLast(CHAT_KEEP).map { m ->
+        JSONObject().put("mine", m.mine).put("text", m.text).put("at", m.at).put("spoken", m.spoken).put("audio", m.audio ?: JSONObject.NULL)
+            .put("via", m.via ?: JSONObject.NULL)
+    })).toString()
+
+    fun chatFromJson(s: String?): Chat {
+        val o = runCatching { JSONObject(s ?: return Chat.new()) }.getOrNull() ?: return Chat.new()
+        val id = o.optString("id").ifBlank { return Chat.new() }
+        val a = o.optJSONArray("messages") ?: JSONArray()
+        return Chat(id, (0 until a.length()).mapNotNull { i ->
+            val m = a.optJSONObject(i) ?: return@mapNotNull null
+            ChatMsg(m.optBoolean("mine"), m.optString("text"), m.optLong("at"), m.optBoolean("spoken"),
+                m.optString("audio").takeIf { !m.isNull("audio") && it.isNotBlank() },
+                m.optString("via").takeIf { !m.isNull("via") && it.isNotBlank() })
+        })
+    }
 
     /** Playback speeds offered in Settings and on the reply's speed chip. */
     val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)

@@ -26,7 +26,7 @@ REPLIES = {
     "coding": "Fake Coding worker. In the real thing I'd hand this to the Claude CLI in the repo.",
     "obsidian": "Fake Obsidian worker. I'd add that to the vault for real.",
     "research": "Fake Research worker. I'll pretend to look into it and tell you when I'm done.",
-    "odd-jobs": "Fake Odd jobs worker. Noted.",
+    "oddjobs": "Fake Odd jobs worker. Noted.",
 }
 
 audio = {}  # id -> bytes

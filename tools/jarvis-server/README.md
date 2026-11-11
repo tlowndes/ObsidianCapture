@@ -5,7 +5,8 @@ The other end of the app's Jarvis tab. Runs on the Oracle box, reachable only ov
 For each recording it turns speech into text (faster-whisper), runs `claude -p` in the picked worker's folder,
 turns the reply into speech (Piper) and sends back `{"transcript", "reply", "audio_url"}`. Typed messages come in on
 `POST /text` and get the same answer. A ramble (40 words or more that isn't a question) is sorted instead: the reply
-carries `"sorted"` with tasks, ideas and a tidied note, which the app checks and saves to the vault. Research runs in the
+carries `"sorted"` with tasks, ideas and a tidied note, which the app checks and saves to the vault. Each app chat
+has an id; the server keeps one Claude session per chat (`--session-id`, then `--resume`) so Claude remembers it. Research runs in the
 background: it answers "On it" straight away, saves the write-up to `~/research/jarvis-results/`, and the app's
 Done line shows it when it's finished.
 
@@ -37,7 +38,7 @@ Check it: `journalctl --user -u jarvis -f` shows what it heard and what each wor
 
 `workers.json` sets each worker's folder (`cwd`), instructions (`prompt`) and permissions. Point `obsidian` at a
 copy of the vault on the box. `claude -p` can't ask before editing, so workers that need to change files get
-`"permission_mode": "acceptEdits"`; `allowed_tools` narrows what a worker may use. `"background": true` makes
+`"permission_mode": "acceptEdits"`; `allowed_tools` narrows what a worker may use; every worker may edit the vault (`--vault`, default `~/vault`, with `acceptEdits`) unless its entry sets its own `permission_mode` or `add_dirs`. `"background": true` makes
 a worker report on the Done line instead of answering live. Add `--continue` to the service line if you want each
 worker to carry on its last conversation.
 

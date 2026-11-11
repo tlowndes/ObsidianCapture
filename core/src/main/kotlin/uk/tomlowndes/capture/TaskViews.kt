@@ -16,7 +16,10 @@ data class MonthBills(val unpaid: List<Bill>, val paid: List<Bill>, val left: Bi
 enum class TaskGroup(val title: String) { OVERDUE("Overdue"), TODAY("Today"), WEEK("This week"), LATER("Later") }
 
 /** Filters on the Tasks tab, beyond tags. */
-enum class TaskFilter { WORK, PERSONAL, SHORT }
+enum class TaskFilter { WORK, PERSONAL, SHORT, URGENT }
+
+/** How the Tasks tab orders its list: due-date groups (flagged first in each) or priority groups. */
+enum class TaskSort { DUE, PRIORITY }
 
 object TaskViews {
     private val TAG = Regex("(?:^|\\s)(#(?!task\\b)[\\w/-]+)")
@@ -44,6 +47,7 @@ object TaskViews {
             TaskFilter.WORK -> if (!isWork(t)) return false
             TaskFilter.PERSONAL -> if (isWork(t)) return false
             TaskFilter.SHORT -> if ((Deck.minutes(t) ?: Int.MAX_VALUE) > SHORT_MIN) return false
+            TaskFilter.URGENT -> if (!Priority.of(t).urgent) return false
             null -> {}
         }
         return query.isBlank() || t.text.contains(query.trim(), ignoreCase = true)
@@ -56,11 +60,21 @@ object TaskViews {
         Bucket.LATER, Bucket.NONE -> TaskGroup.LATER
     }
 
-    /** Non-empty groups in order, each by due date with undated tasks last. */
+    /** Flagged tasks first (highest first, low and lowest after unflagged ones), then by due date, undated last. */
+    val byPriority: Comparator<TaskItem> = compareBy<TaskItem> { Priority.of(it).level }.thenBy { it.due ?: LocalDate.MAX }
+
+    /** Non-empty groups in order, each with flagged tasks first, then by due date with undated tasks last. */
     fun groups(tasks: List<TaskItem>, today: LocalDate): List<Pair<TaskGroup, List<TaskItem>>> =
         TaskGroup.values().mapNotNull { g ->
-            tasks.filter { groupOf(it.due, today) == g }.sortedBy { it.due ?: LocalDate.MAX }
+            tasks.filter { groupOf(it.due, today) == g }.sortedWith(byPriority)
                 .takeIf { it.isNotEmpty() }?.let { g to it }
+        }
+
+    /** Non-empty priority groups (Highest … No priority … Lowest), each by due date with undated tasks last. */
+    fun priorityGroups(tasks: List<TaskItem>): List<Pair<Priority, List<TaskItem>>> =
+        Priority.values().sortedBy { it.level }.mapNotNull { p ->
+            tasks.filter { Priority.of(it) == p }.sortedBy { it.due ?: LocalDate.MAX }
+                .takeIf { it.isNotEmpty() }?.let { p to it }
         }
 
     /**

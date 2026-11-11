@@ -11,16 +11,18 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Tokens (GitHub, Jarvis), encrypted with a key that lives in the Android Keystore and never leaves the phone.
+ * Tokens (GitHub, Jarvis, Claude), encrypted with a key that lives in the Android Keystore and never leaves the phone.
  * Only the encrypted bytes are kept in the app's preferences.
  */
 class SecretStore(ctx: Context) {
     private val p = ctx.applicationContext.getSharedPreferences("secrets", Context.MODE_PRIVATE)
 
-    init {
-        // Brain dumps are sorted on the Jarvis server now, so an old Claude API key isn't kept on the phone.
-        if (p.contains(KEY)) p.edit().remove(KEY).apply()
-    }
+    /** Claude API key for Jarvis's phone brain. Encrypted like the others. */
+    var claudeKey: String?
+        get() = p.getString(CLAUDE_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
+        set(v) {
+            if (v.isNullOrBlank()) p.edit().remove(CLAUDE_KEY).apply() else p.edit().putString(CLAUDE_KEY, encrypt(v.trim())).apply()
+        }
 
     /** GitHub token for the repo line on a project. Encrypted like the others. */
     var githubToken: String?
@@ -62,7 +64,7 @@ class SecretStore(ctx: Context) {
     }
 
     private companion object {
-        const val KEY = "claude_key"
+        const val CLAUDE_KEY = "claude_key"
         const val GH_KEY = "github_token"
         const val JARVIS_KEY = "jarvis_token"
         const val ALIAS = "flight-deck-claude"

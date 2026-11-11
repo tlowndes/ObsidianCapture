@@ -44,6 +44,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.Bill
+import uk.tomlowndes.capture.CalEvent
+import uk.tomlowndes.capture.DayPlan
+import uk.tomlowndes.capture.Highlights
+import uk.tomlowndes.capture.Mood
+import uk.tomlowndes.capture.Priority
+import uk.tomlowndes.capture.Routines
 import uk.tomlowndes.capture.Deck
 import uk.tomlowndes.capture.DeckConfig
 import uk.tomlowndes.capture.DeckLayout
@@ -72,9 +78,12 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
     fun left(now: Long = System.currentTimeMillis()) = pausedLeft ?: (endsAt - now).coerceAtLeast(0)
 }
 
-/** Cards the desktop Deck shows, and which column each sits in. The rest (Today, Stuck?, Jobs) stay on the phone. */
+/**
+ * Cards the desktop Deck shows, and which column each sits in (windows-catchup-v1). Plan today and Mood live in the
+ * Now line; Stuck? is a button on Next step; Jobs stays on the phone.
+ */
 private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.TOP_TASKS, HomeCard.HABITS)
-private val RIGHT = setOf(HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER)
+private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS)
 
 private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -83,6 +92,8 @@ private data class DeckData(
     val layout: DeckLayout = DeckLayout(),
     val focusMin: Int = 0,
     val habits: HabitsNote? = null,
+    val routines: Int = 0,
+    val events: List<CalEvent> = emptyList(),
 )
 
 private fun greeting(now: LocalTime = LocalTime.now()) = when {
@@ -101,6 +112,10 @@ fun DeckPane(state: AppState) {
     var showStrip by remember { mutableStateOf(state.prefs.weatherStrip) }
     var paying by remember { mutableStateOf(emptySet<String>()) }
     var managing by remember { mutableStateOf(false) }
+    var nowIndex by remember { mutableStateOf(0) }
+    var planning by remember { mutableStateOf<Boolean?>(null) }
+    var splitting by remember { mutableStateOf<TaskItem?>(null) }
+    var stuck by remember { mutableStateOf(false) }
 
     fun reload() = scope.launch {
         val v = state.vault ?: return@launch
@@ -112,6 +127,8 @@ fun DeckPane(state: AppState) {
                 layout = runCatching { DeckConfig.load(v) }.getOrDefault(DeckLayout()),
                 focusMin = runCatching { FlightNotes.loadToday(v).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(v) }.getOrNull(),
+                routines = runCatching { Routines.load(v).size }.getOrDefault(0),
+                events = runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
             )
         } ?: return@launch
     }
@@ -144,7 +161,14 @@ fun DeckPane(state: AppState) {
         reload()
     }
 
-    val next = Deck.nextStep(data.tasks, later)
+    fun write(msg: String? = null, f: uk.tomlowndes.capture.VaultWriter.() -> Unit) = scope.launch {
+        state.io { state.writer()!!.f() } ?: return@launch
+        reload()
+        msg?.let { state.say(it) }
+    }
+
+    // Stuck? (tidy-v1): Next step picks a short task instead.
+    val next = Deck.nextStep(data.tasks, later, if (stuck) SHORT_MIN else null)
     val top = Deck.topTasks(data.tasks, 2, later)
     val today = LocalDate.now()
     val visible = data.layout.visible(lowEnergy = false)
@@ -159,7 +183,14 @@ fun DeckPane(state: AppState) {
                 onPause = { r -> state.focus = if (r.pausedLeft != null) r.copy(endsAt = System.currentTimeMillis() + r.pausedLeft, pausedLeft = null) else r.copy(pausedLeft = r.left()) },
                 onFinish = { finishFocus(it) },
                 onAnswer = { r, done -> state.focus = null; if (done && r.task.raw.isNotEmpty()) tick(r.task) },
+                stuck = stuck, onSplit = { splitting = it }, onStuck = { stuck = !stuck },
             )
+            HomeCard.TODAY -> DeckCard {
+                CardHead("Today", if (data.events.isEmpty()) "calendar from the phone" else "${data.events.count { it.on(today) }} events")
+                TodayRows(data.events, TaskViews.billsDue(data.tasks, today)) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
+            }
+            HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.openInObsidian(Routines.PATH) }
+            HomeCard.HIGHLIGHTS -> RowCard("✨ Daily highlights", "open ›") { state.openInObsidian(Highlights.PATH) }
             HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).takeIf { it.isNotEmpty() }?.let { bills ->
                 BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
             }
@@ -177,6 +208,31 @@ fun DeckPane(state: AppState) {
     }
 
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
+    planning?.let { evening ->
+        PlanDialog(
+            data.tasks, data.events, evening,
+            onPlan = { chosen -> planning = null; state.prefs.plannedOn = today.toString(); write("Planned ${chosen.size} for today") { chosen.filter { it.due != today }.forEach { rescheduleTask(it, today) } } },
+            onMove = { t, d -> write { rescheduleTask(t, d) } },
+            onDrop = { t -> write { cancelTask(t, today) } },
+            onShutDown = { planning = null; state.prefs.shutDownOn = today.toString() },
+            onDismiss = { planning = null },
+        )
+    }
+    splitting?.let { t ->
+        BreakdownDialog(t, onSave = { steps -> splitting = null; write("Added ${steps.size} steps") { addSubtasks(t, steps) } }, onDismiss = { splitting = null })
+    }
+    val nowDt = LocalDateTime.now()
+    val nowItems = buildList {
+        if (HomeCard.PLAN !in data.layout.hidden) {
+            val left = DayPlan.leftToday(data.tasks, today).size
+            if (DayPlan.isMorning(nowDt) && state.prefs.plannedOn != today.toString())
+                add(NowItem.Line("☀ Plan today · pick your top ${DayPlan.PICK_MAX}", "Plan ›") { planning = false })
+            else if (DayPlan.isEvening(nowDt) && state.prefs.shutDownOn != today.toString() && left > 0)
+                add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { planning = true })
+        }
+        if (HomeCard.MOOD !in data.layout.hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true)
+            add(NowItem.Mood { n -> changeHabits { Mood.set(it, n) } })
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -190,6 +246,7 @@ fun DeckPane(state: AppState) {
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }
         UpdateBanner(state)
+        NowBar(nowItems, nowIndex) { nowIndex++ }
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
             DeckPill("Focus today ${data.focusMin}m", TaskGreen) { state.openInObsidian(FlightNotes.FOCUS_LOG) }
@@ -298,6 +355,7 @@ private fun NextStepCard(
     t: TaskItem?, run: FocusRun?,
     onStart: (TaskItem, Int) -> Unit, onLater: (TaskItem) -> Unit,
     onPause: (FocusRun) -> Unit, onFinish: (FocusRun) -> Unit, onAnswer: (FocusRun, Boolean) -> Unit,
+    stuck: Boolean = false, onSplit: (TaskItem) -> Unit = {}, onStuck: () -> Unit = {},
 ) {
     DeckCard(border = NextBorder, bg = NextBg) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
@@ -326,17 +384,23 @@ private fun NextStepCard(
                 }
                 return@Column
             }
-            MonoLabel("Next step")
+            MonoLabel(if (stuck) "Next step · something short" else "Next step")
             if (t == null) {
                 Text("✓ All clear", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextMain, modifier = Modifier.padding(top = 6.dp))
+                if (stuck) DeckButton("Any length", primary = false, modifier = Modifier.padding(top = 12.dp)) { onStuck() }
                 return@Column
             }
-            Text(t.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextMain, modifier = Modifier.padding(top = 6.dp))
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                PriorityFlag(Priority.of(t), Modifier.padding(end = 8.dp))
+                Text(TaskViews.plainText(t), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextMain)
+            }
             val mins = Deck.minutes(t)
             val meta = listOfNotNull(TaskViews.tags(t).firstOrNull()?.let { "#$it" }, t.due?.let { duePhrase(it) }, mins?.let { "about $it min" }).joinToString(" · ")
             Text(meta, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DeckButton("Start ${mins ?: SHORT_MIN} min", primary = true) { onStart(t, mins ?: SHORT_MIN) }
+                DeckButton("🌶 Split", primary = false) { onSplit(t) }
+                DeckButton(if (stuck) "Any length" else "Stuck?", primary = false) { onStuck() }
                 DeckButton("Later", primary = false) { onLater(t) }
             }
         }
