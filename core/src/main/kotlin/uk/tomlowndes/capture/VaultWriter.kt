@@ -29,8 +29,18 @@ class VaultWriter(
 
     private fun taskFile(create: Boolean): String? = when {
         vault.entry(taskPath) != null -> taskPath
-        create -> vault.create(INBOX, TASK_FILE.removeSuffix(".md"), "md")
+        create -> { refuseIfMoved(); vault.create(INBOX, TASK_FILE.removeSuffix(".md"), "md") }
         else -> null
+    }
+
+    /**
+     * Quick Task missing from the inbox usually means something moved it (2026-11-11: it turned up in
+     * 05 - Resources/Personal and a fresh, near-empty one was made in its place). Stop rather than start a second one.
+     */
+    private fun refuseIfMoved() {
+        val moved = runCatching { vault.notes { p -> p.split("/").any { it.startsWith(".") } } }.getOrDefault(emptyList())
+            .firstOrNull { it.path != taskPath && it.path.substringAfterLast('/') == TASK_FILE }
+        if (moved != null) error("$TASK_FILE was moved to ${moved.path.substringBeforeLast('/')}. Move it back to $INBOX, then try again")
     }
 
     private fun readLines(path: String): MutableList<String> = VaultIo.read(vault, path).split("\n").toMutableList()
