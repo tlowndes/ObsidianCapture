@@ -203,6 +203,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getInt("fallback_stale_min", 5)
         set(v) { p.edit().putInt("fallback_stale_min", v).apply() }
 
+    /** Piholegotchi (the e-ink screen at home): its address on the home Wi-Fi, blank for off. */
+    var piholegotchiAddress: String
+        get() = p.getString("piholegotchi_address", "").orEmpty()
+        set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
+
     /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
     var jarvisAddress: String
         get() = p.getString("jarvis_address", "").orEmpty()
