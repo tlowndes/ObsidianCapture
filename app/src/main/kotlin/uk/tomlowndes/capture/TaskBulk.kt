@@ -49,7 +49,7 @@ internal fun SelectBar(count: Int, onClose: () -> Unit, onAll: () -> Unit, modif
 
 /** The floating bar at the bottom in select mode: each action applies to every selected task. */
 @Composable
-internal fun BulkActionBar(onAction: (BulkAction) -> Unit, modifier: Modifier = Modifier) {
+internal fun BulkActionBar(modifier: Modifier = Modifier, onAction: (BulkAction) -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     Row(
         modifier.fillMaxWidth().padding(bottom = 12.dp).shadow(12.dp, shape).clip(shape).background(Surface2).border(1.dp, Outline, shape)
