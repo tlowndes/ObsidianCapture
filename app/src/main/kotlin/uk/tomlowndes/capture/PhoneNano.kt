@@ -51,3 +51,19 @@ object PhoneNano {
         State.UNAVAILABLE -> "not available on this phone"
     }
 }
+
+/** What Nano is shown with each question: today's and tomorrow's calendar, tasks and weather, and matching notes. */
+internal object NanoContext {
+    fun gather(ctx: android.content.Context, vault: android.net.Uri?, question: String): Pair<String, String> {
+        val today = java.time.LocalDate.now()
+        val tasks = vault?.let { runCatching { VaultWriter(ctx, it).listTasks() }.getOrNull() }.orEmpty()
+        val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
+        val events = runCatching { CalendarSync.cached(ctx).filter { on == null || it.id in on }.flatMap { it.events } }.getOrDefault(emptyList())
+        val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
+        val day = NanoRoute.context(today, events, tasks, weather)
+        val notes = vault?.let { v ->
+            runCatching { NanoRoute.vaultContext(NoteIndex.build(appVault(ctx, v), java.io.File(ctx.cacheDir, "vault-index.json")), question) }.getOrNull()
+        }.orEmpty()
+        return day to notes
+    }
+}
