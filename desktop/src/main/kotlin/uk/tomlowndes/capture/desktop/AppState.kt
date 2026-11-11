@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS }
+enum class Tab { DECK, TASKS, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -53,6 +53,16 @@ class AppState(val prefs: DesktopPrefs) {
     /** The quick capture shortcut, and whether Windows refused it (another app has it). */
     var hotkeyLabel by mutableStateOf(prefs.hotkey)
     var hotkeyFailed by mutableStateOf(false)
+    /** Jarvis chats and the microphone, made the first time Jarvis is opened. */
+    private var jarvisSession: JarvisSession? = null
+    val jarvis: JarvisSession get() = jarvisSession ?: JarvisSession(this).also { jarvisSession = it }
+    val jarvisOrNull: JarvisSession? get() = jarvisSession
+    /** A Print summary sheet to show (from the Vault reader or a Jarvis chat). */
+    var printSummaryOf by mutableStateOf<PrintSource?>(null)
+    /** The Daily Slip dialog (Deck 🧾, Ctrl+P on Deck, tray menu). */
+    var slipOpen by mutableStateOf(false)
+    /** Bumped by Ctrl+P while the Daily Slip is open, to print it. */
+    var slipPrint by mutableIntStateOf(0)
     /** Shows a Windows notification from the tray icon. */
     var notify: (String, String) -> Unit = { _, _ -> }
     /** Counts for the sidebar. */

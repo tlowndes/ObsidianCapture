@@ -155,6 +155,47 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = str("rem_shown", "").split("\n").filter { it.isNotEmpty() }.toSet()
         set(v) = put("rem_shown", v.joinToString("\n").ifEmpty { null })
 
+    /** Settings › Jarvis (windows-jarvis-v1). The token is encrypted for this Windows user, never in the vault. */
+    var jarvisAddress: String
+        get() = str("jarvis_address", "")
+        set(v) = put("jarvis_address", v.trim().ifEmpty { null })
+    var jarvisToken: String?
+        get() = p.get("jarvis_token", null)?.let { enc ->
+            runCatching { String(Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(enc)), Charsets.UTF_8) }.getOrNull()
+        }
+        set(v) {
+            val t = v?.trim()?.ifEmpty { null }
+            put("jarvis_token", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
+        }
+    var jarvisWorker: String
+        get() = str("jarvis_worker", "jarvis")
+        set(v) = put("jarvis_worker", v)
+    var jarvisSpeak: Boolean
+        get() = p.getBoolean("jarvis_speak", false)
+        set(v) { p.putBoolean("jarvis_speak", v); p.flush() }
+    var jarvisSpeed: Float
+        get() = p.getFloat("jarvis_speed", 1f)
+        set(v) { p.putFloat("jarvis_speed", v); p.flush() }
+    var jarvisHoldSpace: Boolean
+        get() = p.getBoolean("jarvis_hold_space", true)
+        set(v) { p.putBoolean("jarvis_hold_space", v); p.flush() }
+    /** Finished background jobs already shown, by id. */
+    var jarvisSeenDone: Set<String>
+        get() = str("jarvis_seen_done", "").split("\n").filter { it.isNotEmpty() }.toSet()
+        set(v) = put("jarvis_seen_done", v.toList().takeLast(200).joinToString("\n").ifEmpty { null })
+
+    /** The receipt printer (Phomemo M02 Pro) picked once from a Bluetooth scan. */
+    var printerAddress: String?
+        get() = p.get("printer_address", null)
+        set(v) = put("printer_address", v)
+    var printerName: String
+        get() = str("printer_name", "Printer")
+        set(v) = put("printer_name", v)
+    /** Daily Slip switches, as "weather,calendar,…". */
+    var slipParts: String?
+        get() = p.get("slip_parts", null)
+        set(v) = put("slip_parts", v)
+
     fun draft(key: String): String = str("draft_${key.hashCode()}", "")
     fun setDraft(key: String, text: String) = put("draft_${key.hashCode()}", text.ifEmpty { null })
 

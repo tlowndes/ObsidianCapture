@@ -307,6 +307,7 @@ private fun NoteView(
                 startEdit(start..lines.indexOfLast { it.isNotBlank() }.coerceAtLeast(start - 1))
             }
             Chip("＃ Tag", small = true) { tagging = !tagging }
+            Chip("🧾 Print", small = true) { state.printSummaryOf = PrintSource.Note(VaultTasks.noteName(path), t) }
             Chip("↗ Open in Obsidian", small = true) { state.openInObsidian(path) }
         }
         Text(path.removeSuffix(".md") + " · updated " + shortDate(state.vault?.entry(path)?.modified ?: 0), fontSize = 12.sp, color = Muted,

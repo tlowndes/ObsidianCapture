@@ -72,6 +72,7 @@ fun main(args: Array<String>) {
                     at, icon, hotkeyLabel, onClose = { menuAt = null },
                     onQuick = { state.quickVisible = true },
                     onOpen = { state.windowVisible = true },
+                    onSlip = { state.tab = Tab.DECK; state.slipOpen = true; state.windowVisible = true },
                     onSettings = { state.tab = Tab.SETTINGS; state.windowVisible = true },
                     onQuit = ::exitApplication,
                 )
@@ -86,11 +87,13 @@ fun main(args: Array<String>) {
             title = "Flight Deck",
             icon = icon,
             onPreviewKeyEvent = { e ->
-                if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) false
+                if (e.type == KeyEventType.KeyUp && jarvisKeyUp(state, e.key)) true
+                else if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed) false
                 else when (e.key) {
                     Key.N -> { state.quickVisible = true; true }
                     Key.K -> { state.tab = Tab.FIND; true }
                     Key.R -> { state.changed(); true }
+                    Key.P -> if (state.slipOpen) { state.slipPrint++; true } else if (state.tab == Tab.DECK) { state.slipOpen = true; true } else false
                     else -> false
                 }
             }

@@ -83,7 +83,10 @@ fun QuickCaptureWindow(state: AppState, icon: Painter) {
     Window(
         onCloseRequest = ::close, state = winState, title = "Quick capture", icon = icon,
         undecorated = true, transparent = true, alwaysOnTop = true, resizable = false, focusable = true,
-        onPreviewKeyEvent = { e -> if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { close(); true } else false }
+        onPreviewKeyEvent = { e ->
+            if (e.type == KeyEventType.KeyUp && jarvisKeyUp(state, e.key)) true
+            else if (e.type == KeyEventType.KeyDown && e.key == Key.Escape && state.jarvisOrNull?.mic?.recording != true) { close(); true } else false
+        }
     ) {
         // Clicking anywhere else puts it away, like the Windows search box.
         DisposableEffect(window) {
@@ -108,6 +111,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
     var link by remember { mutableStateOf(false) }
+    var jarvisMode by remember { mutableStateOf(false) }
     var value by remember { mutableStateOf(TextFieldValue("")) }
     var preview by remember { mutableStateOf<Article?>(null) }
     var previewFor by remember { mutableStateOf("") }
@@ -132,7 +136,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     val (body, typed) = DateWords.split(text, today)
     // A repeating task needs a first date for the series to count from.
     val due = picked ?: typed ?: if (repeat != null) today else null
-    LaunchedEffect(side, link) { resize(side != null && !link, !link) }
+    LaunchedEffect(side, link, jarvisMode) { resize(side != null && !link && !jarvisMode, !link && !jarvisMode) }
 
     LaunchedEffect(state.vault) {
         val v = state.vault ?: return@LaunchedEffect
@@ -207,7 +211,10 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 Text("Pick your vault in Flight Deck first.", color = Muted)
                 return@Column
             }
-            Pill(listOf("✓ Task", "🔗 Link"), if (link) 1 else 0, Modifier.width(220.dp).padding(bottom = 12.dp)) { link = it == 1; focus.requestFocus() }
+            Pill(listOf("✓ Task", "🔗 Link", "🎙 Jarvis"), if (jarvisMode) 2 else if (link) 1 else 0, Modifier.width(330.dp).padding(bottom = 12.dp)) {
+                jarvisMode = it == 2; link = it == 1; if (!jarvisMode) focus.requestFocus()
+            }
+            if (jarvisMode) { QuickJarvis(state); return@Column }
             val fieldShape = RoundedCornerShape(14.dp)
             Row(
                 Modifier.fillMaxWidth().clip(fieldShape).background(Surface1).border(1.5.dp, Primary, fieldShape)

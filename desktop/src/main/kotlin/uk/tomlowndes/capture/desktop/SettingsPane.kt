@@ -47,7 +47,7 @@ import uk.tomlowndes.capture.ReminderSettings
 /** Settings pages down the left (windows-settings-v1), like the phone's tidied Settings. */
 enum class SettingsPage(val label: String) {
     GENERAL("General"), VAULT("Vault & folders"), DECK("Deck & weather"), CALENDARS("Calendars"),
-    REMINDERS("Reminders"), UPDATES("Updates")
+    REMINDERS("Reminders"), JARVIS("Jarvis"), PRINTER("Printer"), UPDATES("Updates")
 }
 
 @Composable
@@ -74,6 +74,8 @@ fun SettingsPane(state: AppState) {
                     SettingsPage.DECK -> DeckPage(state)
                     SettingsPage.CALENDARS -> CalendarsPage(state)
                     SettingsPage.REMINDERS -> RemindersPage(state)
+                    SettingsPage.JARVIS -> JarvisSettingsPage(state)
+                    SettingsPage.PRINTER -> PrinterSettingsPage(state)
                     SettingsPage.UPDATES -> UpdatesPage(state)
                 }
             }
@@ -370,5 +372,86 @@ object Autostart {
         } else if (enabled()) {
             Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, KEY, NAME)
         }
+    }
+}
+
+@Composable
+private fun JarvisSettingsPage(state: AppState) {
+    val p = state.prefs
+    val scope = rememberCoroutineScope()
+    var address by remember { mutableStateOf(p.jarvisAddress) }
+    var hasToken by remember { mutableStateOf(p.jarvisToken != null) }
+    var token by remember { mutableStateOf("") }
+    var speak by remember { mutableStateOf(p.jarvisSpeak) }
+    var speed by remember { mutableStateOf(p.jarvisSpeed) }
+    var hold by remember { mutableStateOf(p.jarvisHoldSpace) }
+    var ping by remember { mutableStateOf<uk.tomlowndes.capture.Jarvis.Ping?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    Setting("Address", "Your Jarvis box on Tailscale, like http://jarvis:8787. Type demo to try it without one") {
+        Field(address, { address = it; p.jarvisAddress = it; ping = null }, Modifier.width(300.dp), "http://jarvis:8787")
+    }
+    Setting("Token", if (hasToken) "Saved, encrypted for this Windows user. Never written to the vault" else "The same token as the phone") {
+        if (hasToken) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Saved ✓", fontSize = 13.sp, color = TaskGreen)
+            Chip("Replace", small = true) { hasToken = false }
+            Chip("Remove", small = true, color = Warn) { p.jarvisToken = null; hasToken = false; token = "" }
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Field(token, { token = it }, Modifier.width(220.dp), "Paste the token")
+            PrimaryButton("Save", enabled = token.isNotBlank()) { p.jarvisToken = token; token = ""; hasToken = true; ping = null }
+        }
+    }
+    Setting("Speak replies", "Read Jarvis's answers out with the Windows voice") {
+        Toggle(speak) { speak = it; p.jarvisSpeak = it }
+    }
+    Setting("Speed", "How fast replies are read out") {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            uk.tomlowndes.capture.Jarvis.SPEEDS.forEach { sp ->
+                Chip(uk.tomlowndes.capture.Jarvis.speedLabel(sp), kotlin.math.abs(speed - sp) < 0.01f, small = true) { speed = sp; p.jarvisSpeed = sp }
+            }
+        }
+    }
+    Setting("Hold Space to talk", "In the Jarvis pane, when the text box is empty") {
+        Toggle(hold) { hold = it; p.jarvisHoldSpace = it }
+    }
+    Setting("Test connection", ping?.message ?: "Checks the box answers and the token is right") {
+        Chip(if (testing) "Testing…" else "Test", small = true, color = ping?.let { if (it.ok) TaskGreen else Warn }) {
+            if (testing) return@Chip
+            val a = p.jarvisAddress
+            val t = p.jarvisToken
+            if (a.isBlank()) { ping = uk.tomlowndes.capture.Jarvis.Ping(false, 0, "Add the address first"); return@Chip }
+            if (t == null && !uk.tomlowndes.capture.Jarvis.isDemo(a)) { ping = uk.tomlowndes.capture.Jarvis.Ping(false, 0, "Add the token first"); return@Chip }
+            testing = true
+            scope.launch {
+                ping = state.io { uk.tomlowndes.capture.Jarvis.ping(a, t.orEmpty()) }
+                testing = false
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrinterSettingsPage(state: AppState) {
+    val p = state.prefs
+    val scope = rememberCoroutineScope()
+    var choosing by remember { mutableStateOf(false) }
+    var port by remember { mutableStateOf(p.printerAddress) }
+    var printing by remember { mutableStateOf(false) }
+    if (choosing) {
+        Box(Modifier.padding(top = 10.dp)) { PrinterChooser(state) { choosing = false; port = p.printerAddress } }
+        return
+    }
+    Setting(port?.let { "${p.printerName} · $it" } ?: "No printer yet", "Phomemo M02 Pro, paired in Windows Bluetooth. Used by Daily Slip and Print summary") {
+        Chip(if (port == null) "Choose" else "Change", small = true) { choosing = true }
+    }
+    Setting("Test print", "Prints a short slip to check it works") {
+        Chip(if (printing) "Printing…" else "Print a test", small = true) {
+            if (printing) return@Chip
+            if (port == null) { choosing = true; return@Chip }
+            printing = true
+            scope.launch { testPrint(state); printing = false }
+        }
+    }
+    Setting("Bluetooth", "Pair the printer here first if it isn't listed") {
+        Chip("Open Bluetooth settings", small = true) { state.browse("ms-settings:bluetooth") }
     }
 }

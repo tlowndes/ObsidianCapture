@@ -67,7 +67,7 @@ private const val ROW_H = 38
 private const val SEP_H = 11
 private const val PAD = 6
 private const val SHADOW = 10
-private const val PANEL_H = PAD * 2 + HEADER_H + ROW_H * 4 + SEP_H + 2
+private const val PANEL_H = PAD * 2 + HEADER_H + ROW_H * 5 + SEP_H + 2
 private const val WIN_W = PANEL_W + SHADOW * 2
 private const val WIN_H = PANEL_H + SHADOW * 2
 
@@ -118,7 +118,7 @@ private fun menuPosition(at: Point): WindowPosition {
 @Composable
 fun TrayMenuWindow(
     at: Point, icon: Painter, hotkeyLabel: String, onClose: () -> Unit,
-    onQuick: () -> Unit, onOpen: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit,
+    onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit,
 ) {
     val winState = rememberWindowState(size = DpSize(WIN_W.dp, WIN_H.dp), position = menuPosition(at))
     Window(
@@ -139,14 +139,14 @@ fun TrayMenuWindow(
             fun pick(action: () -> Unit) = { onClose(); action() }
             TrayMenu(
                 hotkeyLabel,
-                onQuick = pick(onQuick), onOpen = pick(onOpen), onSettings = pick(onSettings), onQuit = pick(onQuit),
+                onQuick = pick(onQuick), onOpen = pick(onOpen), onSlip = pick(onSlip), onSettings = pick(onSettings), onQuit = pick(onQuit),
             )
         }
     }
 }
 
 @Composable
-private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit) {
+private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
     Box(Modifier.fillMaxSize().padding(SHADOW.dp)) {
         Column(
@@ -163,6 +163,7 @@ private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Uni
             }
             MenuRow("Quick capture", DrawScope::plusIcon, keys = hotkeyLabel.split(" + "), onClick = onQuick)
             MenuRow("Open Flight Deck", DrawScope::windowIcon, onClick = onOpen)
+            MenuRow("Daily Slip", DrawScope::slipIcon, onClick = onSlip)
             Box(Modifier.fillMaxWidth().height(SEP_H.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
             }
@@ -222,6 +223,18 @@ private fun DrawScope.windowIcon(c: Color) {
     val w = 1.5.dp.toPx(); val i = size.width * 0.12f
     drawRoundRect(c, Offset(i, i), Size(size.width - 2 * i, size.height - 2 * i), androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()), style = Stroke(w))
     drawLine(c, Offset(size.width / 2, i), Offset(size.width / 2, size.height - i), w)
+}
+
+private fun DrawScope.slipIcon(c: Color) {
+    val w = 1.5.dp.toPx(); val l = size.width * 0.22f; val r = size.width * 0.78f; val t = size.height * 0.08f; val b = size.height * 0.92f
+    val zig = androidx.compose.ui.graphics.Path().apply {
+        moveTo(l, t); lineTo(r, t); lineTo(r, b)
+        val step = (r - l) / 4
+        for (k in 1..4) lineTo(r - step * k + step / 2, b - size.height * 0.08f).also { lineTo(r - step * k, b) }
+        close()
+    }
+    drawPath(zig, c, style = Stroke(w, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+    for (k in 0..2) { val y = size.height * (0.3f + k * 0.17f); drawLine(c, Offset(l + w * 2, y), Offset(r - w * 2, y), w * 0.9f, StrokeCap.Round) }
 }
 
 private fun DrawScope.gearIcon(c: Color) {

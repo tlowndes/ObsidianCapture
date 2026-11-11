@@ -247,6 +247,7 @@ fun DeckPane(state: AppState) {
                     color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
             }
+            Text("🧾", fontSize = 17.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.slipOpen = true }.padding(8.dp))
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }
         UpdateBanner(state)

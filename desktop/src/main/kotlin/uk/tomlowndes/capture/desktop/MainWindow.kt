@@ -57,6 +57,7 @@ fun MainWindow(state: AppState) {
                 Tab.WEEKLY -> WeeklyPane(state)
                 Tab.ROUTINES -> RoutinesPane(state)
                 Tab.JOBS -> JobsPane(state)
+                Tab.JARVIS -> JarvisPane(state)
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
                 Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
@@ -64,6 +65,8 @@ fun MainWindow(state: AppState) {
             }
         }
     }
+    if (state.slipOpen) DailySlipDialog(state) { state.slipOpen = false }
+    state.printSummaryOf?.let { src -> PrintSummaryDialog(state, src) { state.printSummaryOf = null } }
     // The focus timer from Deck: a tray notification when it runs out, whichever tab is open.
     LaunchedEffect(state.focus) {
         val f = state.focus ?: return@LaunchedEffect
@@ -105,6 +108,7 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
         TagNav(state)
+        NavItem(state, Tab.JARVIS, "🎙", "Jarvis")
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
         state.routine?.let { r ->
