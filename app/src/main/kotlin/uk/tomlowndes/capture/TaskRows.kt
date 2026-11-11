@@ -168,10 +168,13 @@ internal fun TaskRow(
     ) {
         TickBox(ticked, onTick, size = if (sub) 20.dp else 24.dp, radius = if (sub) 6.dp else 8.dp, outline = side)
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
-            Text(
-                TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                PriorityFlag(Priority.of(t))
+                Text(
+                    TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
+                )
+            }
             val tags = TaskViews.tags(t).take(2)
             val mins = Deck.minutes(t)
             if (tags.isNotEmpty() || mins != null || t.recurrence != null || steps > 0) Row(
@@ -228,6 +231,27 @@ internal fun TickedRow(d: TickedTask, onUntick: () -> Unit) {
 private val DoneFill = Color(0xFF2C5A47)
 private val DoneMark = Color(0xFFBFEEDD)
 private val Faint = Color(0xFF5C6478)
+
+/** Flag colours (priority-flags-v1): text and tint for each priority. */
+internal fun priorityColours(p: Priority): Pair<Color, Color> = when (p) {
+    Priority.HIGHEST -> Color(0xFFFF6B6B) to Color(0xFF3A1D22)
+    Priority.HIGH -> Color(0xFFFFA36B) to Color(0xFF3A2618)
+    Priority.MEDIUM -> Color(0xFFF5C06A) to Color(0xFF2E2616)
+    Priority.LOW -> Color(0xFF7AA2FF) to Color(0xFF1A2340)
+    Priority.LOWEST -> Color(0xFF5C6478) to Color(0xFF1C212C)
+    Priority.NONE -> Muted to Color.Transparent
+}
+
+/** The small "!!" / "↓" flag before a task's text. Nothing for no priority. */
+@Composable
+internal fun PriorityFlag(p: Priority, modifier: Modifier = Modifier) {
+    if (p == Priority.NONE) return
+    val (fg, tint) = priorityColours(p)
+    Text(
+        p.flag, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = fg, maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(5.dp)).background(tint).padding(horizontal = 5.dp)
+    )
+}
 
 /** Mono pill with a short date ("Thu 22"); red when overdue. */
 @Composable

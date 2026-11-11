@@ -92,6 +92,8 @@ fun TasksScreen(
     var filter by remember { mutableStateOf(TaskFilter.values().firstOrNull { it.name == prefs.tasksFilter }) }
     fun pickTag(t: String?) { tag = t; prefs.tasksTag = t }
     fun pickFilter(f: TaskFilter?) { filter = f; prefs.tasksFilter = f?.name }
+    var sort by remember { mutableStateOf(TaskSort.values().firstOrNull { it.name == prefs.tasksSort } ?: TaskSort.DUE) }
+    fun pickSort(s: TaskSort) { sort = s; prefs.tasksSort = s.name }
     val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -184,10 +186,10 @@ fun TasksScreen(
         }
     }
 
-    fun save(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?) {
+    fun save(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority? = null) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, text, due, recurrence, minutes) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, text, due, recurrence, minutes, priority) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             r.onSuccess { newRaw ->
@@ -255,7 +257,12 @@ fun TasksScreen(
     val today = LocalDate.now()
     val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) }
     val nested = Subtasks.nest(shown, tasks)
-    val groups = TaskViews.groups(nested.top, today)
+    // Due: day groups with flagged tasks first in each. Priority: priority groups (priority-flags-v1).
+    val sections: List<TaskSection> = if (sort == TaskSort.PRIORITY) {
+        TaskViews.priorityGroups(nested.top).map { (p, items) -> TaskSection("p-$p", p.title, items, priority = p) }
+    } else {
+        TaskViews.groups(nested.top, today).map { (g, items) -> TaskSection("g-$g", g.title, items, group = g) }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
         Row(
@@ -288,8 +295,9 @@ fun TasksScreen(
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
                 TaskFilter.SHORT -> "≤ ${TaskViews.SHORT_MIN}m"
+                TaskFilter.URGENT -> "High+"
                 else -> null
-            } ?: tag
+            } ?: tag ?: if (sort == TaskSort.PRIORITY && !upcoming) "priority" else null
             Row(
                 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, if (active != null) Primary else Outline, RoundedCornerShape(12.dp))
                     .clickable { filtering = true }.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -324,7 +332,25 @@ fun TasksScreen(
                     }
                     AppChip(filter == TaskFilter.SHORT, { pickFilter(if (filter == TaskFilter.SHORT) null else TaskFilter.SHORT); filtering = false },
                         { Text("≤ ${TaskViews.SHORT_MIN} min") })
+                    val urgent = tasks.count { TaskViews.matches(it, null, TaskFilter.URGENT) }
+                    AppChip(filter == TaskFilter.URGENT, { pickFilter(if (filter == TaskFilter.URGENT) null else TaskFilter.URGENT); filtering = false }, {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PriorityFlag(Priority.MEDIUM)
+                            Text("High+")
+                            Text("$urgent", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                        }
+                    })
                 }
+                // Sort (priority-flags-v1), remembered like the filter.
+                Text("SORT", fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = Muted, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppChip(sort == TaskSort.DUE, { pickSort(TaskSort.DUE); filtering = false }, { Text("📅 Due date") })
+                    AppChip(sort == TaskSort.PRIORITY, { pickSort(TaskSort.PRIORITY); filtering = false }, { Text("! Priority") })
+                }
+                Text(
+                    if (sort == TaskSort.PRIORITY) "Grouped by flag, earliest due first in each." else "Day groups, with flagged tasks at the top of each.",
+                    fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
 
@@ -350,12 +376,14 @@ fun TasksScreen(
         val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
         val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = 16.dp, top = 4.dp)) {
-            groups.forEach { (g, items) ->
-                item(key = "h-$g") {
-                    GroupHead(g.title, items.size.toString(), red = g == TaskGroup.OVERDUE,
+            sections.forEach { s ->
+                val g = s.group
+                item(key = "h-${s.key}") {
+                    GroupHead(s.title, s.items.size.toString(), red = g == TaskGroup.OVERDUE, flag = s.priority,
                         action = if (g == TaskGroup.OVERDUE && triage > 0) "⚡ Triage ›" else null, onAction = onOpenTriage)
                 }
-                item(key = "c-$g") {
+                val items = s.items
+                item(key = "c-${s.key}") {
                     ListCard(border = if (g == TaskGroup.OVERDUE) OverdueLine else Outline) {
                         items.forEachIndexed { i, t ->
                             AnimatedVisibility(
@@ -371,7 +399,7 @@ fun TasksScreen(
                                         steps = kids.size, stepsOpen = t.raw in openSteps,
                                         onSteps = { if (prefs.subtasksInline) openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw else stepsOf = t }
                                     ) {
-                                        if (g == TaskGroup.TODAY) {
+                                        if (g == TaskGroup.TODAY || (g == null && t.due == today)) {
                                             (Deck.minutes(t) ?: TaskViews.SHORT_MIN).let { m -> StartPill(m) { onStartFocus(t, m) } }
                                         } else {
                                             t.due?.let { DuePill(it) { rescheduling = t } }
@@ -423,7 +451,7 @@ fun TasksScreen(
     editing?.let { t ->
         EditTaskSheet(
             t, tagData,
-            onSave = { text, due, rule, minutes -> editing = null; save(t, text, due, rule, minutes) },
+            onSave = { text, due, rule, minutes, priority -> editing = null; save(t, text, due, rule, minutes, priority) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null },
             onBreakDown = { editing = null; breaking = t }
@@ -463,12 +491,14 @@ fun TasksScreen(
 /** A group's bold title, its count bubble and a hairline to the edge. Overdue is red. */
 @Composable
 private fun GroupHead(
-    title: String, count: String, red: Boolean = false, muted: Boolean = false, action: String? = null, onAction: () -> Unit = {}
+    title: String, count: String, red: Boolean = false, muted: Boolean = false, action: String? = null, onAction: () -> Unit = {},
+    flag: Priority? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        flag?.let { PriorityFlag(it) }
         Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = when { red -> Warn; muted -> Muted; else -> TextMain })
         Text(
             count, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (red) Warn else Muted,
@@ -478,3 +508,8 @@ private fun GroupHead(
         if (action != null) Text(action, fontSize = 12.5.sp, color = Primary, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(4.dp))
     }
 }
+
+/** One group on the Tasks list: a due-date group, or a priority group when sorting by priority. */
+private data class TaskSection(
+    val key: String, val title: String, val items: List<TaskItem>, val group: TaskGroup? = null, val priority: Priority? = null,
+)

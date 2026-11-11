@@ -16,8 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +39,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.text.style.TextDecoration
+import kotlinx.coroutines.delay
+import uk.tomlowndes.capture.CalEvent
+import uk.tomlowndes.capture.CalendarSource
+import uk.tomlowndes.capture.Deck
+import uk.tomlowndes.capture.Priority
+import uk.tomlowndes.capture.Step
+import uk.tomlowndes.capture.Subtasks
+import uk.tomlowndes.capture.TickedTask
+import uk.tomlowndes.capture.Triage
+import uk.tomlowndes.capture.WeeklyReview
+import java.time.LocalDateTime
+import java.time.LocalTime
 import uk.tomlowndes.capture.Bucket
 import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.TaskGroups
@@ -57,17 +73,31 @@ import java.util.Locale
 fun TasksPane(state: AppState) {
     val scope = rememberCoroutineScope()
     var tasks by remember { mutableStateOf<List<TaskItem>?>(null) }
-    var byDue by remember { mutableStateOf(state.prefs.sortByDue) }
+    var done by remember { mutableStateOf<List<TickedTask>>(emptyList()) }
+    var order by remember { mutableStateOf(state.prefs.taskOrder) }
+    var upcoming by remember { mutableStateOf(state.prefs.tasksUpcoming) }
+    var urgent by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
+    var openSteps by remember { mutableStateOf(setOf<String>()) }
+    var calendar by remember { mutableStateOf<Pair<List<CalendarSource>, List<CalEvent>>>(emptyList<CalendarSource>() to emptyList()) }
+    var now by remember { mutableStateOf(LocalDateTime.now()) }
+    LaunchedEffect(Unit) { while (true) { delay(30_000); now = LocalDateTime.now() } }
 
     fun reload() {
         scope.launch {
-            state.io("Couldn't read tasks") { state.writer()?.listTasks() }?.let { tasks = it; state.tagCounts = Tags.filterCounts(it, 6) }
+            state.io("Couldn't read tasks") { state.writer()?.listTaskLists() }?.let {
+                tasks = it.open; done = it.done; state.tagCounts = Tags.filterCounts(it.open, 6)
+            }
             state.vault?.let { v -> state.io { Tags.loadPinned(v) }?.let { pinned = it } }
         }
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
+    // Upcoming reads the phone's calendar links from the vault (windows-catchup-v1).
+    LaunchedEffect(state.vault, upcoming) {
+        val v = state.vault ?: return@LaunchedEffect
+        if (upcoming) state.io { DesktopCalendar.load(v) }?.let { calendar = it }
+    }
 
     fun tick(t: TaskItem) = scope.launch {
         val c = state.io { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
@@ -78,10 +108,24 @@ fun TasksPane(state: AppState) {
         }
     }
 
+    fun untick(d: TickedTask) = scope.launch {
+        state.io { state.writer()!!.untickTask(d) } ?: return@launch
+        reload()
+        state.say("Back on the list")
+    }
+
     fun move(t: TaskItem, date: LocalDate?) = scope.launch {
         val newRaw = state.io { state.writer()!!.rescheduleTask(t, date) } ?: return@launch
         reload()
         state.offerUndo(if (date == null) "Due date cleared" else "Moved to ${dueLabel(date)}") {
+            state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload()
+        }
+    }
+
+    fun plan(t: TaskItem, date: LocalDate, start: LocalTime) = scope.launch {
+        val newRaw = state.io { state.writer()!!.planAt(t, date, start) } ?: return@launch
+        reload()
+        state.offerUndo("Planned for ${dueLabel(date)} at ${"%02d:%02d".format(start.hour, start.minute)}") {
             state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload()
         }
     }
@@ -92,18 +136,48 @@ fun TasksPane(state: AppState) {
         state.offerUndo("Task removed") { state.io { state.writer()!!.restoreTask(t, null, at = at) }; reload() }
     }
 
-    fun edit(t: TaskItem, text: String, due: LocalDate?, rule: String?, minutes: Int?) = scope.launch {
-        val newRaw = state.io { state.writer()!!.editTask(t, text, due, rule, minutes) } ?: return@launch
+    fun drop(t: TaskItem) = scope.launch {
+        val today = LocalDate.now()
+        state.io { state.writer()!!.cancelTask(t, today) } ?: return@launch
+        reload()
+        state.offerUndo("Dropped") { state.io { state.writer()!!.restoreTask(t, null, WeeklyReview.cancelled(t.raw, today)) }; reload() }
+    }
+
+    fun edit(t: TaskItem, text: String, due: LocalDate?, rule: String?, minutes: Int?, priority: Priority? = null) = scope.launch {
+        val newRaw = state.io { state.writer()!!.editTask(t, text, due, rule, minutes, priority) } ?: return@launch
         reload()
         state.offerUndo("Task updated") { state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload() }
     }
 
+    fun setPriority(t: TaskItem, p: Priority) = edit(t, t.text, t.due, t.recurrence, Deck.minutes(t), p)
+
+    fun addSteps(t: TaskItem, steps: List<Step>) = scope.launch {
+        state.io { state.writer()!!.addSubtasks(t, steps) } ?: return@launch
+        openSteps = openSteps + t.raw
+        reload()
+        state.say("Added ${steps.size} step${if (steps.size == 1) "" else "s"}")
+    }
+
     var editing by remember { mutableStateOf<TaskItem?>(null) }
+    var picking by remember { mutableStateOf<TaskItem?>(null) }
+    var breaking by remember { mutableStateOf<TaskItem?>(null) }
+    var triaging by remember { mutableStateOf(false) }
+    var fitting by remember { mutableStateOf<Triple<LocalDate, LocalTime, Int>?>(null) }
+    val actions = TaskActions(
+        move = { t, d -> move(t, d) }, pickDate = { picking = it }, priority = { t, p -> setPriority(t, p) },
+        breakDown = { breaking = it },
+        focus = { t, m -> state.focus = FocusRun(t, m, System.currentTimeMillis() + m * 60_000L); state.tab = Tab.DECK },
+        edit = { editing = it }, remove = { remove(it) },
+    )
     val tag = state.taskTag
     val note = state.taskNote
-    val shown = tasks.orEmpty().filter {
-        (note == null || it.path == note) && (tag == null || Tags.matches(it, tag)) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
+    val all = tasks.orEmpty()
+    val shown = all.filter {
+        (note == null || it.path == note) && (tag == null || Tags.matches(it, tag)) &&
+            (!urgent || Priority.of(it).urgent) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
     }
+    val nested = Subtasks.nest(shown, all)
+    val today = LocalDate.now()
 
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -115,53 +189,127 @@ fun TasksPane(state: AppState) {
                 }
                 Sub(
                     if (tasks == null) "Reading the vault…"
+                    else if (upcoming) "Upcoming · next 7 days"
                     else if (tag != null) "${shown.size} open · ${if (Tags.kind(tag) == uk.tomlowndes.capture.TagKind.OTHER) "tagged $tag" else Tags.label(tag).lowercase() + " side"}"
-                    else "Whole vault · ${tasks!!.size} open",
+                    else "Whole vault · ${all.size} open",
                     Modifier.padding(top = 2.dp)
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Chip("By due date", byDue) { byDue = true; state.prefs.sortByDue = true }
-                Chip("Note order", !byDue) { byDue = false; state.prefs.sortByDue = false }
-                Field(filter, { filter = it }, Modifier.width(240.dp), "🔍  Filter tasks", shape = CircleShape)
+                Pill(listOf("List", "Upcoming"), if (upcoming) 1 else 0, Modifier.width(200.dp)) { upcoming = it == 1; state.prefs.tasksUpcoming = upcoming }
+                if (!upcoming) {
+                    Chip("📅 Due", order == "due", small = true) { order = "due"; state.prefs.taskOrder = order }
+                    Chip("! Priority", order == "priority", small = true) { order = "priority"; state.prefs.taskOrder = order }
+                    Chip("Note order", order == "note", small = true) { order = "note"; state.prefs.taskOrder = order }
+                }
+                Chip("High+", urgent, small = true) { urgent = !urgent }
+                Field(filter, { filter = it }, Modifier.width(200.dp), "🔍  Filter tasks", shape = CircleShape)
             }
         }
-        AddTaskBox(state) { reload() }
+        if (!upcoming) AddTaskBox(state) { reload() }
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        if (upcoming) {
+            val bills = TaskViews.billsMonth(all, done, today)
+            if (!bills.empty) Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.End) {
+                Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; upcoming = false; state.prefs.tasksUpcoming = false }
+            } else Box(Modifier.padding(top = 14.dp))
+            UpcomingWeek(
+                shown, calendar.second, calendar.first, now,
+                onMove = { t, d -> move(t, d) }, onPlan = { t, d, s -> plan(t, d, s) },
+                onFit = { d, s, m -> fitting = Triple(d, s, m) }, onOpen = { editing = it },
+            )
+        } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             if (tasks != null && shown.isEmpty()) Sub(if (filter.isBlank()) "Nothing to do." else "No tasks match.", Modifier.padding(top = 24.dp))
-            if (!byDue) {
-                shown.forEach { TaskRow(it, ::tick, ::move, ::remove) { editing = it } }
-            } else {
-                // Groups flow into two columns, balanced by how many rows each holds.
-                val groups = TaskGroups.groups(shown, LocalDate.now())
-                val total = groups.sumOf { it.second.size + 2 }
-                var acc = 0
-                val split = groups.indexOfFirst { acc += it.second.size + 2; acc * 2 >= total }.let { if (it < 0) groups.size else it + 1 }
-                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    listOf(groups.take(split), groups.drop(split)).forEach { col ->
-                        Column(Modifier.weight(1f)) {
-                            col.forEach { (b, items) ->
-                                GroupHeader(b, items.size)
-                                items.forEach { TaskRow(it, ::tick, ::move, ::remove) { editing = it } }
+            @Composable
+            fun rows(items: List<TaskItem>) = items.forEach { t ->
+                val kids = nested.children[t].orEmpty()
+                TaskRow(t, ::tick, actions, steps = kids.size, stepsOpen = t.raw in openSteps,
+                    onSteps = { openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw })
+                if (t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sub = true) }
+            }
+            when (order) {
+                "note" -> rows(nested.top)
+                "priority" -> TaskViews.priorityGroups(nested.top).forEach { (p, items) ->
+                    PriorityHeader(p, items.size)
+                    rows(items)
+                }
+                else -> {
+                    // Groups flow into two columns, balanced by how many rows each holds.
+                    val groups = TaskGroups.groups(nested.top, today)
+                    val total = groups.sumOf { it.second.size + 2 }
+                    var acc = 0
+                    val split = groups.indexOfFirst { acc += it.second.size + 2; acc * 2 >= total }.let { if (it < 0) groups.size else it + 1 }
+                    val triage = Triage.candidates(all, today).size
+                    Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                        listOf(groups.take(split), groups.drop(split)).forEach { col ->
+                            Column(Modifier.weight(1f)) {
+                                col.forEach { (b, items) ->
+                                    GroupHeader(b, items.size, triage = if (b == Bucket.OVERDUE && triage > 0) triage else 0) { triaging = true }
+                                    rows(items)
+                                }
                             }
                         }
                     }
                 }
             }
+            // Completed (tasks-v1): the last 5 ticked, newest first. Tap the box to put one back.
+            val recent = TaskViews.recentDone(done.filter { note == null || it.path == note }, emptyMap())
+            if (recent.isNotEmpty() && filter.isBlank()) {
+                Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { GroupLabel("Completed") }
+                    Count(recent.size, text = "last ${recent.size}")
+                }
+                recent.forEach { d -> DoneRow(d) { untick(d) } }
+            }
         }
     }
     editing?.let { t ->
-        EditTaskDialog(t, pinned, onSave = { text, due, rule, minutes -> editing = null; edit(t, text, due, rule, minutes) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
+        EditTaskDialog(t, pinned, onSave = { text, due, rule, minutes, p -> editing = null; edit(t, text, due, rule, minutes, p) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
+    }
+    picking?.let { t -> PickDateDialog(t.due, onPick = { picking = null; move(t, it) }, onDismiss = { picking = null }) }
+    breaking?.let { t -> BreakdownDialog(t, onSave = { steps -> breaking = null; addSteps(t, steps) }, onDismiss = { breaking = null }) }
+    if (triaging) TriageDialog(
+        all, onToday = { move(it, LocalDate.now()) }, onLater = { t, d -> move(t, d) }, onDrop = { drop(it) },
+        onPick = { picking = it }, onDismiss = { triaging = false },
+    )
+    fitting?.let { (d, s, m) -> FitDialog(shown, d, s, m, onPick = { t -> fitting = null; plan(t, d, s) }, onDismiss = { fitting = null }) }
+}
+
+@Composable
+private fun GroupHeader(b: Bucket, count: Int, triage: Int = 0, onTriage: () -> Unit = {}) {
+    val title = if (b == Bucket.TODAY) "Today · " + LocalDate.now().format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)) else b.title
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { GroupLabel(title, if (b == Bucket.OVERDUE) Warn else Muted) }
+        if (triage > 0) TextAction("⚡ Triage ›", modifier = Modifier.padding(end = 8.dp), onClick = onTriage)
+        Count(count, warn = b == Bucket.OVERDUE)
     }
 }
 
 @Composable
-private fun GroupHeader(b: Bucket, count: Int) {
-    val title = if (b == Bucket.TODAY) "Today · " + LocalDate.now().format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)) else b.title
+private fun PriorityHeader(p: Priority, count: Int) {
     Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) { GroupLabel(title, if (b == Bucket.OVERDUE) Warn else Muted) }
-        Count(count, warn = b == Bucket.OVERDUE)
+        PriorityFlag(p, Modifier.padding(end = 8.dp))
+        Box(Modifier.weight(1f)) { GroupLabel(p.title) }
+        Count(count)
+    }
+}
+
+/** A ticked task in Completed: muted and struck through; the box un-ticks it. */
+@Composable
+private fun DoneRow(d: TickedTask, onUntick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shape).background(Surface1).padding(start = 13.dp, top = 7.dp, bottom = 7.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xFF2C5A47)).hand().clickable(onClick = onUntick), contentAlignment = Alignment.Center) {
+            Text("✓", fontSize = 10.sp, color = Color(0xFFBFEEDD), fontWeight = FontWeight.Bold)
+        }
+        Text(d.text, fontSize = 13.sp, color = Muted, textDecoration = TextDecoration.LineThrough, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        d.done?.let { day ->
+            val today = LocalDate.now()
+            Text(when (day) { today -> "Today"; today.minusDays(1) -> "Yesterday"; else -> dayChip(day) }, fontSize = 11.sp, color = Faint)
+        }
     }
 }
 
@@ -212,47 +360,50 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
     if (repeatOpen) RepeatDialog(repeat, onPick = { repeatOpen = false; repeat = it }, onDismiss = { repeatOpen = false })
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TaskRow(
-    t: TaskItem, onTick: (TaskItem) -> Unit, onMove: (TaskItem, LocalDate?) -> Unit, onRemove: (TaskItem) -> Unit,
-    onEdit: (TaskItem) -> Unit,
+    t: TaskItem, onTick: (TaskItem) -> Unit, a: TaskActions, sub: Boolean = false,
+    steps: Int = 0, stepsOpen: Boolean = false, onSteps: () -> Unit = {},
 ) {
     val today = LocalDate.now()
     val overdue = t.due?.isBefore(today) == true
     var menu by remember { mutableStateOf(false) }
-    var picking by remember { mutableStateOf(false) }
-    HoverRow(Modifier.fillMaxWidth().padding(bottom = 6.dp)) { hovered ->
+    HoverRow(Modifier.fillMaxWidth().padding(start = if (sub) 34.dp else 0.dp, bottom = 6.dp)) { hovered ->
         val shape = RoundedCornerShape(12.dp)
         Row(
             Modifier.fillMaxWidth().clip(shape).background(if (hovered || menu) Surface2 else Surface1)
                 .then(if (hovered || menu) Modifier.border(1.5.dp, Primary, shape) else Modifier)
-                .padding(start = 13.dp, top = 8.dp, bottom = 8.dp, end = 10.dp),
+                // Right-click opens the task menu (the desktop stand-in for swipes).
+                .onPointerEvent(PointerEventType.Press) { if (it.buttons.isSecondaryPressed) menu = true }
+                .padding(start = 13.dp, top = if (sub) 6.dp else 8.dp, bottom = if (sub) 6.dp else 8.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, Primary, CircleShape).hand().clickable { onTick(t) })
+            Box(Modifier.size(if (sub) 17.dp else 20.dp).clip(CircleShape).border(2.dp, if (sub) Muted else Primary, CircleShape).hand().clickable { onTick(t) })
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                PriorityFlag(Priority.of(t), Modifier.padding(end = 7.dp))
                 Text(
-                    Tags.strip(t.text).ifBlank { t.text }, fontSize = 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).hand().clickable { onEdit(t) }
+                    Tags.strip(t.text).ifBlank { t.text }, fontSize = if (sub) 13.sp else 14.sp, color = TextMain, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).hand().clickable { a.edit(t) }
                 )
                 TaskViews.tags(t).take(3).forEach { TagMini(it) }
+                Deck.minutes(t)?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp)) }
+                if (steps > 0) Text(
+                    "$steps step${if (steps > 1) "s" else ""} ${if (stepsOpen) "▴" else "▾"}", fontSize = 11.sp, color = Primary, maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp).clip(CircleShape).background(PrimaryTint).hand().clickable(onClick = onSteps)
+                        .padding(horizontal = 8.dp, vertical = 1.dp)
+                )
                 t.recurrence?.let { Text("🔁 $it", fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp), maxLines = 1) }
-                if (t.path != VaultTasks.QUICK_TASK) Text(VaultTasks.noteName(t.path), fontSize = 11.sp, color = LinkBlue,
+                if (t.path != VaultTasks.QUICK_TASK && !sub) Text(VaultTasks.noteName(t.path), fontSize = 11.sp, color = LinkBlue,
                     modifier = Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (hovered || menu) Box {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HoverAction("✎ Edit") { onEdit(t) }
-                    HoverAction("📅 Move") { menu = true }
-                    HoverAction("🗑") { onRemove(t) }
+            Box {
+                if (hovered || menu) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HoverAction("✎ Edit") { a.edit(t) }
+                    HoverAction("⋯") { menu = true }
+                    HoverAction("🗑") { a.remove(t) }
                 }
-                DropdownMenu(menu, { menu = false }, Modifier.background(Menu)) {
-                    DropdownMenuItem({ Text("Today") }, { menu = false; onMove(t, today) })
-                    DropdownMenuItem({ Text("Tomorrow") }, { menu = false; onMove(t, today.plusDays(1)) })
-                    DropdownMenuItem({ Text("Next week") }, { menu = false; onMove(t, today.plusDays(7)) })
-                    DropdownMenuItem({ Text("Pick date…") }, { menu = false; picking = true })
-                    if (t.due != null) DropdownMenuItem({ Text("Clear due date") }, { menu = false; onMove(t, null) })
-                }
+                TaskMenu(t, menu, { menu = false }, a)
             }
             t.due?.let {
                 Text(dayChip(it), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = if (overdue) Warn else TextMain,
@@ -261,7 +412,6 @@ private fun TaskRow(
             }
         }
     }
-    if (picking) PickDateDialog(t.due, onPick = { picking = false; onMove(t, it) }, onDismiss = { picking = false })
 }
 
 @Composable

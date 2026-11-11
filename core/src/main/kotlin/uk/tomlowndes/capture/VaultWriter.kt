@@ -100,9 +100,11 @@ class VaultWriter(
      * If that exact line is no longer in the note, throws and writes nothing.
      * Returns the line as it now stands.
      */
-    fun editTask(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?): String {
-        val updated = TaskRules.editedLine(t.raw, text, due, recurrence, minutes)
-        edit(noteOf(t)) { TaskNote.edit(it, t.raw, text, due, recurrence, minutes) }
+    fun editTask(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority? = null): String {
+        val edited = TaskRules.editedLine(t.raw, text, due, recurrence, minutes)
+        // Priority (priority-flags-v1): null leaves the line's mark alone.
+        val updated = if (priority == null || priority == Priority.of(edited)) edited else Priority.with(edited, priority)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
         return updated
     }
 
@@ -121,6 +123,13 @@ class VaultWriter(
     /** Gives the task a time today (Visual day), or clears it for null. Returns the new line. */
     fun setTime(t: TaskItem, start: java.time.LocalTime?, minutes: Int): String {
         val updated = DayPlan.withTime(t.raw, start, minutes)
+        edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
+    /** Drag to a free gap (windows-catchup-v1): due [date] and a [start] time for its estimate. Returns the new line. */
+    fun planAt(t: TaskItem, date: LocalDate, start: java.time.LocalTime): String {
+        val updated = DayPlan.withTime(TaskRules.withDue(t.raw, date), start, DayPlan.minutes(t))
         edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
         return updated
     }
