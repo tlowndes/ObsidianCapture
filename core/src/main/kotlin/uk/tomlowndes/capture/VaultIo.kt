@@ -34,6 +34,7 @@ object VaultIo {
      * [wait] runs before another try (the attempt number, starting at 0). Tests pass a no-op.
      */
     fun write(v: Vault, path: String, text: String, wait: (Int) -> Unit = ::pause): String {
+        VaultScan.touched(path)
         repeat(ATTEMPTS) { n ->
             v.writeOnce(path, text)
             val after = read(v, path)

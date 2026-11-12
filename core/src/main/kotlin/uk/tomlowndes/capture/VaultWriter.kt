@@ -29,7 +29,9 @@ data class Removed(val at: Int, val steps: List<String> = emptyList())
  * runs after every task edit (Android refreshes its home screen widget there).
  */
 class VaultWriter(
-    private val vault: Vault, private val cacheFile: File? = null, private val onTasksChanged: () -> Unit = {}
+    private val vault: Vault, private val cacheFile: File? = null, private val onTasksChanged: () -> Unit = {},
+    /** How long the vault's note list may be reused before walking every folder again (0: walk every time). */
+    private val walkTtlMs: Long = 0,
 ) {
     private val taskPath = "$INBOX/$TASK_FILE"
 
@@ -69,12 +71,12 @@ class VaultWriter(
     }
 
     /** Quick Task's open tasks first, then `#task` tasks from every other note in the vault. */
-    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(vault, cacheFile)
+    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(vault, cacheFile, walkTtlMs)
 
     /** [listTasks] plus ticked tasks, from the same vault scan. */
     fun listTaskLists(): TaskLists {
         val quick = taskFile(false)?.let { readLines(it) }
-        val (open, done) = VaultScan.scan(vault, cacheFile)
+        val (open, done) = VaultScan.scan(vault, cacheFile, walkTtlMs)
         return TaskLists(
             (quick?.let { TaskNote.list(it) } ?: emptyList()) + open,
             (quick?.let { TaskNote.listDone(it) } ?: emptyList()) + done
@@ -241,7 +243,7 @@ class VaultWriter(
     }
 
     /** Removes the note at [path]. Used to undo a capture note when the rest of the save fails. */
-    fun deleteNote(path: String) { vault.delete(path) }
+    fun deleteNote(path: String) { vault.delete(path); VaultScan.touched(path) }
 
     private fun inboxNamed(name: String): List<Vault.Entry> {
         val re = Regex("^${Regex.escape(name)}( \\(\\d+\\))?\\.md$")
