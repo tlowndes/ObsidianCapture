@@ -9,7 +9,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +23,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -49,6 +55,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -391,17 +400,44 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     )
 }
 
-/** Today, Tomorrow, then the next five days as tiles, and 📅 for a later date (slip-any-day-v1). */
+private val DAY_CHIP = 56.dp
+private val DAY_GAP = 6.dp
+
+/**
+ * Today, the next six days, and 📅 for a later date (slip-any-day-v1).
+ * Every day chip is the same width. The window shows only whole chips and snaps to them, so nothing rests
+ * half cut off. The calendar chip stays put at the end of the row.
+ */
 @Composable
 private fun DayStrip(day: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit, onMore: () -> Unit) {
     val days = (0 until Slip.STRIP_DAYS).map { today.plusDays(it.toLong()) }
     val beyond = day !in days
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEach { d ->
-            DayTile(Slip.stripLabel(d, today), d.dayOfMonth.toString(), d == day) { onPick(d) }
+    val stride = DAY_CHIP + DAY_GAP
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val room = (maxWidth - DAY_CHIP - DAY_GAP).coerceAtLeast(DAY_CHIP)
+        var fit = ((room + DAY_GAP) / stride).toInt().coerceIn(1, days.size)
+        var window = fit * stride - DAY_GAP
+        if (window > room && fit > 1) {
+            fit -= 1
+            window = fit * stride - DAY_GAP
         }
-        DayTile(if (beyond) day.format(java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.UK)) else "📅",
-            if (beyond) day.dayOfMonth.toString() else "", beyond, onMore)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DAY_GAP)) {
+            val chips = rememberLazyListState()
+            LazyRow(
+                state = chips,
+                modifier = Modifier.width(window),
+                horizontalArrangement = Arrangement.spacedBy(DAY_GAP),
+                flingBehavior = rememberSnapFlingBehavior(chips, SnapPosition.Start),
+            ) {
+                items(days, key = { it.toEpochDay() }) { d ->
+                    DayTile(Slip.chipLabel(d, today), d.dayOfMonth.toString(), d == day, DAY_CHIP) { onPick(d) }
+                }
+            }
+            DayTile(
+                if (beyond) day.format(java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.UK)) else "📅",
+                if (beyond) day.dayOfMonth.toString() else "", beyond, DAY_CHIP, onMore
+            )
+        }
     }
 }
 
@@ -421,15 +457,23 @@ private fun ModeSwitch(options: List<String>, selected: Int, onPick: (Int) -> Un
 }
 
 @Composable
-private fun DayTile(top: String, num: String, on: Boolean, onClick: () -> Unit) {
+private fun DayTile(top: String, num: String, on: Boolean, width: Dp? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
+    val fixed = width != null
     Column(
-        Modifier.clip(shape).background(if (on) PrimaryTint else Surface1).border(1.dp, if (on) Primary else Outline, shape)
-            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
+        (if (width != null) Modifier.width(width) else Modifier)
+            .clip(shape).background(if (on) PrimaryTint else Surface1).border(1.dp, if (on) Primary else Outline, shape)
+            .clickable(onClick = onClick).padding(horizontal = if (fixed) 2.dp else 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(top, fontSize = 12.sp, color = if (on) Primary else Muted)
-        if (num.isNotEmpty()) Text(num, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else TextMain)
+        Text(
+            top, fontSize = 12.sp, color = if (on) Primary else Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center, modifier = if (fixed) Modifier.fillMaxWidth() else Modifier
+        )
+        if (num.isNotEmpty() || fixed) Text(
+            num.ifEmpty { " " }, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else TextMain,
+            textAlign = TextAlign.Center, modifier = if (fixed) Modifier.fillMaxWidth() else Modifier
+        )
     }
 }
 

@@ -114,6 +114,13 @@ object Slip {
         else -> d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.UK)
     }
 
+    /** The phone's day chips, kept short so every chip is the same width: "Today", "Tmrw", then "Sat". */
+    fun chipLabel(d: LocalDate, today: LocalDate): String = when (d) {
+        today -> "Today"
+        today.plusDays(1) -> "Tmrw"
+        else -> stripLabel(d, today)
+    }
+
     /** "Print Friday's slip", or plain "Print" for today. */
     fun printLabel(d: LocalDate, today: LocalDate): String =
         if (d == today) "Print" else "Print " + d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.UK) + "'s slip"
