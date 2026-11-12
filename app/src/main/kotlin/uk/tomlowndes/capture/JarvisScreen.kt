@@ -107,6 +107,14 @@ private enum class Phase { IDLE, RECORDING, SENDING }
 /** A recording (locked or held) stops and sends itself after ten minutes. */
 private const val MAX_RECORDING_MS = 10 * 60_000L
 
+/** Workers the Claude key on the phone can answer. Coding and odd jobs stay on the box. */
+private val API_WORKERS = setOf("jarvis", "obsidian", "research")
+
+private data class ApiOutcome(
+    val text: String, val sorted: SortResult?, val handoffs: List<PhoneBrain.Handoff>,
+    val inTok: Long, val outTok: Long, val model: String,
+)
+
 /** OGG/Opus from the mic into a cache file. */
 private class Recorder(private val ctx: Context) {
     private var rec: MediaRecorder? = null
@@ -158,6 +166,7 @@ fun JarvisScreen(
     onFound: (SortResult) -> Unit = {},
     onCheck: () -> Unit = {},
     onPrintToday: () -> Unit = {},
+    onQueued: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -167,10 +176,10 @@ fun JarvisScreen(
     val token = remember { secrets.jarvisToken.orEmpty() }
     val demo = Jarvis.isDemo(address)
     val boxReady = address.isNotBlank() && token.isNotBlank()
-    /** Phone brain: the app asks Claude itself. Only the Jarvis worker; the others need the box's tools. */
+    /** Phone brain: Claude from the app. Jarvis, Obsidian and Research. Coding and odd jobs still use the box. */
     val claudeKey = remember { secrets.claudeKey.orEmpty() }
     val brainOn = !demo && prefs.phoneBrain && claudeKey.isNotBlank()
-    fun usesBrain(w: Jarvis.Worker) = brainOn && w.id == "jarvis"
+    fun usesBrain(w: Jarvis.Worker) = brainOn && w.id in API_WORKERS
     /** Gemini Nano on the phone answers quick asks to Jarvis; the box gets the rest (mockup nano-brain-v1). */
     val nanoOn = !demo && prefs.nanoBrain
     var nanoState by remember { mutableStateOf(PhoneNano.state) }
@@ -350,62 +359,120 @@ fun JarvisScreen(
                 if (!demo) f.delete()
                 pending = null
                 answered(r, audio, w, r.transcript, spoken = true)
-            }.onFailure { e -> pending = f; error = failed(e) }
+            }.onFailure { e ->
+                pending = f
+                if (!demo) PhoneOutbox.keepVoice(ctx, w.id, id, f)
+                if (!demo) onQueued()
+                error = failed(e)
+            }
         }
     }
 
+    fun storeSucceed(worker: String, text: String, chatId: String, spoken: Boolean) {
+        Outbox(java.io.File(ctx.filesDir, "outbox.json")).succeed(Outbox.id(Outbox.JARVIS, Outbox.jarvisPayload(worker, text, chatId, spoken)))
+    }
+
+    fun claudeError(e: Throwable, seconds: Long): String = PhoneBrain.timedOut(e, seconds) ?: when (e) {
+        is PhoneBrain.Refused -> e.message ?: "Claude couldn't help with that one."
+        is com.anthropic.errors.UnauthorizedException, is com.anthropic.errors.PermissionDeniedException -> "Claude refused the key. Check it in Settings › Jarvis."
+        is com.anthropic.errors.RateLimitException -> "Claude is busy right now. Try again in a moment."
+        is com.anthropic.errors.AnthropicIoException -> "Can't reach Claude. Are you online?"
+        else -> e.message ?: "Claude couldn't answer."
+    }
+
     /**
-     * A job the phone brain handed to one of the box's workers. A "sent" line goes in the chat now; the worker's answer
-     * follows when it comes (long jobs like Research report on the Done line instead).
+     * A job the phone brain handed on. Research and vault notes stay on the phone when the Claude key is on.
+     * The "sent" line is not written until the other side has actually answered.
      */
     fun handOff(h: PhoneBrain.Handoff, from: Jarvis.Worker) {
         val label = PhoneBrain.workerLabel(h.worker)
+        if (brainOn && h.worker in API_WORKERS && h.worker != "jarvis") {
+            val flight = PhoneBrain.flightKey(h.worker, h.request)
+            if (!PhoneBrain.beginFlight(flight)) return
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val today = java.time.LocalDate.now()
+                        if (h.worker == "research") PhoneBrain.research(claudeKey, h.request, today)
+                        else PhoneBrain.sortOrAnswer(claudeKey, h.request, today)
+                    }
+                }
+                PhoneBrain.endFlight(flight)
+                result.onSuccess { d ->
+                    prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                    storeSucceed(h.worker, h.request, prefs.jarvisChat(h.worker).id, false)
+                    answered(Jarvis.Reply("", d.reply, null, sorted = d.sorted), null, from, "", false, via = label)
+                }.onFailure { e ->
+                    PhoneOutbox.keepJarvis(ctx, h.worker, h.request, prefs.jarvisChat(h.worker).id, false)
+                    onQueued()
+                    val why = claudeError(e, if (h.worker == "research") PhoneBrain.RESEARCH_TIMEOUT_S else PhoneBrain.CHAT_TIMEOUT_S)
+                    answered(Jarvis.Reply("", why, null), null, from, "", false, via = label)
+                }
+            }
+            return
+        }
         if (!boxReady) {
-            answered(Jarvis.Reply("", "$label needs the Oracle box. Add its address and token in Settings › Jarvis.", null), null, from, "", false, via = "box")
+            PhoneOutbox.keepJarvis(ctx, h.worker, h.request, prefs.jarvisChat(h.worker).id, false)
+            onQueued()
+            answered(Jarvis.Reply("", "$label needs the Oracle box. It's kept on the phone.", null), null, from, "", false, via = "box")
             return
         }
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching { Jarvis.sendText(address, token, h.request, h.worker, prefs.jarvisVoice, chat = prefs.jarvisChat(h.worker).id, speak = !phoneVoice) }
             }
-            r.onSuccess { reply -> answered(reply.copy(sorted = reply.sorted), null, from, "", false, via = label) }
-                .onFailure { e -> answered(Jarvis.Reply("", "$label didn't answer: " + failed(e), null), null, from, "", false, via = "box") }
+            r.onSuccess { reply ->
+                storeSucceed(h.worker, h.request, prefs.jarvisChat(h.worker).id, false)
+                answered(reply.copy(sorted = reply.sorted), null, from, "", false, via = label)
+            }.onFailure { e ->
+                PhoneOutbox.keepJarvis(ctx, h.worker, h.request, prefs.jarvisChat(h.worker).id, false)
+                onQueued()
+                answered(Jarvis.Reply("", "$label didn't answer. It's kept on the phone. " + failed(e), null), null, from, "", false, via = "box")
+            }
         }
     }
 
-    /** Phone brain: Claude straight from the app, the answer streaming into the chat. */
+    /** Phone brain: Claude straight from the app. A long message is sorted or answered in one call. */
     fun askBrain(t: String, spoken: Boolean, w: Jarvis.Worker) {
+        val flight = PhoneBrain.flightKey(w.id, t)
+        if (!PhoneBrain.beginFlight(flight)) {
+            phase = Phase.IDLE; sendingText = null
+            error = "That's already being sent, so it won't be sent again."
+            return
+        }
+        val chatId = chat.id
         val turns = chat.messages.filter { it.via != "box" }.map { PhoneBrain.Turn(it.mine, it.text) } + PhoneBrain.Turn(true, t)
         val model = PhoneBrain.model(prefs.brainClever)
         val main = android.os.Handler(android.os.Looper.getMainLooper())
+        val seconds = if (w.id == "research") PhoneBrain.RESEARCH_TIMEOUT_S else PhoneBrain.CHAT_TIMEOUT_S
         streaming = ""; streamingVia = null
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    PhoneBrain.chat(claudeKey, model, turns, java.time.LocalDate.now(), listOf("#work", "#personal")) { so -> main.post { streaming = so } }
+                    val today = java.time.LocalDate.now()
+                    when {
+                        w.id == "research" -> PhoneBrain.research(claudeKey, t, today).let { ApiOutcome(it.reply, it.sorted, emptyList(), it.inTok, it.outTok, PhoneBrain.FAST) }
+                        w.id == "obsidian" || PhoneBrain.worthSorting(t) -> PhoneBrain.sortOrAnswer(claudeKey, t, today).let { ApiOutcome(it.reply, it.sorted, emptyList(), it.inTok, it.outTok, PhoneBrain.FAST) }
+                        else -> PhoneBrain.chat(claudeKey, model, turns, today, listOf("#work", "#personal")) { so -> main.post { streaming = so } }
+                            .let { a -> ApiOutcome(a.text.ifBlank { "Done." }, a.tasks.takeIf { it.isNotEmpty() }?.let { SortResult(it, emptyList(), null) }, a.handoffs, a.inputTokens, a.outputTokens, a.model) }
+                    }
                 }
             }
+            PhoneBrain.endFlight(flight)
             phase = Phase.IDLE
             sendingText = null
             streaming = null
             result.onSuccess { a ->
                 pendingText = null
-                prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(a.model, a.inputTokens, a.outputTokens))
-                val sent = a.handoffs.mapIndexed { i, h ->
-                    Jarvis.ChatMsg(false, "🛰 Sent to ${PhoneBrain.workerLabel(h.worker)} on the box", System.currentTimeMillis() + 2 + i, via = "box")
-                }
-                val sorted = if (a.tasks.isEmpty()) null else SortResult(a.tasks, emptyList(), null)
-                answered(Jarvis.Reply(t, a.text.ifBlank { if (sent.isEmpty()) "Done." else "" }, null, sorted = sorted), null, w, t, spoken, extra = sent)
+                storeSucceed(w.id, t, chatId, spoken)
+                prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(a.model, a.inTok, a.outTok))
+                answered(Jarvis.Reply(t, a.text, null, sorted = a.sorted), null, w, t, spoken)
                 a.handoffs.forEach { handOff(it, w) }
             }.onFailure { e ->
                 pendingText = t
-                error = when (e) {
-                    is PhoneBrain.Refused -> e.message
-                    is com.anthropic.errors.UnauthorizedException, is com.anthropic.errors.PermissionDeniedException -> "Claude refused the key. Check it in Settings › Jarvis."
-                    is com.anthropic.errors.RateLimitException -> "Claude is busy right now. Try again in a moment."
-                    is com.anthropic.errors.AnthropicIoException -> "Can't reach Claude. Are you online?"
-                    else -> e.message ?: "Claude couldn't answer."
-                }
+                PhoneOutbox.keepJarvis(ctx, w.id, t, chatId, spoken)
+                onQueued()
+                error = claudeError(e, seconds)
             }
         }
     }
@@ -428,8 +495,14 @@ fun JarvisScreen(
             sendingText = null
             result.onSuccess { (r, audio) ->
                 pendingText = null
+                if (record) storeSucceed(w.id, t, id, spoken)
                 answered(r, audio, w, if (record) t else "", spoken = spoken, via = via, route = route)
-            }.onFailure { e -> pendingText = if (record) t else null; error = failed(e) }
+            }.onFailure { e ->
+                pendingText = if (record) t else null
+                if (record) PhoneOutbox.keepJarvis(ctx, w.id, t, id, spoken)
+                if (record) onQueued()
+                error = failed(e)
+            }
         }
     }
 

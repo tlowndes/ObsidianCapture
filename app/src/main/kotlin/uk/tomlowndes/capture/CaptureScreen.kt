@@ -38,6 +38,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -77,11 +78,21 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
     var found by remember { mutableStateOf(prefs.jarvisFound) }
     var checking by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var waiting by remember { mutableIntStateOf(0) }
+    fun refreshWaiting() { scope.launch { waiting = withContext(Dispatchers.IO) { PhoneOutbox.pendingCount(ctx) } } }
+    LaunchedEffect(Unit) { refreshWaiting() }
 
     fun setFound(r: SortResult?) { found = r; prefs.jarvisFound = r }
 
     val pill: @Composable () -> Unit = {
-        PillSwitch(listOf("Task", "Read later", "Jarvis"), mode) { mode = it; prefs.captureMode = it }
+        Column {
+            PillSwitch(listOf("Task", "Read later", "Jarvis"), mode) { mode = it; prefs.captureMode = it }
+            if (waiting > 0) Text(
+                if (waiting == 1) "1 thing waiting to save or send. It will be tried again on its own."
+                else "$waiting things waiting to save or send. They will be tried again on their own.",
+                fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp)
+            )
+        }
     }
 
     val f = found
@@ -97,8 +108,15 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
                 saving = true
                 scope.launch {
                     withContext(Dispatchers.IO) { runCatching { Sorting.save(r, VaultWriter(ctx, uri), IdeaStore(ctx, uri, prefs)) } }
-                        .onSuccess { setFound(null); checking = false; snack.showSnackbar(if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved") }
-                        .onFailure { snack.showSnackbar("Failed: ${it.message}") }
+                        .onSuccess {
+                            withContext(Dispatchers.IO) { Outbox(java.io.File(ctx.filesDir, "outbox.json")).succeed(Outbox.id(Outbox.SAVE_SORT, Sorting.toJson(r))) }
+                            setFound(null); checking = false; snack.showSnackbar(if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved")
+                        }
+                        .onFailure {
+                            PhoneOutbox.keepSort(ctx, r)
+                            refreshWaiting()
+                            snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
+                        }
                     saving = false
                 }
             }
@@ -110,7 +128,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
         JarvisScreen(prefs, snack, onOpenSettings, title = "Capture", header = pill, found = found,
             // Tasks from several answers wait on one Check and save card until it's dealt with.
             onFound = { r -> setFound(found?.let { o -> if (r.note == null && o.note == null) o.copy(tasks = o.tasks + r.tasks, ideas = o.ideas + r.ideas) else null } ?: r) },
-            onCheck = { checking = true }, onPrintToday = onPrintToday)
+            onCheck = { checking = true }, onPrintToday = onPrintToday, onQueued = { refreshWaiting() })
         return
     }
 
@@ -122,7 +140,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
         }
         pill()
         Box(Modifier.height(14.dp))
-        QuickAdd(vault, link = mode == 1, snack = snack)
+        QuickAdd(vault, link = mode == 1, snack = snack, onQueued = { refreshWaiting() })
         Box(Modifier.height(16.dp))
     }
 }
@@ -287,7 +305,7 @@ private fun ToolChip(label: String, on: Boolean, onClick: () -> Unit) {
 /** Task and Read later, as Capture had them before Flight Deck: one field, due chips for tasks, Just added. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
+private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQueued: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val history = remember { mutableStateListOf<Added>() }
@@ -329,7 +347,11 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
                 history.add(0, Added(false, e.text, "${e.kind.mark} ${e.kind.label.replaceFirstChar { it.uppercase() }} · ${VaultWriter.INBOX}/Inbox"))
                 text = ""; picked = emptyList()
                 snack.showSnackbar(if (e.kind == LogKind.EVENT) "Event logged" else "Note logged")
-            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            }.onFailure {
+                PhoneOutbox.keepLines(ctx, listOf(RapidLog.inboxLine(e)))
+                onQueued()
+                snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
+            }
         }
     }
 
@@ -367,7 +389,16 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState) {
                         (wasRule?.let { " · ↻ $it" } ?: "")) + tagNote))
                 text = ""; due = null; minutes = null; repeat = null; picked = emptyList(); kindPick = LogKind.TASK
                 snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
-            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            }.onFailure {
+                if (link) {
+                    val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
+                    PhoneOutbox.keepLink(ctx, url, wasTags)
+                } else {
+                    PhoneOutbox.keepTask(ctx, Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString())
+                }
+                onQueued()
+                snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
+            }
         }
     }
 
