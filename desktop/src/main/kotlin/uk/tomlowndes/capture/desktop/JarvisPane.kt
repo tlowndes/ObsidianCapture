@@ -75,6 +75,8 @@ class JarvisSession(val state: AppState) {
     var done by mutableStateOf<List<Jarvis.Done>>(emptyList())
     val sorted = mutableStateMapOf<Long, SortResult>()
     val mic = MicRecorder()
+    /** A note found for key findings, waiting on the Long / Short picker. */
+    var findingsNote by mutableStateOf<FindingsNote?>(null)
 
     fun pick(w: String) {
         worker = w; state.prefs.jarvisWorker = w
@@ -107,6 +109,33 @@ class JarvisSession(val state: AppState) {
     suspend fun send(text: String) {
         val t = text.trim()
         if (t.isEmpty() || busy) return
+        val asked = uk.tomlowndes.capture.KeyFindings.query(t)
+        if (asked != null) {
+            add(Jarvis.ChatMsg(true, t, System.currentTimeMillis()))
+            val vault = state.vault
+            if (vault == null) {
+                add(Jarvis.ChatMsg(false, "Pick a vault folder in Settings first.", System.currentTimeMillis(), via = state.prefs.assistantName))
+                return
+            }
+            busy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val notes = vault.notes { uk.tomlowndes.capture.NoteIndex.skip(it) }
+                    val path = uk.tomlowndes.capture.KeyFindings.find(notes, asked) { vault.read(it) }
+                        ?: error("Couldn't find that article in the vault")
+                    val body = vault.read(path) ?: error("Couldn't open that note")
+                    FindingsNote(path, body, uk.tomlowndes.capture.KeyFindings.related(notes, path))
+                }
+            }
+            busy = false
+            result.onSuccess { found ->
+                findingsNote = found
+                add(Jarvis.ChatMsg(false, "Key findings for ${uk.tomlowndes.capture.VaultTasks.noteName(found.path)}. Pick Long or Short, then save if you want them in the note.", System.currentTimeMillis(), via = state.prefs.assistantName))
+            }.onFailure { e ->
+                add(Jarvis.ChatMsg(false, e.message ?: "Couldn't find that article", System.currentTimeMillis(), via = state.prefs.assistantName))
+            }
+            return
+        }
         add(Jarvis.ChatMsg(true, t, System.currentTimeMillis()))
         val w = worker; val id = chat.id
         answer({ DesktopJarvis.ask(state.prefs, w, t, id) }) { null }
@@ -240,6 +269,13 @@ fun JarvisPane(state: AppState) {
                     contentAlignment = Alignment.Center
                 ) { Text("🎙", fontSize = 16.sp) }
             }
+        }
+    }
+    s.findingsNote?.let { n ->
+        KeyFindingsDialog(state, n.path, n.note, n.related, onDismiss = { s.findingsNote = null }) {
+            s.findingsNote = null
+            state.changed()
+            state.say("Key findings saved")
         }
     }
 }

@@ -215,6 +215,8 @@ fun JarvisScreen(
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>() }
     var summarising by remember { mutableStateOf(false) }
+    /** A note found for key findings, waiting on the Long / Short picker. */
+    var findingsAsk by remember { mutableStateOf<FindingsAsk?>(null) }
     /** The recording that failed to send, kept for Retry. */
     var pending by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -476,10 +478,40 @@ fun JarvisScreen(
         askBox(asked, false, worker, route = "Sent via the server", record = false)
     }
 
+    /** Finds the article, then opens the same Long / Short check as the Vault button. Nothing is written yet. */
+    fun openFindings(said: String, query: String, spoken: Boolean) {
+        val uri = prefs.vault
+        if (uri == null) { scope.launch { snack.showSnackbar("Pick a vault in Settings first") }; return }
+        phase = Phase.SENDING; error = null; wasTyped = !spoken; sendingText = said
+        if (!spoken) { typed = ""; prefs.setDraft("capture", "") }
+        pauseAudio()
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val v = appVault(ctx, uri)
+                    val notes = v.notes { NoteIndex.skip(it) }
+                    val found = KeyFindings.find(notes, query) { v.read(it) } ?: error("Couldn't find that article in the vault")
+                    val body = v.read(found) ?: error("Couldn't open that note")
+                    FindingsAsk(found, body, KeyFindings.related(notes, found))
+                }
+            }
+            phase = Phase.IDLE
+            sendingText = null
+            result.onSuccess { ask ->
+                findingsAsk = ask
+                answered(Jarvis.Reply(said, "Key findings for ${VaultTasks.noteName(ask.path)}. Pick Long or Short, then save if you want them in the note.", null), null, worker, said, spoken, via = who)
+            }.onFailure { e ->
+                val msg = e.message?.takeIf { it.startsWith("Couldn't") } ?: PhoneBrain.failure(who, e, viaServer = !brainOn && !demo)
+                answered(Jarvis.Reply(said, msg, null), null, worker, said, spoken, via = who)
+            }
+        }
+    }
+
     /** Typed text, or (with [spoken]) what the phone's speech-to-text heard. */
     fun sendText(text: String, spoken: Boolean = false) {
         val t = text.trim()
         if (t.isEmpty() || phase != Phase.IDLE) return
+        KeyFindings.query(t)?.let { openFindings(t, it, spoken); return }
         if (!ready) { onOpenSettings(); return }
         phase = Phase.SENDING; error = null; wasTyped = !spoken; sendingText = t
         if (!spoken) { typed = ""; prefs.setDraft("capture", "") }
@@ -975,6 +1007,13 @@ fun JarvisScreen(
 
     if (summarising) last?.let { (said, reply, _) ->
         PrintSummarySheet(SummarySource.Chat(said, reply), snack) { summarising = false }
+    }
+    findingsAsk?.let { ask ->
+        val uri = prefs.vault
+        if (uri != null) KeyFindingsSheet(uri, ask.path, ask.note, ask.related, snack, onDismiss = { findingsAsk = null }) {
+            findingsAsk = null
+            scope.launch { snack.showSnackbar("Key findings saved") }
+        }
     }
 }
 
