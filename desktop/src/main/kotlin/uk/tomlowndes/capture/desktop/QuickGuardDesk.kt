@@ -170,7 +170,7 @@ fun QuickBackupsSettings(state: AppState) {
                     restoring = null
                     scope.launch {
                         state.io("Couldn't restore") { state.writer()!!.restoreQuick(c) } ?: return@launch
-                        state.changes++
+                        state.changed()
                         state.say("Quick Task restored")
                         refresh++
                     }
