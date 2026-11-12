@@ -179,4 +179,54 @@ class TaskNoteTest {
         TaskNote.restore(ls, mum, null)
         assertEquals(listOf("Buy milk", "Bins out", "Call mum"), TaskNote.list(ls).map { it.text })
     }
+
+    @Test fun `delete undo puts the task back where it was`() {
+        val ls = lines()
+        val r = TaskNote.delete(ls, mum)
+        TaskNote.restore(ls, mum, null, removed = r)
+        assertEquals(note, text(ls))
+    }
+
+    // Steps written by Break it down sit indented under their parent.
+    private val shelves = "- [ ] #task Sort shelves in garage #home"
+    private val s1 = "    - [ ] Clear a walkway #task ⏱ 3m"
+    private val s2 = "    - [ ] Wipe the shelf #task ⏱ 5m"
+    private val withSteps = note.replace("$mum\n", "$mum\n$shelves\n$s1\n$s2\n")
+
+    @Test fun `ticking a parent lifts its steps so they don't land under the task above`() {
+        val ls = lines(withSteps)
+        val c = TaskNote.complete(ls, shelves, TaskNote.completion(shelves, today, true))
+        assertEquals(listOf(s1, s2), c.steps)
+        assertTrue(ls.contains(s1.trimStart()) && ls.contains(s2.trimStart()))
+        assertTrue(Subtasks.parents(TaskNote.list(ls)).isEmpty())
+        TaskNote.restore(ls, shelves, c)
+        assertEquals(withSteps, text(ls))
+    }
+
+    @Test fun `deleting a parent lifts its steps and undo nests them again`() {
+        val ls = lines(withSteps)
+        val r = TaskNote.delete(ls, shelves)
+        assertEquals(listOf(s1, s2), r.steps)
+        assertTrue(Subtasks.parents(TaskNote.list(ls)).isEmpty())
+        TaskNote.restore(ls, shelves, null, removed = r)
+        assertEquals(withSteps, text(ls))
+    }
+
+    @Test fun `ticking a step and undoing puts it back under its parent`() {
+        val ls = lines(withSteps)
+        val c = TaskNote.complete(ls, s1, TaskNote.completion(s1, today, true))
+        assertTrue(c.steps.isEmpty())
+        TaskNote.restore(ls, s1, c)
+        assertEquals(withSteps, text(ls))
+        val kids = Subtasks.nest(TaskNote.list(ls), TaskNote.list(ls)).children
+        assertEquals(listOf("Clear a walkway", "Wipe the shelf"), kids.values.single().map { it.text })
+    }
+
+    @Test fun `a repeating parent keeps its steps under the next occurrence`() {
+        val rep = "- [ ] #task Clean car 🔁 every week 📅 2026-10-12"
+        val ls = lines(note.replace("$mum\n", "$mum\n$rep\n$s1\n"))
+        val c = TaskNote.complete(ls, rep, TaskNote.completion(rep, today, true))
+        assertTrue(c.steps.isEmpty())
+        assertEquals(s1, ls[ls.indexOf(c.nextLine) + 1])
+    }
 }
