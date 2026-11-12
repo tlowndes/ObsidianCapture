@@ -264,7 +264,7 @@ fun DeckPane(state: AppState) {
 
     fun shows(card: HomeCard): Boolean = when (card) {
         HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.READ_LATER -> true
-        HomeCard.HIGHLIGHTS -> hlLeft.isNotEmpty()
+        HomeCard.HIGHLIGHTS -> true
         HomeCard.ROUTINES -> data.routines > 0
         HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).isNotEmpty()
         HomeCard.TOP_TASKS -> top.isNotEmpty()

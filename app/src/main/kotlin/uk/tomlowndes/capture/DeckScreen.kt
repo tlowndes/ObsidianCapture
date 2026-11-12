@@ -330,18 +330,18 @@ fun DeckScreen(
                 }
             }
             DeckSection.MORE -> {
-                // Routines, Projects and Highlights as small tiles.
+                // Routines, Projects and Journal as small tiles.
                 val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
                 val showProject = HomeCard.PROJECTS !in hidden && data.project != null
-                val showHighlight = HomeCard.HIGHLIGHTS !in hidden && leftPassages.isNotEmpty()
-                if (showRoutines || showProject || showHighlight) {
+                val showJournal = HomeCard.HIGHLIGHTS !in hidden
+                if (showRoutines || showProject || showJournal) {
                     SectionLabel("More")
                     TileRow {
                         if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                             data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                         }
                         if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
-                        if (showHighlight) Tile("✨", "Highlight", "${leftPassages.size} today") { highlightOpen = true }
+                        if (showJournal) Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true }
                     }
                 }
             }
