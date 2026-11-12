@@ -277,28 +277,42 @@ fun DeckScreen(
         }
     }
 
-    /** One section under Next step: Today (weather, calendar, bills), Top tasks, or the More tiles. */
+    /**
+     * One block under Next step. Weather and the agenda are separate, so a long-press moves just that card.
+     * The Today heading stays on whichever of the two is showing; with both, it stays on the weather.
+     */
     @Composable
     fun Section(section: DeckSection) {
+        val w = weather
+        val weatherOn = HomeCard.WEATHER !in hidden && (w != null || !canLocate || travel != null)
         when (section) {
-            DeckSection.TODAY -> {
-                val w = weather
+            DeckSection.WEATHER -> {
+                if (HomeCard.WEATHER in hidden) return
                 val rows = mutableListOf<@Composable () -> Unit>()
-                if (HomeCard.WEATHER !in hidden) {
-                    if (w != null && !showStrip) rows.add {
-                        QuietRow(
-                            w.parts.firstOrNull()?.icon ?: "⛅", "${w.high}° / ${w.low}° · ${w.headline}",
-                            if (w.tomorrow) "tomorrow ▾" else "▾", onClick = { showStrip = true; prefs.weatherStrip = true }
-                        )
-                    }
-                    else if (w == null && !canLocate) rows.add {
-                        QuietRow("📍", "Weather", "Allow location ›", Primary, onClick = { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
-                    }
-                    travel?.let { tr ->
-                        val hm = DateTimeFormatter.ofPattern("HH:mm")
-                        rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
-                    }
+                if (w != null && !showStrip) rows.add {
+                    QuietRow(
+                        w.parts.firstOrNull()?.icon ?: "⛅", "${w.high}° / ${w.low}° · ${w.headline}",
+                        if (w.tomorrow) "tomorrow ▾" else "▾", onClick = { showStrip = true; prefs.weatherStrip = true }
+                    )
                 }
+                else if (w == null && !canLocate) rows.add {
+                    QuietRow("📍", "Weather", "Allow location ›", Primary, onClick = { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
+                }
+                travel?.let { tr ->
+                    val hm = DateTimeFormatter.ofPattern("HH:mm")
+                    rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
+                }
+                val expanded = w != null && showStrip
+                if (rows.isEmpty() && !expanded) return
+                SectionLabel("Today")
+                if (expanded) {
+                    WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
+                    if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
+                }
+                RowsCard(rows)
+            }
+            DeckSection.AGENDA -> {
+                val rows = mutableListOf<@Composable () -> Unit>()
                 if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, earlierOpen) {
                     earlierOpen = !earlierOpen; prefs.earlierOpenOn = if (earlierOpen) LocalDate.now().toString() else null
                 })
@@ -312,12 +326,8 @@ fun DeckScreen(
                         )
                     }
                 }
-                val expanded = HomeCard.WEATHER !in hidden && w != null && showStrip
-                if (rows.isNotEmpty() || expanded) SectionLabel("Today")
-                if (expanded) {
-                    WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
-                    if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
-                }
+                if (rows.isEmpty()) return
+                if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
