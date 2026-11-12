@@ -211,7 +211,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 Text("Pick your vault in Flight Deck first.", color = Muted)
                 return@Column
             }
-            Pill(listOf("✓ Task", "🔗 Link", "🎙 Jarvis"), if (jarvisMode) 2 else if (link) 1 else 0, Modifier.width(330.dp).padding(bottom = 12.dp)) {
+            Pill(listOf("✓ Task", "🔗 Link", "🎙 ${state.prefs.assistantName}"), if (jarvisMode) 2 else if (link) 1 else 0, Modifier.width(330.dp).padding(bottom = 12.dp)) {
                 jarvisMode = it == 2; link = it == 1; if (!jarvisMode) focus.requestFocus()
             }
             if (jarvisMode) { QuickJarvis(state); return@Column }

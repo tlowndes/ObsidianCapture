@@ -58,7 +58,7 @@ object Jarvis {
     )
 
     /** The server answered, but not with 2xx. 401/403 mean the token is wrong. */
-    class HttpError(val code: Int, body: String) : Exception("Jarvis returned $code" + if (body.isBlank()) "" else ": ${body.take(200)}")
+    class HttpError(val code: Int, body: String) : Exception("The server returned $code" + if (body.isBlank()) "" else ": ${body.take(200)}")
 
     const val DEMO = "demo"
 
@@ -272,13 +272,12 @@ object Jarvis {
 
     /** Demo mode: a reply that says what it got, so the whole loop can be tried without the server. */
     fun demoReply(worker: String, seconds: Double): Reply {
-        val w = worker(worker)
         val secs = String.format(java.util.Locale.UK, "%.1f", seconds)
-        val heard = "(Demo) $secs seconds of audio for ${w.label}."
+        val heard = "(Demo) $secs seconds of audio."
         val long = seconds >= 15
         return Reply(
             transcript = heard,
-            reply = "Demo mode: ${w.label} got your $secs second recording. Put the Oracle address in Settings to talk for real." +
+            reply = "Demo mode: got your $secs second recording. Turn on Claude from the phone, or add the server, to talk for real." +
                 if (long) " That was a long one, so here's a demo note to check." else " You'll hear your own recording played back now.",
             audioUrl = null,
             sorted = if (long) demoSorted(heard) else null,
@@ -287,21 +286,20 @@ object Jarvis {
 
     /** Demo mode for typed text: a long message (25 words or more) comes back as a demo note to check and save. */
     fun demoText(worker: String, text: String): Reply {
-        val w = worker(worker)
         val long = text.trim().split(Regex("\\s+")).size >= 25
         return Reply(
             transcript = text.trim(),
-            reply = "Demo mode: ${w.label} got your message." + if (long) " Here's a demo note to check." else " Put the Oracle address in Settings to talk for real.",
+            reply = "Demo mode: got your message." + if (long) " Here's a demo note to check." else " Turn on Claude from the phone, or add the server, to talk for real.",
             audioUrl = null,
             sorted = if (long) demoSorted(text.trim()) else null,
         )
     }
 
     private fun demoSorted(heard: String) = SortResult(
-        tasks = listOf(SortedTask("Try Jarvis for real", null, null)),
+        tasks = listOf(SortedTask("Try the assistant for real", null, null)),
         ideas = emptyList(),
         note = "Demo mode tidies nothing. On the real server this is your ramble as one tidy note.\n\n## What you said\n- $heard",
-        noteTitle = "Jarvis demo note",
+        noteTitle = "Demo note",
         transcript = heard,
     )
 

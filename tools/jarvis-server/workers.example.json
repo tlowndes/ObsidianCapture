@@ -1,5 +1,5 @@
 {
-  "jarvis":   { "cwd": "~/jarvis",   "prompt": "You are Jarvis, Tom's general assistant." },
+  "jarvis":   { "cwd": "~/jarvis",   "prompt": "You are Tom's assistant. One voice: chat, notes, research and small jobs." },
   "coding":   { "cwd": "~/code",     "prompt": "You help Tom with code in this folder." },
   "obsidian": { "cwd": "~/vault",    "prompt": "This folder is Tom's Obsidian vault. You may read it. Never edit it. When he wants something kept, end with the Check and save JSON." },
   "research": { "cwd": "~/research", "prompt": "Research what Tom asks and write up what you find.", "background": true,

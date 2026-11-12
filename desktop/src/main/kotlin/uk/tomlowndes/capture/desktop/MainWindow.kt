@@ -108,7 +108,7 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
         TagNav(state)
-        NavItem(state, Tab.JARVIS, "🎙", "Jarvis")
+        NavItem(state, Tab.JARVIS, "🎙", state.prefs.assistantName)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
         state.routine?.let { r ->

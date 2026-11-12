@@ -92,8 +92,9 @@ class PhoneBrainTest {
     }
 
     @Test fun systemPromptHasTheDateAndTags() {
-        val p = PhoneBrain.system(LocalDate.of(2026, 11, 10), listOf("#work", "#personal"))
+        val p = PhoneBrain.system(LocalDate.of(2026, 11, 10), listOf("#work", "#personal"), "Tower")
         assertTrue(p.contains("Tuesday 10 November 2026"))
         assertTrue(p.contains("#work #personal"))
+        assertTrue(p.contains("You are Tower"))
     }
 }

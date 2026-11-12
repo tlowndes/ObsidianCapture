@@ -47,7 +47,7 @@ import uk.tomlowndes.capture.ReminderSettings
 /** Settings pages down the left (windows-settings-v1), like the phone's tidied Settings. */
 enum class SettingsPage(val label: String) {
     GENERAL("General"), VAULT("Vault & folders"), DECK("Deck & weather"), CALENDARS("Calendars"),
-    REMINDERS("Reminders"), JARVIS("Jarvis"), PRINTER("Printer"), UPDATES("Updates")
+    REMINDERS("Reminders"), JARVIS("Assistant"), PRINTER("Printer"), UPDATES("Updates")
 }
 
 @Composable
@@ -381,6 +381,10 @@ object Autostart {
 private fun JarvisSettingsPage(state: AppState) {
     val p = state.prefs
     val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(p.assistantName) }
+    Setting("Name", "Shown in the app. Blank goes back to Tower.") {
+        Field(name, { name = it.take(uk.tomlowndes.capture.AssistantName.MAX + 8); p.assistantName = it }, Modifier.width(220.dp), uk.tomlowndes.capture.AssistantName.DEFAULT)
+    }
     var address by remember { mutableStateOf(p.jarvisAddress) }
     var hasToken by remember { mutableStateOf(p.jarvisToken != null) }
     var token by remember { mutableStateOf("") }
@@ -389,7 +393,7 @@ private fun JarvisSettingsPage(state: AppState) {
     var hold by remember { mutableStateOf(p.jarvisHoldSpace) }
     var ping by remember { mutableStateOf<uk.tomlowndes.capture.Jarvis.Ping?>(null) }
     var testing by remember { mutableStateOf(false) }
-    Setting("Address", "Your Jarvis box on Tailscale, like http://jarvis:8787. Type demo to try it without one") {
+    Setting("Address", "The server on Tailscale, like http://jarvis:8787. Type demo to try without one. The phone can use Claude instead.") {
         Field(address, { address = it; p.jarvisAddress = it; ping = null }, Modifier.width(300.dp), "http://jarvis:8787")
     }
     Setting("Token", if (hasToken) "Saved, encrypted for this Windows user. Never written to the vault" else "The same token as the phone") {
@@ -402,7 +406,7 @@ private fun JarvisSettingsPage(state: AppState) {
             PrimaryButton("Save", enabled = token.isNotBlank()) { p.jarvisToken = token; token = ""; hasToken = true; ping = null }
         }
     }
-    Setting("Speak replies", "Read Jarvis's answers out with the Windows voice") {
+    Setting("Speak replies", "Read answers out with the Windows voice") {
         Toggle(speak) { speak = it; p.jarvisSpeak = it }
     }
     Setting("Speed", "How fast replies are read out") {
@@ -412,7 +416,7 @@ private fun JarvisSettingsPage(state: AppState) {
             }
         }
     }
-    Setting("Hold Space to talk", "In the Jarvis pane, when the text box is empty") {
+    Setting("Hold Space to talk", "In the assistant pane, when the text box is empty") {
         Toggle(hold) { hold = it; p.jarvisHoldSpace = it }
     }
     Setting("Test connection", ping?.message ?: "Checks the box answers and the token is right") {

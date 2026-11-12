@@ -341,20 +341,20 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         val src = sources ?: return@LaunchedEffect
         if (dayWeatherFor != day) return@LaunchedEffect
         if (!opts.brief || (brief != null && briefFor == day)) return@LaunchedEffect
-        if (!DesktopJarvis.ready(p)) { briefNote = "Set up Jarvis in Settings to use this"; return@LaunchedEffect }
+        if (!DesktopJarvis.ready(p)) { briefNote = "Set up ${p.assistantName} in Settings to use this"; return@LaunchedEffect }
         brief = null
-        briefNote = "Asking Jarvis…"
+        briefNote = "Asking ${p.assistantName}…"
         val forDay = day
         val r = withContext(Dispatchers.IO) {
             runCatching {
                 if (Jarvis.isDemo(p.jarvisAddress)) Summary.demoBrief(forDay)
                 else Summary.brief(Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!,
-                    Summary.dayPrompt(Slip.build(forDay, src.tasks, src.events, dayWeather, SlipOptions(), today)), "obsidian", speak = false).reply)
+                    Summary.dayPrompt(Slip.build(forDay, src.tasks, src.events, dayWeather, SlipOptions(), today)), "jarvis", speak = false).reply)
             }
         }
         if (forDay != day) return@LaunchedEffect
         brief = r.getOrNull(); briefFor = forDay
-        briefNote = if (brief != null) null else "Couldn't reach Jarvis, so it prints without it"
+        briefNote = if (brief != null) null else "Couldn't reach ${p.assistantName}, so it prints without it"
     }
     LaunchedEffect(sources, opts, brief, day, dayWeatherFor, large) {
         val src = sources ?: return@LaunchedEffect
@@ -474,7 +474,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                     DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
                     Spacer(Modifier.height(8.dp))
                     val w = dayWeather?.takeIf { dayWeatherFor == day }
-                    SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
+                    SlipSwitch("In brief", briefNote ?: if (isToday) "${p.assistantName} sums up the day in 3 lines" else "${p.assistantName} sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
                     SlipSwitch("Weather", when {
                         w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
                         isToday -> "Today's forecast"
@@ -549,8 +549,9 @@ fun PrintSummaryDialog(state: AppState, source: PrintSource, onClose: () -> Unit
     var printerTick by remember { mutableIntStateOf(0) }
     val now = remember(asks, length) { LocalDateTime.now() }
 
-    val title = when (source) { is PrintSource.Note -> source.title; is PrintSource.Chat -> "Jarvis chat" }
-    val subtitle = (if (chat) "Jarvis chat · " else "Summary · ") + Summary.stamp(now)
+    val who = p.assistantName
+    val title = when (source) { is PrintSource.Note -> source.title; is PrintSource.Chat -> "$who chat" }
+    val subtitle = (if (chat) "$who chat · " else "Summary · ") + Summary.stamp(now)
 
     LaunchedEffect(length, asks) {
         if (!ready) return@LaunchedEffect
@@ -558,15 +559,15 @@ fun PrintSummaryDialog(state: AppState, source: PrintSource, onClose: () -> Unit
         val r = withContext(Dispatchers.IO) {
             runCatching {
                 val reply = if (Jarvis.isDemo(p.jarvisAddress)) Summary.demo(length, chat) else when (source) {
-                    is PrintSource.Note -> Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!, Summary.notePrompt(source.title, source.body, length), "obsidian", speak = false).reply
+                    is PrintSource.Note -> Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!, Summary.notePrompt(source.title, source.body, length), "jarvis", speak = false).reply
                     is PrintSource.Chat -> Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!, Summary.chatPrompt(source.said, source.reply, length), "jarvis", speak = false).reply
                 }
                 Summary.parse(reply, title, subtitle, length, ticks)
             }
         }
         loading = false
-        r.onSuccess { if (it.text.isBlank() && it.bullets.isEmpty()) error = "Jarvis sent back nothing. Try Redo." else doc = it }
-        r.onFailure { error = if (it is Jarvis.HttpError) it.message else "Can't reach Jarvis. Is Tailscale on?" }
+        r.onSuccess { if (it.text.isBlank() && it.bullets.isEmpty()) error = "$who sent back nothing. Try Redo." else doc = it }
+        r.onFailure { error = if (it is Jarvis.HttpError) it.message else "Can't reach $who. Is Tailscale on?" }
     }
     LaunchedEffect(doc, ticks) {
         val d = doc ?: return@LaunchedEffect
@@ -583,7 +584,7 @@ fun PrintSummaryDialog(state: AppState, source: PrintSource, onClose: () -> Unit
         if (choosing) { PrinterChooser(state) { choosing = false; printerTick++ }; return@PrintFrame }
         Column {
             Text("Print summary", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
-            Sub(if (chat) "This Jarvis chat" else title, Modifier.padding(top = 2.dp, bottom = 12.dp))
+            Sub(if (chat) "This chat" else title, Modifier.padding(top = 2.dp, bottom = 12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Summary.Length.values().forEach { l -> Chip(l.label, length == l, small = true) { length = l } }
                 if (chat) Chip("Tick boxes", ticks, small = true) { ticks = !ticks }
@@ -603,8 +604,8 @@ fun PrintSummaryDialog(state: AppState, source: PrintSource, onClose: () -> Unit
                 Paper(
                     img.takeIf { !loading && error == null },
                     when {
-                        !ready -> "Set up Jarvis in Settings first (address and token), or type demo as the address to try it."
-                        loading -> "Jarvis is summing it up…"
+                        !ready -> "Set up $who in Settings first (address and token), or type demo as the address to try it."
+                        loading -> "$who is summing it up…"
                         else -> error
                     },
                     Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 140.dp, max = 430.dp)

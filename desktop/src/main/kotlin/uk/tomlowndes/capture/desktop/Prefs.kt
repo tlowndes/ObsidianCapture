@@ -168,6 +168,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = str("rem_shown", "").split("\n").filter { it.isNotEmpty() }.toSet()
         set(v) = put("rem_shown", v.joinToString("\n").ifEmpty { null })
 
+    /** The assistant's name. Blank becomes Tower. The jarvis_* keys stay so the address and token survive. */
+    var assistantName: String
+        get() = uk.tomlowndes.capture.AssistantName.clean(str("assistant_name", ""))
+        set(v) = put("assistant_name", uk.tomlowndes.capture.AssistantName.clean(v))
+
     /** Settings › Jarvis (windows-jarvis-v1). The token is encrypted for this Windows user, never in the vault. */
     var jarvisAddress: String
         get() = str("jarvis_address", "")

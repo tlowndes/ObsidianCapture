@@ -4,7 +4,7 @@ Flight Deck (v1.7) is a personal capture and daily-planning app that writes stra
 
 The phone app is labelled **Flight Deck**. It is the daily home screen: what to do next, what is due, what to read, and the small loops (focus, habits, weather, calendar, jobs) that otherwise live in separate apps. A Windows desktop app in `desktop/` (window title **Flight Deck**) shares the same vault, with its own Deck, tasks, projects, reading and quick capture.
 
-On Android a save writes a temporary file beside the note and then swaps the names, so a half-written note is not what sync copies. If that swap is interrupted, the next read puts the previous note back. A save or a Jarvis send that cannot finish is kept on the phone and tried again later. The same thing is not queued twice.
+On Android a save writes a temporary file beside the note and then swaps the names, so a half-written note is not what sync copies. If that swap is interrupted, the next read puts the previous note back. A save or an assistant message that cannot finish is kept on the phone and tried again later. The same thing is not queued twice.
 
 ## Writing into the vault
 
@@ -17,7 +17,7 @@ Defaults below match a vault laid out as `01 - Inbox`, `03 - Projects` and `99 -
 | Quick tasks | `01 - Inbox/⚡ Quick Task.md` | Open tasks under `## Active`, done ones under `## Archive`. A task is `- [ ] #task …`, with optional `📅 YYYY-MM-DD`, `⏱ 15m` and `🔁 every week` (Tasks-plugin markers). |
 | Tasks in other notes | Any other note in the vault | The same `- [ ] … #task` line. Ticked in place. A task added from search goes under the note's `## Tasks`, or at the end if that heading is missing. A plain line goes at the end. |
 | Read It Later | `01 - Inbox/ReadItLater Inbox/` | One note per page, in the same shape as the Obsidian read-it-later plugin: frontmatter `status` (`unread`, `read` or `archived`) and `saved`, then `[[ReadItLater]]` and the article (or just the link if the page could not be fetched). YouTube links are saved as video notes. Archive moves the file to `ReadItLater Inbox/Archive/`. |
-| Jarvis notes | `01 - Inbox/<Title>.md`, or `01 - Inbox/Capture <date>.md` | A long ramble tidied into one note (frontmatter `created`, `source: jarvis`, then the note, then your own words folded in a `> [!quote]- Transcript` callout). A short leftover line goes to `Capture <date>.md`. |
+| Assistant notes | `01 - Inbox/<Title>.md`, or `01 - Inbox/Capture <date>.md` | A long ramble tidied into one note (frontmatter `created`, `source: jarvis`, then the note, then your own words folded in a `> [!quote]- Transcript` callout). A short leftover line goes to `Capture <date>.md`. |
 | Projects | `03 - Projects/<Title>/<Title>.md` | Frontmatter (`type`, `status`, `created`, `area`, `tags`), a title, `## Summary`, and `## Log` linking to `<Title> - Log.md`. Log entries are newest-first `### ` headings. Photos are embedded as `![[…]]`. |
 | Photos | `99 - Meta/Assets` | JPEG, long side at most 1600 px. |
 | Habits | `99 - Meta/Habits.md` | A habit list, a water goal, and a dated log table. Edit the list in Obsidian. Created with starter habits if it is missing. |
@@ -68,17 +68,16 @@ Three modes, and it reopens on the last one used:
 
 - **Task**: adds to Quick Task, with Today / Tomorrow / a picked date, a time estimate (5, 15, 30, 60 or 120 minutes) and a repeat (daily, weekly, monthly, or a custom rule).
 - **Read later**: fetches the page and saves a full article, or the link alone if the fetch fails.
-- **Jarvis**: a chat with the Oracle server (below): hold to talk or type, and every message and answer stays on screen, with a ▶ on each spoken answer. Each worker keeps its own chat, which Claude remembers until **New chat**. Hold the mic and slide up onto the 🔒 to keep recording hands-free. Ask anything, or ramble: when the server sorts a ramble it sends back tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
+- **Assistant** (the name is Tower unless you change it in Settings): hold to talk or type. One assistant does the chat, the ramble sorting, research, breaking a task into steps, and print summaries. Hold the mic and slide up onto the 🔒 to keep recording hands-free. A long ramble comes back as tasks, ideas and a tidied note, and a **Check and save** line appears. Nothing is written until you save. You can drop items or edit the note there. Tasks go to Quick Task, ideas become projects with `type: idea`, and the note goes to the inbox. Save writes them together: a failure removes what that attempt wrote, and if some of it is already in the vault a second Save does not add it again.
 
-### Jarvis
+### Assistant
 
-Hold the big button to talk, let go to send (slide off to cancel). By default this uses Gemini Nano on the phone for short Jarvis chats, and the Oracle box for everything else. Settings › Jarvis › Claude from the phone is off until you add a Claude API key and turn it on. It costs money. Haiku then answers everyday chat, sorts a ramble, and does research, with a 45 second limit (60 for research). A retry does not start a second call while the first is still going. Nano and the Oracle box stay available when that switch is off.
+Hold the big button to talk, let go to send (slide off to cancel). Settings › the assistant's name is a text field; blank goes back to Tower. **Claude from the phone** is off until you add a Claude API key and turn it on. It costs money. While it is on, every assistant job on the phone (chat, sorting, research, Break it down, print summaries, the day's brief) calls Claude directly, and error messages do not ask about Tailscale. Nano on the phone, then the Oracle server, are used only when that switch is off.
 
-The app records OGG/Opus and posts it, with the
-worker picked top right (Jarvis, Coding, Obsidian, Research, Odd jobs) and a bearer token, to `POST /voice` on the
-Oracle box over Tailscale. That server hands it to the Claude CLI and answers with what it heard, the reply and an
+When the switch is off, a recording can go to `POST /voice` on the
+Oracle box over Tailscale, with a bearer token. That server hands it to the Claude CLI and answers with what it heard, the reply and an
 `audio_url`, which the app fetches with the same token and plays. A Done line shows when `GET /done` reports a
-finished background job. Address and token are in Settings › Jarvis; the token is kept in Android secure storage,
+finished background job. The server address and token are under Settings › Advanced › Server. The token is kept in Android secure storage,
 never in the vault or the repo. Type `demo` as the address to try it with no server (a recording over 15 seconds,
 or typed text of 25 words or more, comes back with a demo note to check). Typed messages go to `POST /text` as JSON
 `{"text", "worker", "voice"}` and get the same reply. Either reply may carry `"sorted": {"tasks", "ideas", "note"}`,
@@ -86,7 +85,7 @@ where `note` is a line or `{"title", "markdown"}`.
 
 To test against something real before the Oracle side is ready, run the fake server on a PC that's on the tailnet:
 `python tools/fake-jarvis/fake_jarvis.py --token test-token`, then `tailscale serve --bg 8765`, and put that PC's
-`*.ts.net` name and `test-token` into Settings › Jarvis. It plays your own recording back.
+`*.ts.net` name and `test-token` into Settings › Advanced › Server. It plays your own recording back.
 
 The real server for the Oracle box is in `tools/jarvis-server` (setup steps in its README). That server does not edit the vault. Anything it thinks should be kept comes back as Check and save. Copy that folder onto the box to pick the rule up. The copy already running there stays as it is until you do. Settings › Vault & sync › Server fallback is off unless you turn it on.
 
@@ -114,7 +113,7 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 
 ### Share sheet
 
-The app is in the Android share sheet. A shared link, or a link with only a short caption, is fetched and saved to Read It Later, then the app closes. Any other shared text (a note, a reply, a paragraph) is put in Capture › Jarvis's type box, ready to send.
+The app is in the Android share sheet. A shared link, or a link with only a short caption, is fetched and saved to Read It Later, then the app closes. Any other shared text (a note, a reply, a paragraph) is put in Capture's assistant box, ready to send.
 
 ### Widgets
 
@@ -147,14 +146,14 @@ The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Setti
 - **Find a note**: search, then add a task or a line.
 - **Quick capture**: a small always-on-top window from the global shortcut (Ctrl+Shift+Space by default; the other choices are in Settings). A link on the clipboard opens it in link mode, with a preview of the page. A task can have Today, Tomorrow or a picked date, a time estimate, and a repeat (Daily, Weekly, Monthly, or Custom… in a panel beside it). Escape or a click away dismisses it. Windows keeps Win+Space for switching keyboard language, so the shortcuts leave the Win key alone.
 
-Jarvis, the calendar, jobs and reminders are on the phone. Both apps write the same notes, so a task captured on Windows shows up on Deck.
+The assistant, the calendar, jobs and reminders are on the phone. The Windows app has the same assistant, talking to the server. Both apps write the same notes, so a task captured on Windows shows up on Deck.
 
 ## Setup
 
 1. Install the Android app or the Windows MSI (or run either from a debug build).
 2. Open Settings and pick the vault root, the folder that contains `.obsidian`. On Android the gear is on Deck. Until a vault is picked, Deck shows a banner and capture tells you to pick one.
 3. Optional, Android only, all on the Settings screen:
-   - **Jarvis** address and token (see Jarvis above). The token is encrypted with the Android Keystore.
+   - **Assistant**: the name, and Claude from the phone if you want it (see Assistant above). The server address and token, if you still use the Oracle box, are under Advanced. The token and the Claude key are encrypted with the Android Keystore.
    - **GitHub token** (`github_pat_…`) for the activity line on a project, stored the same way. Read access to the linked repos is enough.
    - **Proton Calendar.** In Proton Calendar on the web: Settings › Share › Share with anyone, Full view, then paste the `.ics` link. Name it and pick a colour. Links are saved in `99 - Meta/capture-config.json` and fetched read-only. Deck keeps the next seven days and refreshes every 30 minutes while it is open.
    - **Reminders**, the times above.

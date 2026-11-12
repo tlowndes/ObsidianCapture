@@ -109,9 +109,9 @@ object NanoRoute {
         return out.toString().trim().ifEmpty { lines.joinToString("\n").take(NOTE_CHARS) }
     }
 
-    fun prompt(turns: List<PhoneBrain.Turn>, text: String, today: LocalDate, tags: List<String>, context: String = "", notes: String = ""): String {
+    fun prompt(turns: List<PhoneBrain.Turn>, text: String, today: LocalDate, tags: List<String>, context: String = "", notes: String = "", name: String = AssistantName.DEFAULT): String {
         val head = """
-            You are Jarvis, Tom's assistant on his phone. Use UK English. Keep answers short and friendly: one to three
+            You are ${AssistantName.clean(name)}, Tom's assistant on his phone. Use UK English. Keep answers short and friendly: one to three
             sentences unless he asks for more. Answers may be read aloud, so no tables or headings. Today is ${today.format(DAY)}.
             Below is what Tom has on today and tomorrow (calendar, tasks, weather) and the notes from his Obsidian vault
             that best match his question. Use them to answer; don't make up anything that isn't there. If a good answer
@@ -122,7 +122,7 @@ object NanoRoute {
             TASK: <short task> | <YYYY-MM-DD, or blank> | <one of ${tags.joinToString(" ")}, or blank>
         """.trimIndent()
         val lines = turns.filter { it.text.isNotBlank() }.takeLast(KEEP_TURNS)
-            .map { (if (it.mine) "Tom: " else "Jarvis: ") + it.text.trim() }
+            .map { (if (it.mine) "Tom: " else "${AssistantName.clean(name)}: ") + it.text.trim() }
         // Oldest turns go first when the prompt would be too long for Nano's small window.
         var past = lines
         while (past.isNotEmpty() && (past.sumOf { it.length } + text.length + head.length + context.length + notes.length) > MAX_CHARS) past = past.drop(1)
@@ -131,7 +131,7 @@ object NanoRoute {
             if (context.isNotBlank()) append("What Tom has on:\n").append(context.trim()).append("\n\n")
             if (notes.isNotBlank()) append("Matching notes from his vault:\n").append(notes.trim()).append("\n\n")
             if (past.isNotEmpty()) append("Conversation so far:\n").append(past.joinToString("\n")).append("\n")
-            append("Tom: ").append(text.trim()).append("\nJarvis:")
+            append("Tom: ").append(text.trim()).append("\n").append(AssistantName.clean(name)).append(":")
         }
     }
 
@@ -139,8 +139,8 @@ object NanoRoute {
 
     private val taskLine = Regex("(?im)^\\s*TASK:\\s*(.*)$")
 
-    fun parse(raw: String): Reply {
-        val s = raw.trim().removePrefix("Jarvis:").trim()
+    fun parse(raw: String, name: String = AssistantName.DEFAULT): Reply {
+        val s = raw.trim().removePrefix("${AssistantName.clean(name)}:").removePrefix("Jarvis:").trim()
         if (s.isEmpty() || s.uppercase(Locale.UK).trimEnd('.', '!').let { it == "BOX" || it.startsWith("BOX\n") }) return Reply("", emptyList(), true)
         val tasks = taskLine.findAll(s).mapNotNull { m ->
             val p = m.groupValues[1].split("|").map { it.trim() }
@@ -151,8 +151,8 @@ object NanoRoute {
     }
 
     /** What to show while Nano is still writing: no TASK lines, and nothing while it might be saying BOX. */
-    fun visible(partial: String): String {
-        val s = partial.trimStart().removePrefix("Jarvis:").trimStart()
+    fun visible(partial: String, name: String = AssistantName.DEFAULT): String {
+        val s = partial.trimStart().removePrefix("${AssistantName.clean(name)}:").removePrefix("Jarvis:").trimStart()
         val up = s.trimEnd().trimEnd('.', '!').uppercase(Locale.UK)
         if ("BOX".startsWith(up) || up == "BOX" || up.startsWith("BOX\n")) return ""
         val cut = Regex("(?im)^\\s*TASK:").find(s)?.range?.first ?: s.length

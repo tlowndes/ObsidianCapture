@@ -72,10 +72,13 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
     val ctx = LocalContext.current
     val prefs = remember { AppPrefs(ctx) }
     remember { SlipText.load(ctx) }
-    val address = remember { prefs.jarvisAddress }
-    val token = remember { SecretStore(ctx).jarvisToken.orEmpty() }
+    val secrets = remember { SecretStore(ctx) }
+    val who = prefs.assistantName
+    val address = prefs.jarvisAddress
+    val token = secrets.jarvisToken.orEmpty()
     val demo = Jarvis.isDemo(address)
-    val ready = demo || (address.isNotBlank() && token.isNotBlank())
+    val api = prefs.phoneBrain && !secrets.claudeKey.isNullOrBlank() && !demo
+    val ready = demo || api || (address.isNotBlank() && token.isNotBlank())
     val chat = source is SummarySource.Chat
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -89,24 +92,31 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
     var editing by remember { mutableStateOf<String?>(null) }
     val now = remember(asks, length) { LocalDateTime.now() }
 
-    val title = when (source) { is SummarySource.Note -> source.title; is SummarySource.Chat -> "Jarvis chat" }
-    val subtitle = (if (chat) "Jarvis chat · " else "Summary · ") + Summary.stamp(now)
+    val title = when (source) { is SummarySource.Note -> source.title; is SummarySource.Chat -> "$who chat" }
+    val subtitle = (if (chat) "$who chat · " else "Summary · ") + Summary.stamp(now)
 
     LaunchedEffect(length, asks) {
         if (!ready) return@LaunchedEffect
         loading = true; error = null
         val r = withContext(Dispatchers.IO) {
             runCatching {
-                val reply = if (demo) Summary.demo(length, chat) else when (source) {
-                    is SummarySource.Note -> Jarvis.sendText(address, token, Summary.notePrompt(source.title, source.body, length), "obsidian").reply
-                    is SummarySource.Chat -> Jarvis.sendText(address, token, Summary.chatPrompt(source.said, source.reply, length), "jarvis").reply
+                val reply = if (demo) Summary.demo(length, chat) else {
+                    val prompt = when (source) {
+                        is SummarySource.Note -> Summary.notePrompt(source.title, source.body, length)
+                        is SummarySource.Chat -> Summary.chatPrompt(source.said, source.reply, length)
+                    }
+                    if (api) {
+                        val d = PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.")
+                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                        d.reply
+                    } else Jarvis.sendText(address, token, prompt, "jarvis").reply
                 }
                 Summary.parse(reply, title, subtitle, length, ticks)
             }
         }
         loading = false
-        r.onSuccess { if (it.text.isBlank() && it.bullets.isEmpty()) error = "Jarvis sent back nothing. Try Redo." else doc = it }
-        r.onFailure { error = if (it is Jarvis.HttpError) it.message else "Can't reach Jarvis. Is Tailscale on?" }
+        r.onSuccess { if (it.text.isBlank() && it.bullets.isEmpty()) error = "$who sent back nothing. Try Redo." else doc = it }
+        r.onFailure { error = PhoneBrain.failure(who, it, viaServer = !api) }
     }
     LaunchedEffect(doc, ticks) {
         val d = doc ?: return@LaunchedEffect
@@ -116,7 +126,7 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
             Text("Print summary", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Text(if (chat) "Your last Jarvis chat" else title, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 12.dp))
+            Text(if (chat) "Your last chat" else title, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 12.dp))
 
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 120.dp).clip(RoundedCornerShape(6.dp)).background(Color.White).padding(vertical = 10.dp),
@@ -124,11 +134,11 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
             ) {
                 val b = paper
                 when {
-                    !ready -> Text("Set up Jarvis in Settings first (address and token), or type demo as the address to try it.",
+                    !ready -> Text("Turn on Claude from the phone in Settings, or add the server there.",
                         fontSize = 13.sp, color = Color.DarkGray, modifier = Modifier.padding(20.dp))
                     loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CircularProgressIndicator(color = Color.DarkGray, strokeWidth = 2.dp, modifier = Modifier.width(18.dp).height(18.dp))
-                        Text("Jarvis is summing it up…", fontSize = 13.sp, color = Color.DarkGray)
+                        Text("$who is summing it up…", fontSize = 13.sp, color = Color.DarkGray)
                     }
                     error != null -> Text(error!!, fontSize = 13.sp, color = Color(0xFFB3261E), modifier = Modifier.padding(20.dp))
                     b != null -> Image(b.asImageBitmap(), "Preview of the summary slip", Modifier.fillMaxWidth(0.86f),
