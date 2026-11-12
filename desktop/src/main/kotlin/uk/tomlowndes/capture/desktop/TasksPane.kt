@@ -65,6 +65,7 @@ import java.time.LocalTime
 import uk.tomlowndes.capture.Bucket
 import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.TaskGroups
+import uk.tomlowndes.capture.Bills
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.TaskViews
 import uk.tomlowndes.capture.Tags
@@ -213,6 +214,7 @@ fun TasksPane(state: AppState) {
     }
 
     var editing by remember { mutableStateOf<TaskItem?>(null) }
+    var addingBill by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf<TaskItem?>(null) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
     var triaging by remember { mutableStateOf(false) }
@@ -280,9 +282,10 @@ fun TasksPane(state: AppState) {
 
         if (upcoming) {
             val bills = TaskViews.billsMonth(all, done, today)
-            if (!bills.empty) Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.End) {
-                Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; upcoming = false; state.prefs.tasksUpcoming = false }
-            } else Box(Modifier.padding(top = 14.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
+                Chip("＋ Add bill", small = true, color = Amber) { addingBill = true }
+                if (!bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; upcoming = false; state.prefs.tasksUpcoming = false }
+            }
             UpcomingWeek(
                 shown, calendar.second, calendar.first, now,
                 onMove = { t, d -> move(t, d) }, onPlan = { t, d, s -> plan(t, d, s) },
@@ -364,6 +367,14 @@ fun TasksPane(state: AppState) {
             DialogButtons({ bulkRemove = null }) { PrimaryButton("Remove") { bulkRemove = null; bulkDelete(items) } }
         }
     }
+    if (addingBill) AddBillDialog(Bills.suggestions(all, done), onAdd = { text, due ->
+        addingBill = false
+        scope.launch {
+            state.io("Couldn't add the bill") { state.writer()!!.addTask(text, due.toString()) } ?: return@launch
+            reload()
+            state.say("Bill added")
+        }
+    }, onDismiss = { addingBill = false })
     editing?.let { t ->
         EditTaskDialog(t, pinned, onSave = { text, due, rule, minutes, p -> editing = null; edit(t, text, due, rule, minutes, p) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
     }

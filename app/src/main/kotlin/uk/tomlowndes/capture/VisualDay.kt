@@ -154,9 +154,18 @@ private fun emojiOf(t: TaskItem): String {
     }
 }
 
-/** Bills this month (build-queue O5): a small card at the top of Upcoming, only when the month has #bill tasks. */
+/**
+ * Bills this month (build-queue O5): a small card at the top of Upcoming. With no bills this month it's just
+ * "＋ Add bill" (add-bill-v1), so there's always a way in.
+ */
 @Composable
-internal fun BillsMonthCard(m: MonthBills, open: Boolean, onToggle: () -> Unit, onPaid: (Bill) -> Unit) {
+internal fun BillsMonthCard(m: MonthBills, open: Boolean, onToggle: () -> Unit, onAdd: () -> Unit, onPaid: (Bill) -> Unit) {
+    if (m.empty) {
+        ListCard(Modifier.padding(bottom = 10.dp).clickable(onClick = onAdd)) {
+            Text("＋ Add bill", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Amber, modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp))
+        }
+        return
+    }
     val month = java.time.LocalDate.now().month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK).uppercase(java.util.Locale.UK)
     ListCard(Modifier.padding(bottom = 10.dp).clickable(onClick = onToggle)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
@@ -191,5 +200,8 @@ internal fun BillsMonthCard(m: MonthBills, open: Boolean, onToggle: () -> Unit, 
                 if (!paid) TickBox(done = false, onClick = { onPaid(b) })
             }
         }
+        HorizontalDivider(color = Outline)
+        Text("＋ Add bill", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Amber,
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(horizontal = 14.dp, vertical = 11.dp))
     }
 }
