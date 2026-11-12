@@ -78,6 +78,7 @@ fun TasksScreen(
     onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSettings: () -> Unit = {},
     onOpenTriage: () -> Unit = {},
+    onOpenGuardBackups: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -95,6 +96,9 @@ fun TasksScreen(
     var filtering by remember { mutableStateOf(false) }
     var openSteps by remember { mutableStateOf(setOf<String>()) }
     var stepsOf by remember { mutableStateOf<TaskItem?>(null) }
+    // Quick Task guard (quick-task-guard-v1): what looks off, and the Show me sheet.
+    var quickAlert by remember { mutableStateOf<QuickGuard.Alert?>(null) }
+    var guardSheet by remember { mutableStateOf<Long?>(null) }
     var filter by remember { mutableStateOf(TaskFilter.values().firstOrNull { it.name == prefs.tasksFilter }) }
     fun pickTag(t: String?) { tag = t; prefs.tasksTag = t }
     fun pickFilter(f: TaskFilter?) { filter = f; prefs.tasksFilter = f?.name }
@@ -148,6 +152,7 @@ fun TasksScreen(
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }
             r.onSuccess {
                 TaskSnapshot.save(ctx, it)
+                quickAlert = it.quickAlert
                 // Only touch the lists when something changed, so an unchanged refresh doesn't redraw every row.
                 if (tasks.toList() != it.open) { tasks.clear(); tasks.addAll(it.open) }
                 if (ticked.toList() != it.done) { ticked.clear(); ticked.addAll(it.done) }
@@ -158,6 +163,22 @@ fun TasksScreen(
         }
     }
     LaunchedEffect(vault) { reload() }
+
+    fun guard(label: String, act: VaultWriter.() -> Unit) {
+        val uri = vault ?: return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).act() } }
+            quickAlert = null; guardSheet = null
+            reload()
+            snack.showSnackbar(r.fold({ label }, { "Failed: ${it.message}" }))
+        }
+    }
+    fun showGuard() {
+        val uri = vault ?: return
+        scope.launch {
+            guardSheet = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).quickCopies().firstOrNull { it.good }?.at } }.getOrNull() ?: 0L
+        }
+    }
 
     /** Writes the tick, after the row has shown it. */
     fun complete(t: TaskItem) {
@@ -475,6 +496,12 @@ fun TasksScreen(
         val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
         val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = if (selecting) 96.dp else 16.dp, top = 4.dp)) {
+            quickAlert?.let { a ->
+                item(key = "quick-guard") {
+                    QuickGuardBanner(a, onFix = { guard("Steps put back under their task") { fixQuick() } },
+                        onShow = { showGuard() }, onFine = { guard("OK, Quick Task as it is now is the new copy") { acceptQuick() } })
+                }
+            }
             sections.forEach { s ->
                 val g = s.group
                 item(key = "h-${s.key}") {
@@ -605,6 +632,11 @@ fun TasksScreen(
         )
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }
+    val qa = quickAlert
+    if (guardSheet != null && qa != null) QuickGuardSheet(qa, guardSheet?.takeIf { it > 0 },
+        onFix = { guard("Steps put back under their task") { fixQuick() } },
+        onRestore = { guardSheet = null; onOpenGuardBackups() },
+        onDismiss = { guardSheet = null })
     // Subtasks as a pop-up sheet (subtasks-popout-v1 B): the task's steps, Start next step and Add steps.
     stepsOf?.let { p ->
         val steps = Subtasks.nest(tasks.toList(), tasks.toList()).children[p].orEmpty()

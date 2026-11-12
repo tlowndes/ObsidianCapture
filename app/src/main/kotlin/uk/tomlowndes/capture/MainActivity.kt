@@ -154,6 +154,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var vault by remember { mutableStateOf(prefs.vault) }
     var tab by remember { mutableStateOf(request?.first ?: Tab.DECK) }
     var settings by remember { mutableStateOf(false) }
+    // Settings straight to Quick Task backups (from the Tasks guard sheet); cleared when Settings closes.
+    var settingsBackups by remember { mutableStateOf(false) }
+    LaunchedEffect(settings) { if (!settings) settingsBackups = false }
     var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var sub by remember { mutableStateOf(subFor(request?.second)) }
@@ -246,7 +249,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
                 sub == Sub.STUCK -> StuckScreen(vault, snack, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }
-                settings -> SettingsScreen(vault, prefs, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY })
+                settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
                     vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
@@ -257,7 +260,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
-                    onOpenTriage = { sub = Sub.TRIAGE }
+                    onOpenTriage = { sub = Sub.TRIAGE },
+                    onOpenGuardBackups = { settingsBackups = true; settings = true },
                 )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },

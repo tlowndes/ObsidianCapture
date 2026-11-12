@@ -116,6 +116,8 @@ private fun VaultPage(state: AppState) {
     FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
     FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
     Sub("The same folders as the phone app.", Modifier.padding(top = 10.dp))
+    Text("QUICK TASK BACKUPS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    QuickBackupsSettings(state)
 }
 
 @Composable
