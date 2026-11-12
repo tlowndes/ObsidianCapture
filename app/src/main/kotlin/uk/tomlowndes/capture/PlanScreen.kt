@@ -82,6 +82,15 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
         }
     }
 
+    /** Plan today / Shut down done: note it in the vault too (so Windows stops asking), then leave. */
+    fun markDone(f: (Vault) -> Unit) {
+        val uri = vault ?: return onBack()
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { f(appVault(ctx, uri)) } }
+            onBack()
+        }
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
@@ -134,7 +143,7 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
                 "Start the day", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape).background(Primary).clickable {
                     val move = chosen.filter { it.due != today }
-                    write({ move.forEach { rescheduleTask(it, today) } }) { prefs.plannedOn = today.toString(); onBack() }
+                    write({ move.forEach { rescheduleTask(it, today) } }) { prefs.plannedOn = today.toString(); markDone { DeckConfig.markPlanned(it, today) } }
                 }.padding(vertical = 13.dp)
             )
             Text("Evening: Shut down shows what's left. Each task goes to Tomorrow, gets a date, or is dropped.",
@@ -161,7 +170,7 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
             Text(
                 "Done for today", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 14.dp, bottom = 16.dp).fillMaxWidth().clip(CircleShape).background(Primary).clickable {
-                    prefs.shutDownOn = today.toString(); onBack()
+                    prefs.shutDownOn = today.toString(); markDone { DeckConfig.markShutDown(it, today) }
                 }.padding(vertical = 13.dp)
             )
         }
