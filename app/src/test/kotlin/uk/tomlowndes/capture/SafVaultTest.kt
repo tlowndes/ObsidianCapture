@@ -81,9 +81,41 @@ class SafVaultTest {
             v.move("Note.md", "out")
             fail("move should have failed")
         } catch (e: IllegalStateException) {
-            assertEquals("Cannot move Note.md", e.message)
+            assertEquals("Cannot write Note.md", e.message)
         }
         assertEquals("body", v.read("Note.md"))
+    }
+
+    @Test fun `a write swaps in a finished copy and leaves no scratch file`() {
+        val (v, root) = vault()
+        v.writeOnce(v.create("", "Note", "md"), "one")
+        v.writeOnce("Note.md", "two")
+        assertEquals("two", v.read("Note.md"))
+        assertEquals(listOf("Note.md"), root.children().map { it.name })
+        assertEquals(listOf("Note.md"), v.list("").map { it.name })
+    }
+
+    @Test fun `a failed swap puts the original note back`() {
+        val (v, root) = vault()
+        v.writeOnce(v.create("", "Note", "md"), "safe")
+        root.failTempPromote = true
+        try {
+            v.writeOnce("Note.md", "new")
+            fail("write should have failed")
+        } catch (e: IllegalStateException) {
+            assertEquals("Cannot write Note.md", e.message)
+        }
+        assertEquals("safe", v.read("Note.md"))
+        assertEquals(listOf("Note.md"), root.children().map { it.name })
+    }
+
+    @Test fun `a backup left behind is restored on the next look`() {
+        val (v, root) = vault()
+        v.writeOnce(v.create("", "Note", "md"), "safe")
+        val note = root.findChild("Note.md")!!
+        note.rename(".Note.md.capture-bak")
+        assertEquals("safe", v.read("Note.md"))
+        assertEquals(listOf("Note.md"), v.list("").map { it.name })
     }
 }
 
@@ -99,6 +131,8 @@ internal class MemDoc(
     override var modified: Long = 1L
     override val length get() = if (isDirectory) 0L else bytes.size.toLong()
     var allowMove = true
+    /** The temp copy refuses to take the real file's name, so the swap must restore the original. */
+    var failTempPromote = false
     /** New files report different bytes than were written, so a move must not delete the original. */
     var sabotageNewFileReads = false
     private var sabotageReads = false
@@ -128,6 +162,15 @@ internal class MemDoc(
     override fun writeBytes(bytes: ByteArray) { this.bytes = bytes.copyOf(); modified += 1 }
 
     override fun delete() { parent?.kids?.remove(this) }
+
+    override fun rename(displayName: String): VaultDoc? {
+        val p = parent ?: return null
+        if (root.failTempPromote && name.contains(".capture-tmp")) return null
+        if (p.kids.any { it !== this && it.name == displayName }) return null
+        name = displayName
+        modified += 1
+        return this
+    }
 
     override fun moveInto(fromDir: VaultDoc, targetDir: VaultDoc): VaultDoc? {
         if (!root.allowMove) return null

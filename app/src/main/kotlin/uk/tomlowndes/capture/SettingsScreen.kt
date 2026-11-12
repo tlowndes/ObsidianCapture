@@ -337,8 +337,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         }
         Spacer(Modifier.height(16.dp))
         GroupLabel("Advanced")
-        SettingRow("⚡ Claude from the phone", if (ckMasked == null) "Add a Claude key to think on the phone. First words in about a second."
-            else "Claude straight from the app instead of Nano. Pay as you go.") {
+        SettingRow("⚡ Claude from the phone", if (ckMasked == null) "Off until you add a key and turn this on. It costs money."
+            else "Haiku answers chat, sorts rambles and does research. Off until you turn it on. It costs money. Nano and the Oracle box stay available.") {
             AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
         }
         SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
@@ -346,7 +346,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         }
         Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
         PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
-        Text(if (clever) "Clever is Claude Sonnet: better at tricky asks, a bit slower." else "Fast is Claude Haiku: quickest replies, costs very little.",
+        Text(if (clever) "Clever is Claude Sonnet, for everyday chat only. Sorting and research stay on Haiku." else "Fast is Claude Haiku. Sorting and research use it too. A quiet month stays very cheap.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
         SettingRow("This month", "Worked out on the phone from what Claude reports") {
             Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
@@ -399,7 +399,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         var fallbackOn by remember { mutableStateOf(prefs.serverFallback) }
         var staleMin by remember { mutableStateOf(prefs.fallbackStaleMin) }
         var checking by remember { mutableStateOf(false) }
-        SettingRow("Server fallback", "If this phone hasn't synced for a while, read and save through the Jarvis server's copy instead.") {
+        SettingRow("Server fallback", "Off unless you turn it on. Then, if this phone hasn't synced for a while, read and save through the Jarvis server's copy instead.") {
             AppSwitch(fallbackOn) { on ->
                 fallbackOn = on; prefs.serverFallback = on
                 vault?.let { uri -> scope.launch { withContext(Dispatchers.IO) { VaultRoute.check(ctx, uri, force = true) } } }

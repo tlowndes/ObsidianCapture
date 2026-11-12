@@ -4,6 +4,8 @@ Flight Deck (v1.7) is a personal capture and daily-planning app that writes stra
 
 The phone app is labelled **Flight Deck**. It is the daily home screen: what to do next, what is due, what to read, and the small loops (focus, habits, weather, calendar, jobs) that otherwise live in separate apps. A Windows desktop app in `desktop/` (window title **Flight Deck**) shares the same vault, with its own Deck, tasks, projects, reading and quick capture.
 
+On Android a save writes a temporary file beside the note and then swaps the names, so a half-written note is not what sync copies. If that swap is interrupted, the next read puts the previous note back. A save or a Jarvis send that cannot finish is kept on the phone and tried again later. The same thing is not queued twice.
+
 ## Writing into the vault
 
 On Android, pick the vault root (the folder that contains `.obsidian`) with the system folder picker. The app keeps a persistent read/write grant. On Windows, pick the same folder in Settings; the app reads and writes it as a normal directory.
@@ -70,7 +72,9 @@ Three modes, and it reopens on the last one used:
 
 ### Jarvis
 
-Hold the big button to talk, let go to send (slide off to cancel). The app records OGG/Opus and posts it, with the
+Hold the big button to talk, let go to send (slide off to cancel). By default this uses Gemini Nano on the phone for short Jarvis chats, and the Oracle box for everything else. Settings › Jarvis › Claude from the phone is off until you add a Claude API key and turn it on. It costs money. Haiku then answers everyday chat, sorts a ramble, and does research, with a 45 second limit (60 for research). A retry does not start a second call while the first is still going. Nano and the Oracle box stay available when that switch is off.
+
+The app records OGG/Opus and posts it, with the
 worker picked top right (Jarvis, Coding, Obsidian, Research, Odd jobs) and a bearer token, to `POST /voice` on the
 Oracle box over Tailscale. That server hands it to the Claude CLI and answers with what it heard, the reply and an
 `audio_url`, which the app fetches with the same token and plays. A Done line shows when `GET /done` reports a
@@ -84,7 +88,7 @@ To test against something real before the Oracle side is ready, run the fake ser
 `python tools/fake-jarvis/fake_jarvis.py --token test-token`, then `tailscale serve --bg 8765`, and put that PC's
 `*.ts.net` name and `test-token` into Settings › Jarvis. It plays your own recording back.
 
-The real server for the Oracle box is in `tools/jarvis-server` (setup steps in its README).
+The real server for the Oracle box is in `tools/jarvis-server` (setup steps in its README). That server does not edit the vault. Anything it thinks should be kept comes back as Check and save. Copy that folder onto the box to pick the rule up. The copy already running there stays as it is until you do. Settings › Vault & sync › Server fallback is off unless you turn it on.
 
 ### Tasks
 

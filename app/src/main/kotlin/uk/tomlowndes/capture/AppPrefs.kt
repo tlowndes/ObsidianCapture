@@ -208,7 +208,7 @@ class AppPrefs(ctx: Context) : VaultPrefs {
 
     /** Settings › Vault › Server fallback: read and save through the Jarvis server while this phone's sync is behind. */
     var serverFallback: Boolean
-        get() = p.getBoolean("server_fallback", true)
+        get() = p.getBoolean("server_fallback", false)
         set(v) { p.edit().putBoolean("server_fallback", v).apply() }
     /** How far behind (minutes) the phone must be before the server copy is used. */
     var fallbackStaleMin: Int

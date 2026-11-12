@@ -134,7 +134,10 @@ class MainActivity : ComponentActivity() {
                 url.isBlank() -> "Nothing to save"
                 else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
                     .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
-                        { "Failed: ${it.message}" })
+                        {
+                            PhoneOutbox.keepLink(applicationContext, url, emptyList())
+                            "Couldn't save that. It's kept on the phone and will be tried again."
+                        })
             }
             Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
             finish()
@@ -177,6 +180,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
         Reminders.scheduleAll(ctx, prefs)
+        val report = withContext(Dispatchers.IO) { runCatching { PhoneOutbox.retry(ctx, prefs) }.getOrNull() }
+        if (report != null && report.done > 0) snack.showSnackbar(if (report.done == 1) "Saved 1 that was waiting" else "Saved ${report.done} that were waiting")
         if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn || prefs.weeklyOn) && !prefs.askedNotif) {
             prefs.askedNotif = true
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)

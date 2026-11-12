@@ -65,6 +65,32 @@ class PhoneBrainTest {
         assertEquals("Summary", PhoneBrain.parseSummary("{\"points\":[\" \"]}").title)
     }
 
+    @Test fun `a long message is worth sorting and a short one is not`() {
+        assertTrue(PhoneBrain.worthSorting("one two three four five six seven eight nine ten ".repeat(4)))
+        assertTrue(!PhoneBrain.worthSorting("add milk"))
+    }
+
+    @Test fun `sorter json is a save or an answer, not both calls`() {
+        val ramble = """{"ramble": true, "reply": "Two bits to keep.", "tasks": [{"text": "Book MOT", "tag": "#home", "due": "2026-11-20"}], "ideas": [], "note": null}"""
+        val parsed = PhoneBrain.parseDirect(ramble)!!
+        assertEquals("Two bits to keep.", parsed.reply)
+        assertEquals("Book MOT", parsed.sorted!!.tasks.single().text)
+        val question = """{"ramble": false, "reply": "Thursday."}"""
+        val answer = PhoneBrain.parseDirect(question)!!
+        assertEquals("Thursday.", answer.reply)
+        assertEquals(null, answer.sorted)
+        assertEquals(null, PhoneBrain.parseDirect("just a sentence"))
+    }
+
+    @Test fun `the same message cannot be in flight twice`() {
+        val key = PhoneBrain.flightKey("jarvis", " hello ")
+        assertTrue(PhoneBrain.beginFlight(key))
+        assertTrue(!PhoneBrain.beginFlight(PhoneBrain.flightKey("jarvis", "hello")))
+        PhoneBrain.endFlight(key)
+        assertTrue(PhoneBrain.beginFlight(key))
+        PhoneBrain.endFlight(key)
+    }
+
     @Test fun systemPromptHasTheDateAndTags() {
         val p = PhoneBrain.system(LocalDate.of(2026, 11, 10), listOf("#work", "#personal"))
         assertTrue(p.contains("Tuesday 10 November 2026"))

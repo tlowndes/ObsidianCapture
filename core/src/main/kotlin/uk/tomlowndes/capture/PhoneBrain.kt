@@ -3,6 +3,7 @@ package uk.tomlowndes.capture
 import com.anthropic.client.AnthropicClient
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.core.JsonValue
+import com.anthropic.core.Timeout
 import com.anthropic.helpers.MessageAccumulator
 import com.anthropic.models.messages.ContentBlockParam
 import com.anthropic.models.messages.JsonOutputFormat
@@ -11,8 +12,10 @@ import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.Tool
 import com.anthropic.models.messages.ToolResultBlockParam
+import com.anthropic.models.messages.WebSearchTool20250305
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Duration
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -20,12 +23,19 @@ import java.util.Locale
 
 /**
  * Jarvis's phone brain: the app talks to Claude itself and streams the answer, so everyday chat skips the Oracle box.
- * Two tools: [ADD_TASK] puts a to-do on the Check and save card, and [HAND_OFF] passes a job that needs the box
- * (web research, code, vault edits) to one of the box's workers. The key lives in the app's secure storage.
+ * Two tools: [ADD_TASK] puts a to-do on the Check and save card, and [HAND_OFF] passes code and other computer
+ * jobs to the box. Rambles and research are answered here, on Haiku, when the phone key is switched on.
+ * The key lives in the app's secure storage. Nothing is written to the vault until Check and save.
  */
 object PhoneBrain {
-    /** "Fast" in Settings. */
+    /** "Fast" in Settings. Everyday chat, ramble sorting and research use this unless chat is set to Clever. */
     const val FAST = "claude-haiku-5-5"
+    /** How long a chat or a sort may take before it is kept and tried again later. */
+    const val CHAT_TIMEOUT_S = 45L
+    /** Research may look a few things up, so it is allowed a little longer. */
+    const val RESEARCH_TIMEOUT_S = 60L
+    /** Same length the Oracle box uses before it treats a message as a ramble. */
+    const val RAMBLE_WORDS = 40
     /** "Clever" in Settings. */
     const val CLEVER = "claude-sonnet-5-5"
 
@@ -145,7 +155,12 @@ object PhoneBrain {
 
     // ---- Calls ------------------------------------------------------------------------------------------------
 
-    private fun client(key: String): AnthropicClient = AnthropicOkHttpClient.builder().apiKey(key.trim()).maxRetries(2).build()
+    private fun client(key: String, seconds: Long): AnthropicClient {
+        val d = Duration.ofSeconds(seconds)
+        val timeout = Timeout.builder().connect(Duration.ofSeconds(10)).read(d).write(Duration.ofSeconds(30)).request(d).build()
+        // No automatic retry: a retry is the phone queue's job, later, and only once at a time.
+        return AnthropicOkHttpClient.builder().apiKey(key.trim()).timeout(timeout).maxRetries(0).build()
+    }
 
     private fun prop(vararg kv: Pair<String, Any>) = JsonValue.from(mapOf(*kv))
 
@@ -210,7 +225,7 @@ object PhoneBrain {
         val text = StringBuilder()
         var inTok = 0L
         var outTok = 0L
-        val c = client(key)
+        val c = client(key, CHAT_TIMEOUT_S)
         try {
             repeat(MAX_ROUNDS) {
                 val acc = MessageAccumulator.create()
@@ -234,7 +249,7 @@ object PhoneBrain {
                     val (ok, reply) = when (u.name()) {
                         ADD_TASK -> parseTask(input)?.let { tasks.add(it); true to "Added to the Check and save card." }
                             ?: (false to "No task text.")
-                        HAND_OFF -> parseHandoff(input)?.let { handoffs.add(it); true to "Sent to ${workerLabel(it.worker)} on the server." }
+                        HAND_OFF -> parseHandoff(input)?.let { handoffs.add(it); true to "Passed to ${workerLabel(it.worker)}." }
                             ?: (false to "Unknown worker or empty request.")
                         else -> false to "No such tool."
                     }
@@ -288,7 +303,7 @@ under 50 characters, starting with a verb; empty when there are none. No emoji, 
             )
             .addUserMessage("Summarise this $kind:\n\n$text")
             .build()
-        val c = client(key)
+        val c = client(key, CHAT_TIMEOUT_S)
         val msg = try { c.messages().create(params) } finally { c.close() }
         if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
         return parseSummary(msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString(""))
@@ -319,4 +334,100 @@ under 50 characters, starting with a verb; empty when there are none. No emoji, 
 
     fun summaryToJson(s: Summary): String =
         JSONObject().put("title", s.title).put("points", JSONArray(s.points)).put("todos", JSONArray(s.todos)).toString()
+
+    // ---- one call at a time, sorting, research ---------------------------------------------------------------
+
+    private val inflight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** The same message must not be sent twice while the first call is still running. */
+    fun flightKey(worker: String, text: String) = worker + "\u0000" + text.trim()
+
+    fun beginFlight(key: String) = inflight.add(key)
+
+    fun endFlight(key: String) { inflight.remove(key) }
+
+    fun worthSorting(text: String) = text.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= RAMBLE_WORDS
+
+    /** A direct answer: [sorted] is set when Tom should confirm a save. [reply] is what to show either way. */
+    data class Direct(val reply: String, val sorted: SortResult?, val inTok: Long = 0, val outTok: Long = 0)
+
+    /**
+     * Reads the sorter JSON. A question comes back as a reply with no save. A ramble comes back with tasks,
+     * ideas or a note. Null when the text is not that JSON.
+     */
+    fun parseDirect(raw: String): Direct? {
+        val start = raw.indexOf('{')
+        val end = raw.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val o = runCatching { JSONObject(raw.substring(start, end + 1)) }.getOrNull() ?: return null
+        if (!o.has("ramble")) return null
+        val reply = o.optString("reply").trim()
+        if (!o.optBoolean("ramble")) return Direct(reply, null)
+        val sorted = runCatching { Sorting.parse(o.toString()) }.getOrNull()?.takeIf { !it.isEmpty }
+        if (sorted == null && reply.isBlank()) return null
+        return Direct(reply.ifBlank { "Got it. Check it before I save." }, sorted)
+    }
+
+    private const val SORT_SYSTEM = """
+You answer Tom, or you sort something he wants kept in his Obsidian vault. Today is %s. UK English.
+If this is a question or a request that is not about keeping a task, an idea or a note, answer only this JSON:
+{"ramble": false, "reply": "one to three short sentences"}
+If he wants something kept, answer only this JSON:
+{"ramble": true, "reply": "one short sentence saying what you found",
+ "tasks": [{"text": "short imperative", "tag": "#home, #work, #jobs, #learning, #bill or null", "due": "YYYY-MM-DD or null"}],
+ "ideas": ["short titles"],
+ "note": null, or one or two plain sentences, or {"title": "a short title", "markdown": "a tidy note"}}
+For a note: a one or two sentence summary, then ## headings with short bullets. Keep his points and wording.
+Do not invent anything. No top-level # heading. Leave tasks out of the note when they are already in tasks.
+Never say you have saved anything. He confirms it first."""
+
+    /** One Haiku call. A long message is either answered or turned into Check and save, not both. Blocking. */
+    fun sortOrAnswer(key: String, text: String, today: LocalDate): Direct {
+        val params = MessageCreateParams.builder()
+            .model(FAST).maxTokens(2000L).system(SORT_SYSTEM.format(today.format(DAY)).trim())
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .addUserMessage(text.trim())
+            .build()
+        val c = client(key, CHAT_TIMEOUT_S)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val raw = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("")
+        val inTok = msg.usage().inputTokens()
+        val outTok = msg.usage().outputTokens()
+        return (parseDirect(raw) ?: Direct(raw.trim(), null)).copy(inTok = inTok, outTok = outTok)
+    }
+
+    private const val RESEARCH_SYSTEM = """
+You are Jarvis, looking something up for Tom. UK English. Today is %s.
+Use web search when the answer depends on current facts. Write a few short sentences, then up to five bullets.
+Say plainly when you are not sure. Do not invent a source. Do not edit his notes.
+If he also asked to keep a task or a note, add nothing about saving in the prose, and finish with one JSON object
+on its own line: {"ramble": true, "reply": "one short sentence", "tasks": [], "ideas": [], "note": null}
+using the same task and note shape as a ramble sort. Otherwise do not add JSON."""
+
+    /**
+     * Research on Haiku, with a few web searches. Blocking. Gives up after [RESEARCH_TIMEOUT_S] seconds.
+     * A trailing sorter JSON becomes [Direct.sorted] so Check and save can keep it.
+     */
+    fun research(key: String, text: String, today: LocalDate): Direct {
+        val params = MessageCreateParams.builder()
+            .model(FAST).maxTokens(2000L).system(RESEARCH_SYSTEM.format(today.format(DAY)).trim())
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .addTool(WebSearchTool20250305.builder().maxUses(3).build())
+            .addUserMessage(text.trim())
+            .build()
+        val c = client(key, RESEARCH_TIMEOUT_S)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val raw = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n").trim()
+        val parsed = parseDirect(raw)
+        val prose = if (parsed?.sorted != null) raw.substringBeforeLast("{").trim().ifBlank { parsed.reply } else raw
+        return Direct(prose.ifBlank { "I couldn't find a clear answer." }, parsed?.sorted, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /** A short line for a call that ran out of time. */
+    fun timedOut(e: Throwable, seconds: Long): String? {
+        val blob = (e.javaClass.simpleName + " " + e.message.orEmpty())
+        return if (blob.contains("timeout", ignoreCase = true)) "Claude didn't answer within $seconds seconds. It's kept on the phone and will be tried again later." else null
+    }
 }

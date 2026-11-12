@@ -45,7 +45,7 @@ HOME = Path.home()
 DEFAULT_WORKERS = {
     "jarvis": {"cwd": str(HOME / "jarvis"), "prompt": "You are Jarvis, Tom's general assistant."},
     "coding": {"cwd": str(HOME / "code"), "prompt": "You help Tom with code in this folder."},
-    "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. Add or find tasks and notes in it."},
+    "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. You may read it. Never edit it. When he wants something kept, end with the Check and save JSON."},
     "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True,
                  "allowed_tools": ["WebSearch", "WebFetch", "Read", "Write", "Edit"]},
     "oddjobs": {"cwd": str(HOME / "jarvis"), "prompt": "Help Tom with whatever he asks."},
@@ -111,8 +111,22 @@ def transcribe(ogg: Path) -> str:
 
 
 def vault_note() -> str:
-    v = CONFIG.get("vault")
-    return f" Tom's Obsidian vault is at {Path(v).expanduser()}; you may add and edit notes there." if v else ""
+    """Claude must not write the vault. The app saves after Tom confirms."""
+    return (
+        " Never create, edit, move or delete Tom's Obsidian notes, even if a folder of notes is open."
+        " If he wants a task, an idea or a note kept, finish with one JSON object on its own line and nothing after it:"
+        ' {"ramble": true, "reply": "one short spoken sentence",'
+        ' "tasks": [{"text": "short imperative", "tag": "#home or null", "due": "YYYY-MM-DD or null"}],'
+        ' "ideas": ["short titles"], "note": null or "a line" or {"title": "short title", "markdown": "the note"}}.'
+        " The app shows Check and save and writes only after he confirms. Leave that JSON out for a plain question."
+    )
+
+
+def same_dir(a, b) -> bool:
+    try:
+        return Path(a).expanduser().resolve() == Path(b).expanduser().resolve()
+    except OSError:
+        return False
 
 
 def ask_claude(worker: str, text: str, spoken: bool = True, chat: str = "") -> str:
@@ -127,12 +141,20 @@ def ask_claude(worker: str, text: str, spoken: bool = True, chat: str = "") -> s
         cmd += ["--resume", chat] if chat in known_chats() else ["--session-id", chat]
     elif w.get("continue", CONFIG["continue"]):
         cmd.insert(1, "--continue")
-    # Every worker may write to the vault unless its workers.json entry says otherwise.
-    cmd += ["--permission-mode", w.get("permission_mode", "acceptEdits")]
-    if w.get("allowed_tools"):
-        cmd += ["--allowedTools", *w["allowed_tools"]]
-    for d in w.get("add_dirs", [CONFIG["vault"]] if CONFIG.get("vault") else []):  # extra folders it may edit
-        cmd += ["--add-dir", str(Path(d).expanduser())]
+    # The vault is never an editable directory. A worker whose folder is the vault can read it only.
+    # Other workers may still edit their own folder. Notes are saved by the app after Check and save.
+    vault = CONFIG.get("vault") or ""
+    in_vault = bool(vault) and same_dir(cwd, vault)
+    if in_vault:
+        cmd += ["--permission-mode", "plan", "--allowedTools", "Read", "Grep", "Glob"]
+    else:
+        cmd += ["--permission-mode", w.get("permission_mode", "acceptEdits")]
+        if w.get("allowed_tools"):
+            cmd += ["--allowedTools", *w["allowed_tools"]]
+        for d in w.get("add_dirs", []):
+            if vault and same_dir(d, vault):
+                continue
+            cmd += ["--add-dir", str(Path(d).expanduser())]
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=CONFIG["claude_timeout"])
     out = r.stdout.strip()
     if r.returncode != 0 and not out:
@@ -188,7 +210,8 @@ def sort_ramble(text: str):
     cwd = Path(CONFIG["workers"]["obsidian" if "obsidian" in CONFIG["workers"] else "jarvis"]["cwd"]).expanduser()
     cwd.mkdir(parents=True, exist_ok=True)
     prompt = SORT_PROMPT.format(today=time.strftime("%A %Y-%m-%d"), text=text)
-    r = subprocess.run([CONFIG["claude"], "-p", prompt, "--output-format", "text"],
+    r = subprocess.run([CONFIG["claude"], "-p", prompt, "--output-format", "text",
+                        "--permission-mode", "plan", "--allowedTools", "Read"],
                        cwd=cwd, capture_output=True, text=True, timeout=CONFIG["claude_timeout"])
     return parse_sorted(r.stdout)
 
@@ -211,6 +234,25 @@ def parse_sorted(out: str):
     if not (sorted_["tasks"] or sorted_["ideas"] or sorted_["note"]):
         return None
     return (o.get("reply") or "Got it. Check it before I save.").strip(), sorted_
+
+
+def peel_sorted(text: str):
+    """If a reply ends with sorter JSON, return (spoken text, sorted). Otherwise (text, None)."""
+    if not text:
+        return text, None
+    lines = text.rstrip().splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        chunk = lines[i].strip()
+        if not chunk.startswith("{"):
+            continue
+        found = parse_sorted(chunk)
+        if found:
+            spoken = "\n".join(lines[:i]).strip() or found[0]
+            return spoken, found[1]
+    found = parse_sorted(text.strip())
+    if found and text.strip().startswith("{"):
+        return found[0], found[1]
+    return text, None
 
 
 # ---------- HTTP ----------
@@ -378,6 +420,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 self.send_json(502, {"error": str(e)})
                 return
+            spoken, extra = peel_sorted(reply)
+            if extra:
+                reply, sorted_ = spoken, extra
 
         audio_url = None
         try:

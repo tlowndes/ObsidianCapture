@@ -31,6 +31,8 @@ internal interface VaultDoc {
     fun delete()
     /** Moves this document from [fromDir] into [targetDir], or null if this tree can't move it. */
     fun moveInto(fromDir: VaultDoc, targetDir: VaultDoc): VaultDoc?
+    /** Renames this document inside its folder, or null if the provider refuses. */
+    fun rename(displayName: String): VaultDoc?
     fun handle(): Any
 }
 
@@ -60,6 +62,7 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
     }
 
     override fun read(path: String, max: Int): String? {
+        heal(path)
         val f = find(path)?.takeIf { !it.isDirectory } ?: return null
         return f.open()?.bufferedReader()?.use { r ->
             if (max == Int.MAX_VALUE) return@use r.readText()
@@ -72,8 +75,74 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
 
     override fun writeOnce(path: String, text: String) = writeBytes(path, text.toByteArray())
 
+    /**
+     * Writes the full bytes to a sibling first, then swaps the names, the same idea as [FileVault].
+     * The original note stays intact until the new copy has been read back. A crash in the middle
+     * leaves a `.capture-bak` which the next read puts back. The Storage Access Framework has no
+     * atomic replace, so this is as close as the folder API allows.
+     */
     override fun writeBytes(path: String, bytes: ByteArray) {
-        (find(path) ?: error("${nameOf(path)} not found")).writeBytes(bytes)
+        heal(path)
+        val target = find(path) ?: error("${nameOf(path)} not found")
+        if (target.isDirectory) error("${nameOf(path)} is a folder")
+        val folder = folderOf(path) ?: error("Cannot write ${nameOf(path)}")
+        val name = target.name
+        val tmpName = ".$name.capture-tmp"
+        val bakName = ".$name.capture-bak"
+        folder.findChild(tmpName)?.delete()
+        val tmp = folder.createFile("application/octet-stream", tmpName) ?: error("Cannot write $name")
+        val made = tmp.name
+        try {
+            tmp.writeBytes(bytes)
+            val back = tmp.open()?.use { it.readBytes() }
+            if (back == null || !back.contentEquals(bytes)) error("Cannot write $name")
+            val bak = target.rename(bakName) ?: error("Cannot write $name")
+            if (tmp.rename(name) == null) {
+                bak.rename(name)
+                error("Cannot write $name")
+            }
+            bak.delete()
+        } catch (e: Exception) {
+            folder.findChild(made)?.delete()
+            if (find(path) == null) folder.findChild(bakName)?.rename(name)
+            throw e
+        }
+    }
+
+    /** Puts a note back if a swap stopped halfway, and drops leftover temp files once the real name is there. */
+    private fun heal(path: String) {
+        val name = nameOf(path)
+        if (name.isEmpty()) return
+        val folder = folderOf(path) ?: return
+        val bak = folder.findChild(".$name.capture-bak")
+        val tmp = folder.findChild(".$name.capture-tmp")
+        if (folder.findChild(name) != null) {
+            bak?.delete()
+            tmp?.delete()
+        } else if (bak != null) {
+            bak.rename(name)
+            tmp?.delete()
+        }
+    }
+
+    private fun folderOf(path: String): VaultDoc? {
+        val parent = path.substringBeforeLast('/', "")
+        if (parent.isEmpty()) return root
+        return find(parent)?.takeIf { it.isDirectory }
+    }
+
+    private fun scratch(name: String) = name.endsWith(".capture-tmp") || name.endsWith(".capture-bak")
+
+    /** Restores any note in [folder] that was left under a backup name, then drops leftover scratch files. */
+    private fun healFolder(folder: VaultDoc) {
+        val names = folder.children().map { it.name }.toSet()
+        for (n in names) {
+            if (!n.endsWith(".capture-bak") || !n.startsWith(".")) continue
+            val real = n.removePrefix(".").removeSuffix(".capture-bak")
+            if (real.isEmpty()) continue
+            if (real !in names) folder.findChild(n)?.rename(real) else folder.findChild(n)?.delete()
+        }
+        folder.children().filter { it.name.endsWith(".capture-tmp") }.forEach { it.delete() }
     }
 
     override fun entry(path: String): Vault.Entry? =
@@ -81,17 +150,19 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
 
     override fun list(dir: String): List<Vault.Entry> {
         val d = find(dir)?.takeIf { it.isDirectory } ?: return emptyList()
-        return d.children().map { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
+        healFolder(d)
+        return d.children().filter { !scratch(it.name) }.map { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
     }
 
     override fun notes(skip: (String) -> Boolean): List<VaultNote> {
         val out = mutableListOf<VaultNote>()
         fun walk(doc: VaultDoc, prefix: String) {
+            healFolder(doc)
             val dirs = mutableListOf<Pair<VaultDoc, String>>()
             for (e in doc.children()) {
                 val path = prefix + e.name
                 if (e.isDirectory) { if (!skip(path)) dirs.add(e to "$path/") }
-                else if (e.name.endsWith(".md") && !e.name.startsWith(".")) out.add(VaultNote(path, e.modified))
+                else if (e.name.endsWith(".md") && !e.name.startsWith(".") && !scratch(e.name)) out.add(VaultNote(path, e.modified))
             }
             dirs.forEach { (d, p) -> walk(d, p) }
         }
@@ -214,6 +285,11 @@ private class AndroidDoc(
         val toUri = (targetDir as AndroidDoc).uri
         val moved = runCatching { DocumentsContract.moveDocument(cr, uri, fromUri, toUri) }.getOrNull() ?: return null
         return single(moved) ?: AndroidDoc(ctx, tree, DocumentsContract.getDocumentId(moved), moved, name, false, 0L, length)
+    }
+
+    override fun rename(displayName: String): VaultDoc? {
+        val renamed = runCatching { DocumentsContract.renameDocument(cr, uri, displayName) }.getOrNull() ?: return null
+        return single(renamed) ?: AndroidDoc(ctx, tree, DocumentsContract.getDocumentId(renamed), renamed, displayName, isDirectory, modified, length)
     }
 
     override fun handle(): Any = uri
