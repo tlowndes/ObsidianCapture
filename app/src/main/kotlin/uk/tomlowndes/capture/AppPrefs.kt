@@ -60,6 +60,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()
         set(v) { p.edit().putString("highlights_seen", v.toList().takeLast(500).joinToString("\u0001")).apply() }
     /** Subtasks pop out under their task in place (true) or in a sheet (false). */
+    /** Quick Task guard (quick-task-guard-v1): keep copies of Quick Task and flag odd changes. */
+    var quickGuard: Boolean
+        get() = p.getBoolean("quick_guard", true)
+        set(v) { p.edit().putBoolean("quick_guard", v).apply() }
     var subtasksInline: Boolean
         get() = p.getBoolean("subtasks_inline", true)
         set(v) { p.edit().putBoolean("subtasks_inline", v).apply() }

@@ -56,6 +56,7 @@ import uk.tomlowndes.capture.Deck
 import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.Step
 import uk.tomlowndes.capture.Subtasks
+import uk.tomlowndes.capture.QuickGuard
 import uk.tomlowndes.capture.TickedTask
 import uk.tomlowndes.capture.Triage
 import uk.tomlowndes.capture.WeeklyReview
@@ -84,6 +85,9 @@ fun TasksPane(state: AppState) {
     var filter by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
     var openSteps by remember { mutableStateOf(setOf<String>()) }
+    // Quick Task guard (quick-task-guard-v1): what looks off, and the Show me dialog (the last good copy's time).
+    var quickAlert by remember { mutableStateOf<QuickGuard.Alert?>(null) }
+    var guardSince by remember { mutableStateOf<Long?>(null) }
     var calendar by remember { mutableStateOf<Pair<List<CalendarSource>, List<CalEvent>>>(emptyList<CalendarSource>() to emptyList()) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = LocalDateTime.now() } }
@@ -91,12 +95,19 @@ fun TasksPane(state: AppState) {
     fun reload() {
         scope.launch {
             state.io("Couldn't read tasks") { state.writer()?.listTaskLists() }?.let {
-                tasks = it.open; done = it.done; state.tagCounts = Tags.filterCounts(it.open, 6)
+                tasks = it.open; done = it.done; state.tagCounts = Tags.filterCounts(it.open, 6); quickAlert = it.quickAlert
             }
             state.vault?.let { v -> state.io { Tags.loadPinned(v) }?.let { pinned = it } }
         }
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
+
+    fun guard(label: String, act: VaultWriter.() -> Unit) = scope.launch {
+        state.io { state.writer()!!.act() } ?: return@launch
+        quickAlert = null; guardSince = null
+        reload()
+        state.say(label)
+    }
     // Upcoming reads the phone's calendar links from the vault (windows-catchup-v1).
     LaunchedEffect(state.vault, upcoming) {
         val v = state.vault ?: return@LaunchedEffect
@@ -278,6 +289,11 @@ fun TasksPane(state: AppState) {
                 onFit = { d, s, m -> fitting = Triple(d, s, m) }, onOpen = { editing = it },
             )
         } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            quickAlert?.let { a ->
+                QuickGuardBanner(a, onFix = { guard("Steps put back under their task") { fixQuick() } },
+                    onShow = { scope.launch { guardSince = state.io { state.writer()!!.quickCopies().firstOrNull { it.good }?.at } ?: 0L } },
+                    onFine = { guard("OK, Quick Task as it is now is the new copy") { acceptQuick() } })
+            }
             if (tasks != null && shown.isEmpty()) Sub(if (filter.isBlank()) "Nothing to do." else "No tasks match.", Modifier.padding(top = 24.dp))
             @Composable
             fun rows(items: List<TaskItem>) = items.forEach { t ->
@@ -352,6 +368,11 @@ fun TasksPane(state: AppState) {
         EditTaskDialog(t, pinned, onSave = { text, due, rule, minutes, p -> editing = null; edit(t, text, due, rule, minutes, p) }, onRemove = { editing = null; remove(t) }, onDismiss = { editing = null })
     }
     picking?.let { t -> PickDateDialog(t.due, onPick = { picking = null; move(t, it) }, onDismiss = { picking = null }) }
+    val qa = quickAlert
+    if (guardSince != null && qa != null) QuickGuardDialog(qa, guardSince?.takeIf { it > 0 },
+        onFix = { guard("Steps put back under their task") { fixQuick() } },
+        onRestore = { guardSince = null; state.settingsPage = SettingsPage.VAULT; state.tab = Tab.SETTINGS },
+        onDismiss = { guardSince = null })
     breaking?.let { t -> BreakdownDialog(t, onSave = { steps -> breaking = null; addSteps(t, steps) }, onDismiss = { breaking = null }) }
     if (triaging) TriageDialog(
         all, onToday = { move(it, LocalDate.now()) }, onLater = { t, d -> move(t, d) }, onDrop = { drop(it) },

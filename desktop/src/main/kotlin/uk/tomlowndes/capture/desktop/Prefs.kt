@@ -38,6 +38,10 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         set(v) { p.putBoolean("ideas_by_updated", v); p.flush() }
 
     /** Ticking a 🔁 task also creates its next occurrence. */
+    /** Quick Task guard (quick-task-guard-v1): keep copies of Quick Task on this PC and flag odd changes. */
+    var quickGuard: Boolean
+        get() = p.getBoolean("quick_guard", true)
+        set(v) { p.putBoolean("quick_guard", v); p.flush() }
     var recurring: Boolean
         get() = p.getBoolean("recurring", true)
         set(v) { p.putBoolean("recurring", v); p.flush() }

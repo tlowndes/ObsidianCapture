@@ -13,7 +13,7 @@ data class TaskItem(
 data class TickedTask(val raw: String, val text: String, val done: LocalDate?, val path: String = VaultTasks.QUICK_TASK)
 
 /** Open tasks plus ticked ones (Quick Task's Archive first, newest first, then the rest of the vault). */
-data class TaskLists(val open: List<TaskItem>, val done: List<TickedTask>)
+data class TaskLists(val open: List<TaskItem>, val done: List<TickedTask>, val quickAlert: QuickGuard.Alert? = null)
 
 /**
  * Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active.
@@ -32,8 +32,11 @@ class VaultWriter(
     private val vault: Vault, private val cacheFile: File? = null, private val onTasksChanged: () -> Unit = {},
     /** How long the vault's note list may be reused before walking every folder again (0: walk every time). */
     private val walkTtlMs: Long = 0,
+    /** Where this device keeps its Quick Task copies (quick-task-guard-v1); null turns the guard off. */
+    guardDir: File? = null,
 ) {
     private val taskPath = "$INBOX/$TASK_FILE"
+    private val guard = guardDir?.let { QuickGuard.Store(it) }
 
     private fun taskFile(create: Boolean): String? = when {
         vault.entry(taskPath) != null -> taskPath
@@ -55,7 +58,52 @@ class VaultWriter(
 
     /** Edits a note (redone on the fresh copy if a sync lands meanwhile) and lets listeners know. */
     private fun edit(path: String, change: (MutableList<String>) -> Unit) {
+        // Quick Task guard: look at the note before the app changes it, so an odd change from outside isn't
+        // taken as good just because the app wrote after it.
+        val g = guard?.takeIf { path == taskPath }
+        val before = g?.let { runCatching { it.seen(VaultIo.read(vault, path)) }.getOrNull() }
         VaultIo.edit(vault, path, change = change)
+        if (g != null) runCatching {
+            val after = VaultIo.read(vault, path)
+            if (before == null && g.pending() == null) g.save(after, true) else g.seen(after)
+        }
+        onTasksChanged()
+    }
+
+    /** Quick Task guard: what looks off right now, if anything. */
+    fun quickAlert(): QuickGuard.Alert? = guard?.let { g -> runCatching { g.seen(taskFile(false)?.let { VaultIo.read(vault, it) }) }.getOrNull() }
+
+    /** Fix it: puts flattened steps back under their parents. */
+    fun fixQuick() {
+        val g = guard ?: return
+        val good = g.lastGood()?.text() ?: return
+        val file = taskFile(false) ?: error("Quick Task not found")
+        VaultIo.edit(vault, file) { ls ->
+            val fixed = QuickGuard.fix(ls, QuickGuard.check(good, ls.joinToString("\n")))
+            ls.clear(); ls.addAll(fixed)
+        }
+        g.save(VaultIo.read(vault, file), true)
+        onTasksChanged()
+    }
+
+    /** It's fine: the note as it is now becomes the good copy. */
+    fun acceptQuick() {
+        val file = taskFile(false) ?: return
+        guard?.save(VaultIo.read(vault, file), true)
+    }
+
+    /** This device's Quick Task copies, newest first. */
+    fun quickCopies(): List<QuickGuard.Copy> = guard?.copies().orEmpty()
+
+    /** Puts [c] back as Quick Task. The note as it is now is kept as a copy first. */
+    fun restoreQuick(c: QuickGuard.Copy) {
+        val g = guard ?: return
+        val text = c.text()
+        val file = taskFile(true) ?: error("Cannot create task note")
+        val current = VaultIo.read(vault, file)
+        if (current.isNotBlank()) g.save(current, false)
+        VaultIo.edit(vault, file) { ls -> ls.clear(); ls.addAll(text.removeSuffix("\n").split("\n")) }
+        g.save(VaultIo.read(vault, file), true)
         onTasksChanged()
     }
 
@@ -75,11 +123,14 @@ class VaultWriter(
 
     /** [listTasks] plus ticked tasks, from the same vault scan. */
     fun listTaskLists(): TaskLists {
-        val quick = taskFile(false)?.let { readLines(it) }
+        val text = taskFile(false)?.let { VaultIo.read(vault, it) }
+        val quick = text?.split("\n")
+        val alert = guard?.let { g -> runCatching { g.seen(text) }.getOrNull() }
         val (open, done) = VaultScan.scan(vault, cacheFile, walkTtlMs)
         return TaskLists(
             (quick?.let { TaskNote.list(it) } ?: emptyList()) + open,
-            (quick?.let { TaskNote.listDone(it) } ?: emptyList()) + done
+            (quick?.let { TaskNote.listDone(it) } ?: emptyList()) + done,
+            alert,
         )
     }
 

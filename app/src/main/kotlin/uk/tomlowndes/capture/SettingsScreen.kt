@@ -30,6 +30,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -83,7 +85,7 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 @Composable
-fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit) {
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit) {
     val ctx = LocalContext.current
     var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
@@ -195,7 +197,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         cardsOn = withContext(Dispatchers.IO) { runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
-    var page by remember { mutableStateOf(SettingsPage.MAIN) }
+    val guardSnack = remember { SnackbarHostState() }
+    var page by remember { mutableStateOf(if (startOnBackups) SettingsPage.BACKUPS else SettingsPage.MAIN) }
     BackHandler(enabled = page != SettingsPage.MAIN) { page = SettingsPage.MAIN }
     val back = { page = SettingsPage.MAIN }
 
@@ -243,6 +246,13 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
                     Segmented(listOf("Under task", "Sheet"), if (inline) 0 else 1) { inline = it == 0; prefs.subtasksInline = inline }
                 }
             }
+            HorizontalDivider(color = Outline)
+            // Quick Task guard (quick-task-guard-v1).
+            Box(Modifier.clickable { page = SettingsPage.BACKUPS }.padding(horizontal = 14.dp)) {
+                SettingRow("Quick Task backups", if (prefs.quickGuard) "Watching for odd changes" else "Off") {
+                    Text("›", fontSize = 18.sp, color = Muted)
+                }
+            }
         }
 
         SectionLabel("Connections")
@@ -259,6 +269,11 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
         Box(Modifier.height(20.dp))
         }
 
+        SettingsPage.BACKUPS -> {
+            SubPageTitle("Quick Task backups", back)
+            QuickBackupsSection(vault, prefs) { msg -> scope.launch { guardSnack.showSnackbar(msg) } }
+            SnackbarHost(guardSnack)
+        }
         SettingsPage.SWIPES -> {
             SubPageTitle("Swipes", back)
             SwipesSection(prefs)
@@ -431,7 +446,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, onPickVault: () -> Unit, onOpen
     }
 }
 
-private enum class SettingsPage { MAIN, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT }
+private enum class SettingsPage { MAIN, BACKUPS, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable
