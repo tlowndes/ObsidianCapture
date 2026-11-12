@@ -1,5 +1,15 @@
 package uk.tomlowndes.capture
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,7 +46,8 @@ import java.time.format.DateTimeFormatter
 
 /** One thing waiting at the top of the Deck: plan, shut down, mood, migrate or a missing vault. */
 internal sealed class NowItem {
-    data class Line(val text: String, val action: String, val warn: Boolean = false, val onClick: () -> Unit) : NowItem()
+    /** [onDismiss]: swiping the line sideways sets it aside (the evening check-in, for tonight). */
+    data class Line(val text: String, val action: String, val warn: Boolean = false, val onDismiss: (() -> Unit)? = null, val onClick: () -> Unit) : NowItem()
     data class Mood(val onPick: (Int) -> Unit) : NowItem()
 }
 
@@ -46,8 +57,19 @@ internal fun NowLine(items: List<NowItem>, index: Int, onNext: () -> Unit) {
     if (items.isEmpty()) return
     val item = items[index % items.size]
     val warn = item is NowItem.Line && item.warn
+    val dismiss = (item as? NowItem.Line)?.onDismiss
+    var dragX by remember(item) { mutableFloatStateOf(0f) }
+    val swipe = if (dismiss == null) Modifier else Modifier
+        .offset { IntOffset(dragX.roundToInt(), 0) }
+        .graphicsLayer { alpha = (1f - kotlin.math.abs(dragX) / 600f).coerceIn(0.2f, 1f) }
+        .pointerInput(item) {
+            detectHorizontalDragGestures(
+                onDragEnd = { if (kotlin.math.abs(dragX) > 120.dp.toPx()) dismiss() else dragX = 0f },
+                onDragCancel = { dragX = 0f },
+            ) { _, delta -> dragX += delta }
+        }
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().padding(bottom = 12.dp).then(swipe).clip(RoundedCornerShape(14.dp))
             .background(if (warn) AmberTint else PrimaryTint)
             .then(if (item is NowItem.Line) Modifier.clickable(onClick = item.onClick) else Modifier)
             .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),

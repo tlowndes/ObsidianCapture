@@ -55,6 +55,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var shutDownOn: String?
         get() = p.getString("shut_down_on", null)
         set(v) { p.edit().putString("shut_down_on", v).apply() }
+    /** The day the evening check-in was swiped off the Deck; it asks again tomorrow. */
+    var journalSkippedOn: String?
+        get() = p.getString("journal_skipped_on", null)
+        set(v) { p.edit().putString("journal_skipped_on", v).apply() }
     /** The day the Today card's "✓ N earlier" row was left open; it closes again tomorrow. */
     var earlierOpenOn: String?
         get() = p.getString("earlier_open_on", null)
