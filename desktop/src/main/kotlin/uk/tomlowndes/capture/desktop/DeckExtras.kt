@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
+import uk.tomlowndes.capture.DayEvents
 import uk.tomlowndes.capture.DayPlan
 import uk.tomlowndes.capture.Deck
 import uk.tomlowndes.capture.Mood
@@ -152,25 +153,58 @@ fun PlanDialog(
     dating?.let { t -> PickDateDialog(today.plusDays(1), onPick = { d -> dating = null; if (d != null) { sorted.add(t.raw); onMove(t, d) } }, onDismiss = { dating = null }) }
 }
 
-/** Today (tidy-v1): the day's calendar events and bills due, one quiet row each. */
+/**
+ * Today (tidy-v1, past-events-v1): the day's calendar events and bills due, one quiet row each. Finished events fold
+ * into one "✓ 2 earlier · Gym, Standup" row that [onTogglePast] opens; the event on [now] is highlighted with NOW.
+ */
 @Composable
-fun TodayRows(events: List<CalEvent>, bills: List<Bill>, onBills: () -> Unit) {
-    val today = LocalDate.now()
+fun TodayRows(
+    events: List<CalEvent>, bills: List<Bill>, onBills: () -> Unit,
+    now: LocalDateTime = LocalDateTime.now(), showPast: Boolean = false, onTogglePast: () -> Unit = {}
+) {
+    val today = now.toLocalDate()
     val time = DateTimeFormatter.ofPattern("HH:mm")
-    val todays = events.filter { it.on(today) }.sortedBy { it.start }
+    val day = DayEvents.of(events, now)
     val due = bills.filter { it.task.due?.isAfter(today) == false }
-    if (todays.isEmpty() && due.isEmpty()) {
+    if (day.allDay.isEmpty() && day.earlier.isEmpty() && day.rest.isEmpty() && due.isEmpty()) {
         Text("Nothing in the calendar today.", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
         return
     }
-    todays.forEach { e ->
+    @Composable
+    fun EventRow(e: CalEvent, past: Boolean = false) {
+        val live = e.isNow(now)
         Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(LinkBlue))
-            Text(e.title, fontSize = 13.5.sp, color = TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (e.allDay) "all day" else "${e.start.format(time)} – ${e.end.format(time)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+        Row(
+            Modifier.fillMaxWidth().background(if (live) PrimaryTint else Color.Transparent).padding(horizontal = 18.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(if (past) Faint else if (live) Primary else LinkBlue))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(e.title, fontSize = 13.5.sp, color = if (past) Faint else TextMain, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (live) Text(
+                    "NOW", fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = OnPrimary,
+                    modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(Primary).padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+            }
+            Text(
+                if (e.allDay) "all day" else "${e.start.format(time)} – ${e.end.format(time)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                color = if (past) Faint else if (live) Primary else Muted
+            )
         }
     }
+    day.allDay.forEach { EventRow(it) }
+    day.foldLabel?.let { label ->
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+        Row(
+            Modifier.fillMaxWidth().hand().clickable(onClick = onTogglePast).padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("✓ $label", fontSize = 12.5.sp, color = Muted, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (showPast) "hide ‹" else "show ›", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+        }
+        if (showPast) day.earlier.forEach { EventRow(it, past = true) }
+    }
+    day.rest.forEach { EventRow(it) }
     due.forEach { b ->
         Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
         Row(Modifier.fillMaxWidth().hand().clickable(onClick = onBills).padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -45,6 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
+import uk.tomlowndes.capture.DayEvents
 import uk.tomlowndes.capture.DayPlan
 import uk.tomlowndes.capture.Highlights
 import uk.tomlowndes.capture.Mood
@@ -120,6 +121,15 @@ fun DeckPane(state: AppState) {
     var planning by remember { mutableStateOf<Boolean?>(null) }
     var splitting by remember { mutableStateOf<TaskItem?>(null) }
     var stuck by remember { mutableStateOf(false) }
+    // The minute, so finished events fold away while the Deck is open (past-events-v1).
+    var clock by remember { mutableStateOf(LocalDateTime.now()) }
+    var showPast by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L + 200L)
+            clock = LocalDateTime.now()
+        }
+    }
 
     fun reload() = scope.launch {
         val v = state.vault ?: return@launch
@@ -198,8 +208,15 @@ fun DeckPane(state: AppState) {
                 stuck = stuck, onSplit = { splitting = it }, onStuck = { stuck = !stuck },
             )
             HomeCard.TODAY -> DeckCard {
-                CardHead("Today", if (data.events.isEmpty()) "calendar from the phone" else "${data.events.count { it.on(today) }} events")
-                TodayRows(data.events, TaskViews.billsDue(data.tasks, today)) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
+                val day = DayEvents.of(data.events, clock)
+                CardHead(
+                    "Today", when {
+                        data.events.isEmpty() -> "calendar from the phone"
+                        day.left == 0 && day.earlier.isNotEmpty() -> "all done"
+                        else -> "${day.left} left"
+                    }
+                )
+                TodayRows(data.events, TaskViews.billsDue(data.tasks, today), { state.taskTag = "#bill"; state.tab = Tab.TASKS }, clock, showPast) { showPast = !showPast }
             }
             HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.tab = Tab.ROUTINES }
             HomeCard.HIGHLIGHTS -> RowCard("✨ Daily highlights", "open ›") { state.openInObsidian(Highlights.PATH) }

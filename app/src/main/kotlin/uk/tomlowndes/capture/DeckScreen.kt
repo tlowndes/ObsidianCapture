@@ -135,6 +135,16 @@ fun DeckScreen(
         weather = withContext(Dispatchers.IO) { runCatching { WeatherFetch.today(ctx, force = refresh > 0) }.getOrNull() }
     }
 
+    // The minute, so finished events fold away without reopening the Deck (past-events-v1).
+    var clock by remember { mutableStateOf(java.time.LocalDateTime.now()) }
+    var showPast by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L + 200L)
+            clock = java.time.LocalDateTime.now()
+        }
+    }
+
     // Proton: sync on start, then every 30 min while Flight Deck is open.
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
@@ -300,7 +310,7 @@ fun DeckScreen(
                             rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
                         }
                     }
-                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings))
+                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, clock, showPast) { showPast = !showPast })
                     if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
                         rows.add {
                             val paid = b.task.raw in paying

@@ -22,6 +22,25 @@ data class CalEvent(
 ) {
     fun isNow(now: LocalDateTime) = !allDay && !now.isBefore(start) && now.isBefore(end)
     fun on(d: LocalDate) = start.isBefore(d.plusDays(1).atStartOfDay()) && (end.isAfter(d.atStartOfDay()) || start.toLocalDate() == d)
+    /** Finished: a timed event whose end has gone. All-day events never count as past during their day. */
+    fun isPast(now: LocalDateTime) = !allDay && !now.isBefore(end)
+}
+
+/** Today's events for the Deck (past-events-v1): all-day first, finished ones folded into [earlier]. */
+data class DayEvents(val allDay: List<CalEvent>, val earlier: List<CalEvent>, val rest: List<CalEvent>) {
+    /** Events still to come or on now, all-day included: the "N left" count. */
+    val left get() = allDay.size + rest.size
+    /** "2 earlier · Gym, Standup" for the fold row, or null when nothing has finished. */
+    val foldLabel: String? get() = if (earlier.isEmpty()) null else "${earlier.size} earlier · " + earlier.joinToString(", ") { it.title }
+
+    companion object {
+        fun of(events: List<CalEvent>, now: LocalDateTime): DayEvents {
+            val todays = events.filter { it.on(now.toLocalDate()) }.sortedBy { it.start }
+            val (all, timed) = todays.partition { it.allDay }
+            val (past, rest) = timed.partition { it.isPast(now) }
+            return DayEvents(all, past, rest)
+        }
+    }
 }
 
 /** Reading ICS feeds, enough for Proton's share links: VEVENT with DTSTART/DTEND/SUMMARY, RRULE and EXDATE. */

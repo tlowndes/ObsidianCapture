@@ -157,7 +157,7 @@ internal fun SectionLabel(text: String, link: String? = null, onLink: (() -> Uni
 internal fun QuietRow(
     icon: String?, text: String, right: String? = null, rightColour: Color = Muted, textColour: Color = TextMain,
     highlight: Boolean = false, onClick: (() -> Unit)? = null, lead: (@Composable () -> Unit)? = null,
-    strike: Boolean = false, trailing: (@Composable () -> Unit)? = null
+    strike: Boolean = false, trailing: (@Composable () -> Unit)? = null, tag: String? = null
 ) {
     Row(
         Modifier.fillMaxWidth().background(if (highlight) PrimaryTint else Color.Transparent)
@@ -166,10 +166,16 @@ internal fun QuietRow(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)
     ) {
         if (lead != null) lead() else if (icon != null) Text(icon, fontSize = 15.sp, modifier = Modifier.width(22.dp))
-        Text(
-            text, fontSize = 14.sp, color = textColour, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-            textDecoration = if (strike) TextDecoration.LineThrough else null
-        )
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text, fontSize = 14.sp, color = textColour, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textDecoration = if (strike) TextDecoration.LineThrough else null
+            )
+            if (tag != null) Text(
+                tag, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = OnPrimary,
+                modifier = Modifier.padding(start = 6.dp).clip(CircleShape).background(Primary).padding(horizontal = 6.dp, vertical = 1.dp)
+            )
+        }
         if (right != null) Text(right, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = rightColour, maxLines = 1)
         trailing?.invoke()
     }
@@ -187,22 +193,35 @@ internal fun RowsCard(rows: List<@Composable () -> Unit>) {
     }
 }
 
-/** Today's rows from the calendar: current event highlighted; Connect or Reconnect when needed. */
+private val Faint = Color(0xFF5C6478)
+
+/**
+ * Today's rows from the calendar (past-events-v1): all-day first, then finished events folded into one
+ * "✓ 2 earlier · Gym, Standup" row that [onTogglePast] opens, then the rest with the current one highlighted.
+ * Connect or Reconnect when needed.
+ */
 internal fun calendarRows(
-    sources: List<CalendarSource>?, cache: List<CalendarCache>, onConnect: () -> Unit
+    sources: List<CalendarSource>?, cache: List<CalendarCache>, onConnect: () -> Unit,
+    now: LocalDateTime = LocalDateTime.now(), showPast: Boolean = false, onTogglePast: () -> Unit = {}
 ): List<@Composable () -> Unit> {
     if (sources == null) return emptyList()
     if (sources.isEmpty()) return listOf<@Composable () -> Unit>({ QuietRow("📅", "Calendar", "Connect ›", Primary, onClick = onConnect) })
     val on = sources.filter { it.enabled }.map { it.id }.toSet()
     val mine = cache.filter { it.id in on }
-    val today = LocalDate.now()
-    val now = LocalDateTime.now()
     val hm = DateTimeFormatter.ofPattern("HH:mm")
-    val events = mine.flatMap { it.events }.filter { it.on(today) }.sortedWith(compareBy({ !it.allDay }, { it.start }))
+    val day = DayEvents.of(mine.flatMap { it.events }, now)
     val out = mutableListOf<@Composable () -> Unit>()
     if (mine.any { !it.ok }) out.add { QuietRow("📅", "Calendar out of date", "Reconnect ›", Amber, onClick = onConnect) }
-    events.forEach { e ->
-        out.add { QuietRow("📅", e.title, if (e.allDay) "all day" else e.start.toLocalTime().format(hm), highlight = e.isNow(now)) }
+    day.allDay.forEach { e -> out.add { QuietRow("📅", e.title, "all day") } }
+    day.foldLabel?.let { label ->
+        out.add { QuietRow("✓", label, if (showPast) "hide ‹" else "show ›", textColour = Muted, onClick = onTogglePast) }
+        if (showPast) day.earlier.forEach { e -> out.add { QuietRow("📅", e.title, e.start.toLocalTime().format(hm), rightColour = Faint, textColour = Faint) } }
+    }
+    day.rest.forEach { e ->
+        val live = e.isNow(now)
+        out.add {
+            QuietRow("📅", e.title, e.start.toLocalTime().format(hm), rightColour = if (live) Primary else Muted, highlight = live, tag = if (live) "NOW" else null)
+        }
     }
     return out
 }
