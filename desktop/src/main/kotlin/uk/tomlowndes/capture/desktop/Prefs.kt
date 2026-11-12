@@ -86,6 +86,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = str("shut_down_on", "")
         set(v) = put("shut_down_on", v)
 
+    /** Deck cards dragged into the left column (deck-drag-v1), by name. Null until the first drag: the default split. */
+    var deckLeft: Set<String>?
+        get() = p.get("deck_left", null)?.split(",")?.filter { it.isNotEmpty() }?.toSet()
+        set(v) = put("deck_left", v?.joinToString(","))
+
     var weatherStrip: Boolean
         get() = p.getBoolean("weather_strip", false)
         set(v) { p.putBoolean("weather_strip", v); p.flush() }
