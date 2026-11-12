@@ -48,8 +48,8 @@ class NanoRouteTest {
         val p = NanoRoute.prompt(listOf(PhoneBrain.Turn(true, "hi"), PhoneBrain.Turn(false, "Hello Tom")), "and you?", LocalDate.of(2026, 11, 11), listOf("#work", "#personal"))
         assertTrue(p.contains("Wednesday 11 November 2026"))
         assertTrue(p.contains("#work #personal"))
-        assertTrue(p.contains("Tom: hi\nJarvis: Hello Tom\n"))
-        assertTrue(p.endsWith("Tom: and you?\nJarvis:"))
+        assertTrue(p.contains("Tom: hi\nTower: Hello Tom\n"))
+        assertTrue(p.endsWith("Tom: and you?\nTower:"))
         val long = NanoRoute.prompt((1..8).map { PhoneBrain.Turn(it % 2 == 1, "x".repeat(1500)) }, "q", LocalDate.of(2026, 11, 11), emptyList())
         assertTrue(long.length < 10_500)
     }

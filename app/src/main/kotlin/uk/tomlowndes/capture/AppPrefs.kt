@@ -220,6 +220,14 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("piholegotchi_address", "").orEmpty()
         set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
 
+    /**
+     * The assistant's name, shown and spoken in the app. Blank becomes Tower.
+     * Kept separate from the jarvis_* keys so an update does not drop the address, token or chats.
+     */
+    var assistantName: String
+        get() = AssistantName.clean(p.getString("assistant_name", null))
+        set(v) { p.edit().putString("assistant_name", AssistantName.clean(v)).apply() }
+
     /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
     var jarvisAddress: String
         get() = p.getString("jarvis_address", "").orEmpty()

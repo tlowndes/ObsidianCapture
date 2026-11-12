@@ -69,7 +69,7 @@ private fun clock(ms: Long) = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefau
 
 /** What one Jarvis exchange needs: the chat so far and the sorted results by message time (kept until the app closes). */
 class JarvisSession(val state: AppState) {
-    var worker by mutableStateOf(state.prefs.jarvisWorker)
+    var worker by mutableStateOf("jarvis")
     var chat by mutableStateOf(DesktopJarvis.chats(state.prefs, worker).firstOrNull() ?: Jarvis.Chat.new())
     var busy by mutableStateOf(false)
     var done by mutableStateOf<List<Jarvis.Done>>(emptyList())
@@ -91,12 +91,13 @@ class JarvisSession(val state: AppState) {
         val r = withContext(Dispatchers.IO) { runCatching(work) }
         busy = false
         r.onFailure { e ->
-            val msg = when ((e as? Jarvis.HttpError)?.code) { 401, 403 -> "The box refused the token. Check Settings › Jarvis."; else -> "Couldn't reach Jarvis: ${e.message}" }
+            val who = state.prefs.assistantName
+            val msg = when ((e as? Jarvis.HttpError)?.code) { 401, 403 -> "$who refused the token. Check Settings."; else -> "Can't reach $who. Is Tailscale on?" }
             add(Jarvis.ChatMsg(false, msg, System.currentTimeMillis(), via = "error"))
         }.onSuccess { reply ->
             mine(reply)?.let(::add)
             val at = System.currentTimeMillis()
-            add(Jarvis.ChatMsg(false, reply.reply, at, via = Jarvis.worker(worker).label))
+            add(Jarvis.ChatMsg(false, reply.reply, at, via = state.prefs.assistantName))
             reply.sorted?.takeIf { !it.isEmpty }?.let { sorted[at] = it }
             if (reply.done.isNotEmpty()) done = done + reply.done
             if (state.prefs.jarvisSpeak && reply.reply.isNotBlank()) DesktopJarvis.speak(reply.reply, state.prefs.jarvisSpeed)
@@ -152,23 +153,7 @@ fun JarvisPane(state: AppState) {
 
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(230.dp).fillMaxHeight().padding(horizontal = 12.dp, vertical = 22.dp)) {
-            Text("WORKERS", fontSize = 11.sp, letterSpacing = 1.4.sp, fontFamily = FontFamily.Monospace, color = Primary, modifier = Modifier.padding(start = 10.dp, bottom = 8.dp))
-            Jarvis.WORKERS.forEach { w ->
-                val on = w.id == s.worker
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                        .hand().clickable { s.pick(w.id) }.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(w.icon, fontSize = 16.sp, modifier = Modifier.width(26.dp))
-                    Column {
-                        Text(w.label, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else TextMain)
-                        Text(w.blurb, fontSize = 10.5.sp, color = Faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-            Box(Modifier.padding(vertical = 12.dp).fillMaxWidth().height(1.dp).background(Outline))
-            Text("${Jarvis.worker(s.worker).label.uppercase()} CHATS", fontSize = 11.sp, letterSpacing = 1.4.sp, fontFamily = FontFamily.Monospace,
+            Text("CHATS", fontSize = 11.sp, letterSpacing = 1.4.sp, fontFamily = FontFamily.Monospace,
                 color = Primary, modifier = Modifier.padding(start = 10.dp, bottom = 6.dp))
             history.take(10).forEach { c ->
                 val on = c.id == s.chat.id
@@ -181,7 +166,7 @@ fun JarvisPane(state: AppState) {
         Box(Modifier.fillMaxHeight().width(1.dp).background(Outline))
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                H1(Jarvis.worker(s.worker).label, 22)
+                H1(state.prefs.assistantName, 22)
                 Spacer(Modifier.weight(1f))
                 val ready = DesktopJarvis.ready(state.prefs)
                 Text(if (!ready) "not set up" else if (Jarvis.isDemo(state.prefs.jarvisAddress)) "demo" else "box",
@@ -195,7 +180,7 @@ fun JarvisPane(state: AppState) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
             if (!DesktopJarvis.ready(state.prefs)) {
                 Column(Modifier.padding(28.dp)) {
-                    Sub("Add your Jarvis box's address and token in Settings › Jarvis, or type demo as the address to try it.")
+                    Sub("Add the server address and token in Settings, or type demo as the address to try it.")
                     PrimaryButton("Open Settings", Modifier.padding(top = 14.dp)) { state.settingsPage = SettingsPage.JARVIS; state.tab = Tab.SETTINGS }
                 }
                 return@Column
@@ -203,7 +188,7 @@ fun JarvisPane(state: AppState) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp), state = list, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item { Spacer(Modifier.height(6.dp)) }
                 items(s.chat.messages, key = { "${it.at}-${it.mine}-${it.text.hashCode()}" }) { m -> Bubble(state, s, m) }
-                if (s.busy) item { Text("${Jarvis.worker(s.worker).label} is thinking…", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                if (s.busy) item { Text("${state.prefs.assistantName} is thinking…", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted) }
                 items(s.done, key = { "done" + it.id }) { d ->
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text("✓ ${d.title}" + (d.detail.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), fontSize = 11.5.sp, fontFamily = FontFamily.Monospace,
@@ -240,7 +225,7 @@ fun JarvisPane(state: AppState) {
                                 else -> false
                             }
                         },
-                        decorationBox = { inner -> Box { if (text.isEmpty()) Text("Ask ${Jarvis.worker(s.worker).label}…", color = Faint, fontSize = 14.sp); inner() } }
+                        decorationBox = { inner -> Box { if (text.isEmpty()) Text("Ask ${state.prefs.assistantName}…", color = Faint, fontSize = 14.sp); inner() } }
                     )
                     Kbd("Enter")
                     if (state.prefs.jarvisHoldSpace) Kbd("hold Space to talk")
@@ -287,7 +272,7 @@ private fun Bubble(state: AppState, s: JarvisSession, m: Jarvis.ChatMsg) {
         val shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
         Column(Modifier.widthIn(max = 640.dp).clip(shape).background(Surface1).border(1.dp, if (m.via == "error") OverdueLine else Outline, shape).padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${m.via ?: "Jarvis"} · ${clock(m.at)}" + if (sorted != null) " · sorted" else "", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                Text("${m.via ?: state.prefs.assistantName} · ${clock(m.at)}" + if (sorted != null) " · sorted" else "", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
                 if (m.via != "error") Text("▶", fontSize = 11.sp, color = Primary, modifier = Modifier.padding(start = 10.dp).clip(CircleShape).background(PrimaryTint)
                     .hand().clickable { DesktopJarvis.speak(m.text, state.prefs.jarvisSpeed) }.padding(horizontal = 9.dp, vertical = 1.dp))
             }
@@ -336,7 +321,7 @@ fun QuickJarvis(state: AppState) {
     var sentAt by remember { mutableStateOf(Long.MAX_VALUE) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { delay(60); runCatching { focus.requestFocus() } }
-    if (!DesktopJarvis.ready(state.prefs)) { Sub("Set up Jarvis in Settings › Jarvis first."); return }
+    if (!DesktopJarvis.ready(state.prefs)) { Sub("Set up the assistant in Settings first."); return }
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(Surface1).border(1.5.dp, if (s.mic.recording) Warn else Primary, shape).padding(horizontal = 16.dp, vertical = 13.dp),
@@ -361,25 +346,19 @@ fun QuickJarvis(state: AppState) {
                     else -> false
                 }
             },
-            decorationBox = { inner -> Box { if (text.isEmpty()) Text("Ask ${Jarvis.worker(s.worker).label}…", color = Muted, fontSize = 17.sp); inner() } }
+            decorationBox = { inner -> Box { if (text.isEmpty()) Text("Ask ${state.prefs.assistantName}…", color = Muted, fontSize = 17.sp); inner() } }
         )
     }
     val reply = s.chat.messages.lastOrNull { !it.mine && it.at >= sentAt }
-    if (s.busy) Text("${Jarvis.worker(s.worker).label} is thinking…", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 12.dp))
+    if (s.busy) Text("${state.prefs.assistantName} is thinking…", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 12.dp))
     reply?.let { m ->
         Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(14.dp)).padding(14.dp)) {
-            Text("${m.via ?: "Jarvis"} · ${clock(m.at)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            Text("${m.via ?: state.prefs.assistantName} · ${clock(m.at)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
             Text(m.text, fontSize = 14.sp, color = TextMain, lineHeight = 20.sp, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-            if (s.sorted[m.at] != null) TextAction("Open in Jarvis to save what it sorted ›") { state.tab = Tab.JARVIS; state.windowVisible = true; state.quickVisible = false }
+            if (s.sorted[m.at] != null) TextAction("Open the assistant to save what it sorted ›") { state.tab = Tab.JARVIS; state.windowVisible = true; state.quickVisible = false }
         }
     }
     Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        val w = Jarvis.worker(s.worker)
-        Text("to ${w.icon} ${w.label} ▾", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary, modifier = Modifier.hand().clickable {
-            val i = Jarvis.WORKERS.indexOfFirst { it.id == s.worker }
-            s.pick(Jarvis.WORKERS[(i + 1) % Jarvis.WORKERS.size].id)
-        })
-        Spacer(Modifier.weight(1f))
         Text("Enter send · hold Space talk · Esc close", fontSize = 12.sp, color = Muted)
     }
 }

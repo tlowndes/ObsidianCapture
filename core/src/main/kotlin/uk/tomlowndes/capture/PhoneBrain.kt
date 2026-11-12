@@ -71,8 +71,8 @@ object PhoneBrain {
 
     private val DAY = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.UK)
 
-    fun system(today: LocalDate, tags: List<String>): String = """
-        You are Jarvis, Tom's assistant in his Flight Deck app, which sits on top of his Obsidian vault. Use UK English.
+    fun system(today: LocalDate, tags: List<String>, name: String = AssistantName.DEFAULT): String = """
+        You are ${AssistantName.clean(name)}, Tom's assistant in his Flight Deck app, which sits on top of his Obsidian vault. Use UK English.
         Keep replies short: one to three sentences unless he asks for more. Replies may be read aloud, so no tables,
         no headings and no long lists. Today is ${today.format(DAY)}.
 
@@ -80,10 +80,8 @@ object PhoneBrain {
         so say it's ready to save rather than saved. Give a due date (YYYY-MM-DD) only when he says when.
         ${if (tags.isEmpty()) "" else "Tags he uses: ${tags.joinToString(" ")}. Pick one only when it clearly fits."}
 
-        Use $HAND_OFF when the request needs something you can't do here: research or anything to look up on the web
-        (research), code, repos or builds (coding), reading or changing notes in his vault beyond adding a task
-        (obsidian), or any other job that needs a computer (oddjobs). Pass the request in his words with any detail
-        from the chat. Afterwards say in a few words who it went to. Never make up what's in his vault, calendar or the news.
+        You can look things up on the web when the answer depends on current facts. Use that only then.
+        Never make up what's in his vault, calendar or the news. You do not edit his notes yourself.
     """.trimIndent()
 
     /**
@@ -180,20 +178,6 @@ object PhoneBrain {
                     .putAdditionalProperty("additionalProperties", JsonValue.from(false))
                     .build()
             ).build(),
-        Tool.builder().name(HAND_OFF).strict(true)
-            .description("Send a job that needs a computer to one of the workers on Tom's server. It answers in the chat, or on the Done line when it's a long job.")
-            .inputSchema(
-                Tool.InputSchema.builder()
-                    .properties(
-                        Tool.InputSchema.Properties.builder()
-                            .putAdditionalProperty("worker", prop("type" to "string", "enum" to BOX_WORKERS))
-                            .putAdditionalProperty("request", prop("type" to "string", "description" to "What to do, with any detail it needs"))
-                            .build()
-                    )
-                    .required(listOf("worker", "request"))
-                    .putAdditionalProperty("additionalProperties", JsonValue.from(false))
-                    .build()
-            ).build(),
     )
 
     private fun base(model: String, system: String): MessageCreateParams.Builder = MessageCreateParams.builder()
@@ -214,10 +198,12 @@ object PhoneBrain {
      * Blocking: run it off the main thread. Throws the SDK's exceptions when Claude can't be reached.
      */
     fun chat(
-        key: String, model: String, turns: List<Turn>, today: LocalDate, tags: List<String>, onText: (String) -> Unit,
+        key: String, model: String, turns: List<Turn>, today: LocalDate, tags: List<String>,
+        name: String = AssistantName.DEFAULT, onText: (String) -> Unit,
     ): Answer {
-        val params = base(model, system(today, tags)).apply {
+        val params = base(model, system(today, tags, name)).apply {
             tools().forEach { addTool(it) }
+            addTool(WebSearchTool20250305.builder().maxUses(3).build())
             history(turns).forEach { if (it.mine) addUserMessage(it.text) else addAssistantMessage(it.text) }
         }
         val tasks = ArrayList<SortedTask>()
@@ -310,7 +296,8 @@ under 50 characters, starting with a verb; empty when there are none. No emoji, 
     }
 
     /** A chat as plain text for [summarise]. */
-    fun transcript(turns: List<Turn>): String = turns.joinToString("\n") { (if (it.mine) "Tom: " else "Jarvis: ") + it.text.trim() }
+    fun transcript(turns: List<Turn>, name: String = AssistantName.DEFAULT): String =
+        turns.joinToString("\n") { (if (it.mine) "Tom: " else "${AssistantName.clean(name)}: ") + it.text.trim() }
 
     /**
      * A note's slip without asking Claude: the first heading (or [name]) as the title, open "- [ ]" lines as to-dos,
@@ -369,7 +356,7 @@ under 50 characters, starting with a verb; empty when there are none. No emoji, 
     }
 
     private const val SORT_SYSTEM = """
-You answer Tom, or you sort something he wants kept in his Obsidian vault. Today is %s. UK English.
+You are %s, Tom's assistant. You answer him, or you sort something he wants kept in his Obsidian vault. Today is %s. UK English.
 If this is a question or a request that is not about keeping a task, an idea or a note, answer only this JSON:
 {"ramble": false, "reply": "one to three short sentences"}
 If he wants something kept, answer only this JSON:
@@ -382,9 +369,9 @@ Do not invent anything. No top-level # heading. Leave tasks out of the note when
 Never say you have saved anything. He confirms it first."""
 
     /** One Haiku call. A long message is either answered or turned into Check and save, not both. Blocking. */
-    fun sortOrAnswer(key: String, text: String, today: LocalDate): Direct {
+    fun sortOrAnswer(key: String, text: String, today: LocalDate, name: String = AssistantName.DEFAULT): Direct {
         val params = MessageCreateParams.builder()
-            .model(FAST).maxTokens(2000L).system(SORT_SYSTEM.format(today.format(DAY)).trim())
+            .model(FAST).maxTokens(2000L).system(SORT_SYSTEM.format(AssistantName.clean(name), today.format(DAY)).trim())
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
             .addUserMessage(text.trim())
             .build()
@@ -398,7 +385,7 @@ Never say you have saved anything. He confirms it first."""
     }
 
     private const val RESEARCH_SYSTEM = """
-You are Jarvis, looking something up for Tom. UK English. Today is %s.
+You are %s, looking something up for Tom. UK English. Today is %s.
 Use web search when the answer depends on current facts. Write a few short sentences, then up to five bullets.
 Say plainly when you are not sure. Do not invent a source. Do not edit his notes.
 If he also asked to keep a task or a note, add nothing about saving in the prose, and finish with one JSON object
@@ -409,9 +396,9 @@ using the same task and note shape as a ramble sort. Otherwise do not add JSON."
      * Research on Haiku, with a few web searches. Blocking. Gives up after [RESEARCH_TIMEOUT_S] seconds.
      * A trailing sorter JSON becomes [Direct.sorted] so Check and save can keep it.
      */
-    fun research(key: String, text: String, today: LocalDate): Direct {
+    fun research(key: String, text: String, today: LocalDate, name: String = AssistantName.DEFAULT): Direct {
         val params = MessageCreateParams.builder()
-            .model(FAST).maxTokens(2000L).system(RESEARCH_SYSTEM.format(today.format(DAY)).trim())
+            .model(FAST).maxTokens(2000L).system(RESEARCH_SYSTEM.format(AssistantName.clean(name), today.format(DAY)).trim())
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
             .addTool(WebSearchTool20250305.builder().maxUses(3).build())
             .addUserMessage(text.trim())
@@ -426,8 +413,47 @@ using the same task and note shape as a ramble sort. Otherwise do not add JSON."
     }
 
     /** A short line for a call that ran out of time. */
-    fun timedOut(e: Throwable, seconds: Long): String? {
+    fun timedOut(e: Throwable, seconds: Long, name: String = AssistantName.DEFAULT): String? {
         val blob = (e.javaClass.simpleName + " " + e.message.orEmpty())
-        return if (blob.contains("timeout", ignoreCase = true)) "Claude didn't answer within $seconds seconds. It's kept on the phone and will be tried again later." else null
+        return if (blob.contains("timeout", ignoreCase = true))
+            "${AssistantName.clean(name)} didn't answer within $seconds seconds. It's kept on the phone and will be tried again later."
+        else null
+    }
+
+    /** One plain answer, for Break it down, a print summary, or the day's brief. Blocking. */
+    fun complete(key: String, user: String, system: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+        val params = MessageCreateParams.builder()
+            .model(model).maxTokens(2000L).system(system)
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .addUserMessage(user)
+            .build()
+        val c = client(key, seconds)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val text = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("").trim()
+        return Direct(text, null, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /**
+     * What to show when a call fails. [viaServer] is the Oracle box: only then is Tailscale the thing to check.
+     */
+    fun failure(name: String, e: Throwable, viaServer: Boolean, seconds: Long = CHAT_TIMEOUT_S): String {
+        val who = AssistantName.clean(name)
+        if (!viaServer) {
+            timedOut(e, seconds, who)?.let { return it }
+            return when (e) {
+                is Refused -> e.message ?: "$who couldn't help with that one."
+                is com.anthropic.errors.UnauthorizedException, is com.anthropic.errors.PermissionDeniedException ->
+                    "$who refused the key. Check it in Settings."
+                is com.anthropic.errors.RateLimitException -> "$who is busy right now. Try again in a moment."
+                is com.anthropic.errors.AnthropicIoException -> "Can't reach $who. Are you online?"
+                else -> "Can't reach $who. Are you online?"
+            }
+        }
+        return when {
+            e is Jarvis.HttpError && (e.code == 401 || e.code == 403) -> "$who refused the token. Check it in Settings."
+            e is Jarvis.HttpError -> e.message ?: "$who returned an error."
+            else -> "Can't reach $who. Is Tailscale on?"
+        }
     }
 }

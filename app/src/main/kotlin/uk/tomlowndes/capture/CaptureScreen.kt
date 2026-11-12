@@ -86,7 +86,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
 
     val pill: @Composable () -> Unit = {
         Column {
-            PillSwitch(listOf("Task", "Read later", "Jarvis"), mode) { mode = it; prefs.captureMode = it }
+            PillSwitch(listOf("Task", "Read later", prefs.assistantName), mode) { mode = it; prefs.captureMode = it }
             if (waiting > 0) Text(
                 if (waiting == 1) "1 thing waiting to save or send. It will be tried again on its own."
                 else "$waiting things waiting to save or send. They will be tried again on their own.",

@@ -53,10 +53,13 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val address = remember { prefs.jarvisAddress }
-    val token = remember { SecretStore(ctx).jarvisToken.orEmpty() }
+    val secrets = remember { SecretStore(ctx) }
+    val who = prefs.assistantName
+    val address = prefs.jarvisAddress
+    val token = secrets.jarvisToken.orEmpty()
     val demo = Jarvis.isDemo(address)
-    val ready = demo || (address.isNotBlank() && token.isNotBlank())
+    val api = prefs.phoneBrain && !secrets.claudeKey.isNullOrBlank() && !demo
+    val ready = demo || api || (address.isNotBlank() && token.isNotBlank())
     var level by remember { mutableIntStateOf(2) }
     var asks by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
@@ -71,12 +74,20 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
         val r = withContext(Dispatchers.IO) {
             runCatching {
                 if (demo) Breakdown.demo(name, level)
-                else Breakdown.parse(Jarvis.sendText(address, token, Breakdown.prompt(name, level), "obsidian").reply)
+                else {
+                    val prompt = Breakdown.prompt(name, level)
+                    val reply = if (api) {
+                        val d = PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.")
+                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                        d.reply
+                    } else Jarvis.sendText(address, token, prompt, "jarvis").reply
+                    Breakdown.parse(reply)
+                }
             }
         }
         loading = false
-        r.onSuccess { steps.clear(); steps.addAll(it); off.clear(); if (it.isEmpty()) error = "Jarvis didn't send back a list. Try again." }
-        r.onFailure { error = if (it is Jarvis.HttpError) it.message else "Can't reach Jarvis. Is Tailscale on?" }
+        r.onSuccess { steps.clear(); steps.addAll(it); off.clear(); if (it.isEmpty()) error = "$who didn't send back a list. Try again." }
+        r.onFailure { error = PhoneBrain.failure(who, it, viaServer = !api) }
     }
 
     ModalBottomSheet(onDismissRequest = onDone, sheetState = sheet, containerColor = Surface1) {
@@ -90,11 +101,11 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
                 }
             }
             when {
-                !ready -> Text("Set up Jarvis in Settings first (address and token), or type demo as the address to try it.",
+                !ready -> Text("Turn on Claude from the phone in Settings, or add the server there. Type demo as the address to try it.",
                     fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 10.dp))
                 loading -> Row(Modifier.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.width(18.dp))
-                    Text("Jarvis is thinking…", fontSize = 13.sp, color = Muted)
+                    Text("$who is thinking…", fontSize = 13.sp, color = Muted)
                 }
                 error != null -> Text(error!!, fontSize = 13.sp, color = Warn, modifier = Modifier.padding(vertical = 10.dp))
                 else -> ListCard {

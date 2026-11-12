@@ -43,7 +43,7 @@ HOME = Path.home()
 
 # Each worker runs Claude in its own folder with its own instructions. Override any of this with --workers.
 DEFAULT_WORKERS = {
-    "jarvis": {"cwd": str(HOME / "jarvis"), "prompt": "You are Jarvis, Tom's general assistant."},
+    "jarvis": {"cwd": str(HOME / "jarvis"), "prompt": "You are Tom's assistant. One voice: chat, notes, research and small jobs."},
     "coding": {"cwd": str(HOME / "code"), "prompt": "You help Tom with code in this folder."},
     "obsidian": {"cwd": str(HOME / "vault"), "prompt": "This folder is Tom's Obsidian vault. You may read it. Never edit it. When he wants something kept, end with the Check and save JSON."},
     "research": {"cwd": str(HOME / "research"), "prompt": "Research what Tom asks and write up what you find.", "background": True,
@@ -326,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
             AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             if not out.exists():
                 try:
-                    speak("Hello Tom, I'm Jarvis. This is how I sound.", out, m.group(1))
+                    speak("Hello Tom. This is how I sound.", out, m.group(1))
                 except Exception as e:  # noqa: BLE001
                     self.send_json(500, {"error": f"sample failed: {e}"})
                     return

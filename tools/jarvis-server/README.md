@@ -1,6 +1,6 @@
-# Jarvis voice server
+# Assistant server
 
-The other end of the app's Jarvis tab. Runs on the Oracle box, reachable only over Tailscale.
+The Oracle end of the assistant, used when Claude from the phone is off. Runs on the Oracle box, reachable only over Tailscale. The app shows one assistant; the name (Tower, unless changed in Settings) lives on the phone.
 
 For each recording it turns speech into text (faster-whisper), runs `claude -p` in the picked worker's folder,
 turns the reply into speech (Piper) and sends back `{"transcript", "reply", "audio_url"}`. Typed messages come in on
@@ -24,7 +24,7 @@ Done line shows it when it's finished.
    cd .. && cp workers.example.json workers.json
    ```
 4. Token: `echo "JARVIS_TOKEN=$(openssl rand -hex 24)" > ~/.config/jarvis.env && chmod 600 ~/.config/jarvis.env`.
-   Paste the same token into the app (Settings › Jarvis › Token). Never put it in the vault or the repo.
+   Paste the same token into the app (Settings › Advanced › Server). Never put it in the vault or the repo.
 5. Service:
    ```
    mkdir -p ~/.config/systemd/user && cp jarvis.service ~/.config/systemd/user/

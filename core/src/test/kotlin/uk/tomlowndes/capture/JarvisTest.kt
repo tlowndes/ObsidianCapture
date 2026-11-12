@@ -112,7 +112,7 @@ class JarvisTest {
     @Test fun `an unreachable box pings as not ok and demo needs no server`() {
         assertFalse(Jarvis.ping("http://127.0.0.1:1", "t").ok)
         assertTrue(Jarvis.ping("demo", "").ok)
-        assertTrue(Jarvis.demoReply("research", 3.25).reply.contains("Research got your 3.3 second"))
+        assertTrue(Jarvis.demoReply("research", 3.25).reply.contains("got your 3.3 second"))
         assertEquals("jarvis", Jarvis.worker("unknown").id)
     }
 
@@ -181,7 +181,7 @@ class JarvisTest {
 
     @Test fun `demo sends back a note for a long ramble only`() {
         assertNull(Jarvis.demoText("jarvis", "add milk").sorted)
-        assertEquals("Jarvis demo note", Jarvis.demoText("jarvis", (1..30).joinToString(" ") { "word" }).sorted!!.noteTitle)
+        assertEquals("Demo note", Jarvis.demoText("jarvis", (1..30).joinToString(" ") { "word" }).sorted!!.noteTitle)
         assertNull(Jarvis.demoReply("jarvis", 4.0).sorted)
         assertTrue(Jarvis.demoReply("jarvis", 40.0).sorted != null)
     }

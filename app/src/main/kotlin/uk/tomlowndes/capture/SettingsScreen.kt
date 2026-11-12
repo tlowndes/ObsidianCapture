@@ -172,7 +172,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         var draft by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { editingJv = false }, containerColor = Surface1,
-            title = { Text("Jarvis token") },
+            title = { Text("Server token") },
             text = {
                 OutlinedTextField(draft, { draft = it }, singleLine = true, colors = fieldColors(),
                     visualTransformation = PasswordVisualTransformation(), placeholder = { Text("Bearer token from the Oracle box") })
@@ -207,6 +207,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         // Settings tidy-v1: one short main page, the technical bits on their own pages.
         SettingsPage.MAIN -> {
         ScreenTitle("Settings")
+        SectionLabel("Vault & sync")
         // Vault status on top: can the app see your notes?
         val vaultName = vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()).substringAfterLast(':').substringAfterLast('/') }
         Row(
@@ -255,16 +256,19 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             }
         }
 
-        SectionLabel("Connections")
-        val jvSet = prefs.jarvisAddress.isNotBlank() && (jvMasked != null || prefs.jarvisAddress.trim() == "demo")
+        SectionLabel("Assistant")
+        RowsCard(listOf(
+            { QuietRow("🎙", prefs.assistantName, (if (brainOn && ckMasked != null) "Claude on this phone" else "Claude off") + " ›", onClick = { page = SettingsPage.JARVIS }) },
+        ))
+
+        SectionLabel("Advanced")
         val latest = AppUpdate.release?.version ?: prefs.updateLatest?.removePrefix("v")
         val newer = latest != null && Updater.isNewer(latest, installed)
         RowsCard(listOf(
-            { QuietRow("🎙", "Jarvis", (if (jvSet) "● set up" else "not set up") + " ›", if (jvSet) Green else Muted, onClick = { page = SettingsPage.JARVIS }) },
-            { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "● on" else "off") + " ›",
-                if (prefs.piholegotchiAddress.isNotBlank()) Green else Muted, onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
+            { QuietRow("🗄", "Folders", "projects, images, the notes the app uses ›", onClick = { page = SettingsPage.VAULT }) },
+            { QuietRow("🛰", "Server", "Oracle, Tailscale, and sync fallback ›", onClick = { page = SettingsPage.ADVANCED }) },
+            { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "on" else "off") + " ›", onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
             { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },
-            { QuietRow("🗄", "Vault & sync", (if (prefs.serverFallback) "fallback on" else "fallback off") + " ›", onClick = { page = SettingsPage.VAULT }) },
         ))
         Box(Modifier.height(20.dp))
         }
@@ -291,54 +295,19 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             PiholegotchiSection(prefs)
         }
         SettingsPage.JARVIS -> {
-            SubPageTitle("Jarvis", back)
-        GroupLabel("Brain")
-        SettingRow("📱 Phone brain", "Gemini Nano · " + if (nanoOn) PhoneNano.label(nanoState) else "off") {
-            AppSwitch(nanoOn) { nanoOn = it; prefs.nanoBrain = it }
-        }
-        SettingRow("🛰 Send to the box when needed", "Vault, research, coding, long rambles") {
-            AppSwitch(nanoToBox) { nanoToBox = it; prefs.nanoToBox = it }
-        }
-        Text(
-            "Nano is free and works offline. The box is used only when the ask needs it, or when you tap Ask the box." +
-                if (nanoState == PhoneNano.State.GETTING_READY) " Until Nano is ready, everything goes to the box." else "",
-            fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 4.dp)
+            SubPageTitle(prefs.assistantName, back)
+        var nameDraft by remember { mutableStateOf(prefs.assistantName) }
+        SettingRow("Name", "Shown on buttons, in messages, and when replies are read out. Blank goes back to Tower.") { }
+        OutlinedTextField(
+            nameDraft,
+            { nameDraft = it.take(AssistantName.MAX + 8); prefs.assistantName = it },
+            singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
+            placeholder = { Text(AssistantName.DEFAULT) }
         )
-        Spacer(Modifier.height(8.dp))
-        GroupLabel("Voice")
-        SettingRow("Phone speech-to-text", "Android hears you, so messages don't wait on Whisper") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }
-        SettingRow("Phone voice", "Android reads replies. Off keeps the server's voice (slower).") { AppSwitch(phVoice) { phVoice = it; prefs.phoneVoice = it } }
-        Spacer(Modifier.height(8.dp))
-        GroupLabel("Oracle box")
-        PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
-        Text(
-            "Tailscale name of the Oracle box (Tailscale on). Type demo to try without a server.",
-            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
-        )
-        SettingRow("Token", jvMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
-            TextButton(onClick = { editingJv = true }) { Text(if (jvMasked == null) "Add" else "Change", color = Primary) }
-        }
-        SettingRow("Test connection", jvPing?.message ?: if (jvTesting) "Checking…" else null) {
-            TextButton(onClick = {
-                jvTesting = true; jvPing = null
-                scope.launch {
-                    jvPing = withContext(Dispatchers.IO) { Jarvis.ping(prefs.jarvisAddress, secrets.jarvisToken.orEmpty()) }
-                    jvTesting = false
-                }
-            }, enabled = !jvTesting) { Text("Test", color = Primary) }
-        }
-        SettingRow("Play replies aloud", "When you talk. Typed messages stay quiet.") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
-        if (!phVoice) SettingRow("Voice", "Made on the server. Tap to hear each one.") {
-            TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
-        }
-        Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
-        PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
-            jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
-        }
-        Spacer(Modifier.height(16.dp))
-        GroupLabel("Advanced")
-        SettingRow("⚡ Claude from the phone", if (ckMasked == null) "Off until you add a key and turn this on. It costs money."
-            else "Haiku answers chat, sorts rambles and does research. Off until you turn it on. It costs money. Nano and the Oracle box stay available.") {
+        Text("Up to ${AssistantName.MAX} letters. It is ${prefs.assistantName} just now.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        GroupLabel("Claude from the phone")
+        SettingRow("Use Claude", if (ckMasked == null) "Off until you add a key and turn this on. It costs money."
+            else "Chat, sorting, research, steps and summaries. Off until you turn it on. It costs money.") {
             AppSwitch(brainOn && ckMasked != null) { brainOn = it; prefs.phoneBrain = it; if (it && ckMasked == null) editingCk = true }
         }
         SettingRow("Claude key", ckMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
@@ -346,12 +315,33 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         }
         Text("Model", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
         PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
-        Text(if (clever) "Clever is Claude Sonnet, for everyday chat only. Sorting and research stay on Haiku." else "Fast is Claude Haiku. Sorting and research use it too. A quiet month stays very cheap.",
+        Text(if (clever) "Clever is for everyday chat. Sorting, research, steps and summaries stay on Fast." else "Fast is the usual model. A quiet month stays very cheap.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
         SettingRow("This month", "Worked out on the phone from what Claude reports") {
-            Text(remember { prefs.brainSpend.label() }, fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
+            Text(prefs.brainSpend.label(), fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(8.dp))
+        GroupLabel("Voice")
+        SettingRow("Phone speech-to-text", "The phone hears you, so talking does not need the server") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }
+        SettingRow("Phone voice", "The phone reads replies. Off uses the server's voice, which is slower.") { AppSwitch(phVoice) { phVoice = it; prefs.phoneVoice = it } }
+        SettingRow("Play replies aloud", "When you talk. Typed messages stay quiet.") { AppSwitch(jvSpeak) { jvSpeak = it; prefs.jarvisSpeak = it } }
+        Text("Playback speed", fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+        PillSwitch(Jarvis.SPEEDS.map(Jarvis::speedLabel), Jarvis.SPEEDS.indexOfFirst { it == jvSpeed }.coerceAtLeast(0)) {
+            jvSpeed = Jarvis.SPEEDS[it]; prefs.jarvisSpeed = jvSpeed
+        }
+        Spacer(Modifier.height(8.dp))
+        GroupLabel("When Claude is off")
+        SettingRow("On-phone model", "Free, and works offline. " + if (nanoOn) PhoneNano.label(nanoState) else "Off") {
+            AppSwitch(nanoOn) { nanoOn = it; prefs.nanoBrain = it }
+        }
+        SettingRow("Send hard questions to the server", "Only when Claude from the phone is off") {
+            AppSwitch(nanoToBox) { nanoToBox = it; prefs.nanoToBox = it }
+        }
+        Text(
+            "One assistant either way. Nano and the server are fallbacks, not extra people." +
+                if (nanoState == PhoneNano.State.GETTING_READY) " Nano is still getting ready." else "",
+            fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 4.dp)
+        )
         }
         SettingsPage.UPDATES -> {
             SubPageTitle("Updates", back)
@@ -391,15 +381,33 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         }, modifier = Modifier.fillMaxWidth()) { Text("Check now", color = Primary) }
 
         }
-        SettingsPage.VAULT -> {
-            SubPageTitle("Vault & sync", back)
-        SettingRow("Vault folder", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
-            TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
+        SettingsPage.ADVANCED -> {
+            SubPageTitle("Server", back)
+        GroupLabel("Oracle box")
+        PathField("Address", prefs.jarvisAddress) { prefs.jarvisAddress = it; jvPing = null }
+        Text("Tailscale name, like oracle.something.ts.net. Type demo to try without a server.",
+            fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
+        SettingRow("Token", jvMasked?.let { "$it · kept in secure storage" } ?: "Not set") {
+            TextButton(onClick = { editingJv = true }) { Text(if (jvMasked == null) "Add" else "Change", color = Primary) }
         }
+        SettingRow("Test connection", jvPing?.message ?: if (jvTesting) "Checking…" else "Uses the address and token") {
+            TextButton(onClick = {
+                jvTesting = true; jvPing = null
+                scope.launch {
+                    jvPing = withContext(Dispatchers.IO) { Jarvis.ping(prefs.jarvisAddress, secrets.jarvisToken.orEmpty()) }
+                    jvTesting = false
+                }
+            }, enabled = !jvTesting) { Text("Test", color = Primary) }
+        }
+        if (!phVoice) SettingRow("Server voice", "Used when the phone voice is off") {
+            TextButton(onClick = { jvPickVoice = true }) { Text((jvVoiceLabel.ifBlank { "Server default" }) + " ›", color = Muted) }
+        }
+        Text("Used only when Claude from the phone is off. One assistant either way.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 8.dp))
         var fallbackOn by remember { mutableStateOf(prefs.serverFallback) }
         var staleMin by remember { mutableStateOf(prefs.fallbackStaleMin) }
         var checking by remember { mutableStateOf(false) }
-        SettingRow("Server fallback", "Off unless you turn it on. Then, if this phone hasn't synced for a while, read and save through the Jarvis server's copy instead.") {
+        GroupLabel("Sync fallback")
+        SettingRow("Server fallback", "Off unless you turn it on. Then a phone that has not synced for a while reads and saves through the server's copy.") {
             AppSwitch(fallbackOn) { on ->
                 fallbackOn = on; prefs.serverFallback = on
                 vault?.let { uri -> scope.launch { withContext(Dispatchers.IO) { VaultRoute.check(ctx, uri, force = true) } } }
@@ -429,8 +437,14 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
                     scope.launch { withContext(Dispatchers.IO) { VaultRoute.check(ctx, uri, force = true) }; checking = false }
                 }) { Text(if (checking) "Checking…" else "Check now", color = Primary) }
             }
-            Text("Uses the Jarvis address and token above. Nothing new to type.", fontSize = 12.sp, color = Muted,
+            Text("Uses the server address and token above.", fontSize = 12.sp, color = Muted,
                 modifier = Modifier.padding(bottom = 6.dp))
+        }
+        }
+        SettingsPage.VAULT -> {
+            SubPageTitle("Folders", back)
+        SettingRow("Vault folder", vault?.let { Uri.decode(it.lastPathSegment ?: it.toString()) } ?: "Not selected") {
+            TextButton(onClick = onPickVault) { Text(if (vault == null) "Choose" else "Change", color = Primary) }
         }
         SettingRow("Notes used") { TextButton(onClick = { notesOpen = !notesOpen }) { Text(if (notesOpen) "⌄" else "›", color = Muted) } }
         if (notesOpen) {
@@ -446,7 +460,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
     }
 }
 
-private enum class SettingsPage { MAIN, BACKUPS, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT }
+private enum class SettingsPage { MAIN, BACKUPS, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT, ADVANCED }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable

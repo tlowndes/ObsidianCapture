@@ -116,10 +116,10 @@ object Summary {
     fun demo(length: Length, chat: Boolean): String {
         val head = if (chat) "Title: Garage plan\n" else ""
         return head + when (length) {
-            Length.SHORT -> "A short summary goes here, two sentences at most. This is the demo, so set up Jarvis for the real thing."
+            Length.SHORT -> "A short summary goes here, two sentences at most. This is the demo, so turn on Claude from the phone for the real thing."
             Length.BULLETS -> "- The first main point\n- The second point\n- One more worth keeping\n- Next: the first thing to do"
             Length.LONGER -> "This is what a longer summary looks like on the slip. It runs to a short paragraph of a few sentences. " +
-                "Jarvis keeps it plain so it prints cleanly. Set up Jarvis in Settings to get a real one."
+                "It stays plain so it prints cleanly. Turn on Claude from the phone in Settings to get a real one."
         }
     }
 

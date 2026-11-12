@@ -148,10 +148,14 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var dayWeather by remember { mutableStateOf<WeatherSummary?>(null) }
     var dayWeatherFor by remember { mutableStateOf<LocalDate?>(null) }
     var printer by remember { mutableStateOf(SlipPrinter.saved(ctx)) }
-    val jarvisAddress = remember { AppPrefs(ctx).jarvisAddress }
-    val jarvisToken = remember { SecretStore(ctx).jarvisToken.orEmpty() }
+    val prefs = remember { AppPrefs(ctx) }
+    val secrets = remember { SecretStore(ctx) }
+    val who = prefs.assistantName
+    val jarvisAddress = prefs.jarvisAddress
+    val jarvisToken = secrets.jarvisToken.orEmpty()
     val jarvisDemo = Jarvis.isDemo(jarvisAddress)
-    val jarvisReady = jarvisDemo || (jarvisAddress.isNotBlank() && jarvisToken.isNotBlank())
+    val api = prefs.phoneBrain && !secrets.claudeKey.isNullOrBlank() && !jarvisDemo
+    val jarvisReady = jarvisDemo || api || (jarvisAddress.isNotBlank() && jarvisToken.isNotBlank())
     /** Jarvis's In brief lines; null until asked, or when it couldn't be reached. */
     var brief by remember { mutableStateOf<String?>(null) }
     var briefFor by remember { mutableStateOf<LocalDate?>(null) }
@@ -194,20 +198,26 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         val src = sources ?: return@LaunchedEffect
         if (dayWeatherFor != day) return@LaunchedEffect
         if (!opts.brief || (brief != null && briefFor == day)) return@LaunchedEffect
-        if (!jarvisReady) { briefNote = "Set up Jarvis in Settings to use this"; return@LaunchedEffect }
+        if (!jarvisReady) { briefNote = "Set up $who in Settings to use this"; return@LaunchedEffect }
         brief = null
-        briefNote = "Asking Jarvis…"
+        briefNote = "Asking $who…"
         val forDay = day
         val r = withContext(Dispatchers.IO) {
             runCatching {
-                if (jarvisDemo) Summary.demoBrief(forDay)
-                else Summary.brief(Jarvis.sendText(jarvisAddress, jarvisToken,
-                    Summary.dayPrompt(Slip.build(forDay, src.tasks, src.events, dayWeather, SlipOptions(), today)), "obsidian").reply)
+                val prompt = Summary.dayPrompt(Slip.build(forDay, src.tasks, src.events, dayWeather, SlipOptions(), today))
+                val reply = when {
+                    jarvisDemo -> null
+                    api -> PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.").also {
+                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
+                    }.reply
+                    else -> Jarvis.sendText(jarvisAddress, jarvisToken, prompt, "jarvis").reply
+                }
+                if (jarvisDemo) Summary.demoBrief(forDay) else Summary.brief(reply.orEmpty())
             }
         }
         if (forDay != day) return@LaunchedEffect
         brief = r.getOrNull(); briefFor = forDay
-        briefNote = if (brief != null) null else "Couldn't reach Jarvis, so the slip prints without it"
+        briefNote = if (brief != null) null else "Couldn't reach $who, so the slip prints without it"
     }
     LaunchedEffect(sources, opts, brief, day, dayWeatherFor, large) {
         val src = sources ?: return@LaunchedEffect
@@ -323,7 +333,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             Spacer(Modifier.height(4.dp))
 
             GroupLabel("On the slip")
-            SettingRow("In brief", briefNote ?: if (day == today) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines") { AppSwitch(opts.brief) { set(opts.copy(brief = it)) } }
+            SettingRow("In brief", briefNote ?: if (day == today) "$who sums up the day in 3 lines" else "$who sums up $dayName in 3 lines") { AppSwitch(opts.brief) { set(opts.copy(brief = it)) } }
             SettingRow("Weather", when {
                 day != today && dayWeatherFor == day && dayWeather == null ->
                     if (day.isAfter(today.plusDays(Weather.DAYS - 1L))) "No forecast that far out" else "No forecast for $dayName yet"

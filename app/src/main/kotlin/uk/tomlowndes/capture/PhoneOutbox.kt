@@ -112,7 +112,7 @@ object PhoneOutbox {
             if (answeredAlready(chat, text)) return true
             val secrets = SecretStore(ctx)
             val claude = secrets.claudeKey.orEmpty()
-            val direct = prefs.phoneBrain && claude.isNotBlank() && worker in API_WORKERS && !Jarvis.isDemo(prefs.jarvisAddress)
+            val direct = prefs.phoneBrain && claude.isNotBlank() && !Jarvis.isDemo(prefs.jarvisAddress)
             val reply = if (direct) directReply(prefs, claude, worker, text) else boxReply(prefs, secrets, worker, text, chat.id)
             reply ?: return false
             remember(prefs, worker, text, reply.first, reply.second)
@@ -127,15 +127,15 @@ object PhoneOutbox {
     private fun directReply(prefs: AppPrefs, key: String, worker: String, text: String): Triple<String, SortResult?, List<PhoneBrain.Handoff>>? {
         val today = LocalDate.now()
         val direct = when {
-            worker == "research" -> PhoneBrain.research(key, text, today)
-            worker == "obsidian" || PhoneBrain.worthSorting(text) -> PhoneBrain.sortOrAnswer(key, text, today)
+            worker == "research" -> PhoneBrain.research(key, text, today, prefs.assistantName)
+            PhoneBrain.worthSorting(text) -> PhoneBrain.sortOrAnswer(key, text, today, prefs.assistantName)
             else -> null
         }
         if (direct != null) {
             prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
             return Triple(direct.reply, direct.sorted, emptyList())
         }
-        val answer = PhoneBrain.chat(key, PhoneBrain.model(prefs.brainClever), listOf(PhoneBrain.Turn(true, text)), today, listOf("#work", "#personal")) {}
+        val answer = PhoneBrain.chat(key, PhoneBrain.model(prefs.brainClever), listOf(PhoneBrain.Turn(true, text)), today, listOf("#work", "#personal"), prefs.assistantName) {}
         prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(answer.model, answer.inputTokens, answer.outputTokens))
         val sorted = answer.tasks.takeIf { it.isNotEmpty() }?.let { SortResult(it, emptyList(), null) }
         return Triple(answer.text.ifBlank { "Done." }, sorted, answer.handoffs)
@@ -181,6 +181,4 @@ object PhoneOutbox {
 
     private fun merge(old: SortResult?, next: SortResult): SortResult =
         if (old != null && old.note == null && next.note == null) old.copy(tasks = old.tasks + next.tasks, ideas = old.ideas + next.ideas) else old ?: next
-
-    private val API_WORKERS = setOf("jarvis", "obsidian", "research")
 }
