@@ -7,6 +7,7 @@ import android.location.LocationManager
 import androidx.core.content.ContextCompat
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 /** Weather for the card: the phone's rough location, Open-Meteo, cached for an hour. */
@@ -35,14 +36,20 @@ object WeatherFetch {
     }
 
     /** Today's summary, from the cache if it's under an hour old. Call off the main thread. */
-    fun today(ctx: Context, force: Boolean = false): WeatherSummary? {
+    fun today(ctx: Context, force: Boolean = false): WeatherSummary? =
+        json(ctx, force)?.let { j -> runCatching { Weather.summary(j, LocalDateTime.now()) }.getOrNull() }
+
+    /** The write-up for [date] (up to a week ahead), for the Daily Slip; null beyond the forecast. Call off the main thread. */
+    fun forDay(ctx: Context, date: LocalDate): WeatherSummary? =
+        json(ctx)?.let { j -> runCatching { Weather.forDay(j, date, LocalDateTime.now()) }.getOrNull() }
+
+    /** The forecast JSON, from the cache if it's under an hour old and covers the week. */
+    private fun json(ctx: Context, force: Boolean = false): String? {
         val now = LocalDateTime.now()
         val cachedJson = p(ctx).getString("json", null)
         val cachedAt = p(ctx).getLong("at", 0)
         val sameDay = cachedJson != null && java.time.Instant.ofEpochMilli(cachedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == now.toLocalDate()
-        if (!force && sameDay && Weather.hasTomorrow(cachedJson) && System.currentTimeMillis() - cachedAt < FRESH_MS) {
-            return runCatching { Weather.summary(cachedJson!!, now) }.getOrNull()
-        }
+        if (!force && sameDay && Weather.hasDays(cachedJson) && System.currentTimeMillis() - cachedAt < FRESH_MS) return cachedJson
         val (lat, lon) = location(ctx) ?: return null
         val fresh = runCatching {
             val c = URL(Weather.url(lat, lon)).openConnection() as HttpURLConnection
@@ -50,7 +57,6 @@ object WeatherFetch {
             try { c.inputStream.bufferedReader().readText() } finally { c.disconnect() }
         }.getOrNull()
         if (fresh != null) p(ctx).edit().putString("json", fresh).putLong("at", System.currentTimeMillis()).apply()
-        val json = fresh ?: cachedJson?.takeIf { sameDay } ?: return null
-        return runCatching { Weather.summary(json, now) }.getOrNull()
+        return fresh ?: cachedJson?.takeIf { sameDay }
     }
 }

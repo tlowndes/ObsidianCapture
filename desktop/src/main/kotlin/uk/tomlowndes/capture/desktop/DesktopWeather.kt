@@ -7,6 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -24,18 +25,23 @@ object DesktopWeather {
     }
 
     /** Today's summary, from the cache if it's under an hour old. Null when no town is set. Blocking. */
-    fun today(prefs: DesktopPrefs, force: Boolean = false): WeatherSummary? {
+    fun today(prefs: DesktopPrefs, force: Boolean = false): WeatherSummary? =
+        json(prefs, force)?.let { j -> runCatching { Weather.summary(j, LocalDateTime.now()) }.getOrNull() }
+
+    /** The write-up for [date] (up to a week ahead), for the Daily Slip; null beyond the forecast. Blocking. */
+    fun forDay(prefs: DesktopPrefs, date: LocalDate): WeatherSummary? =
+        json(prefs)?.let { j -> runCatching { Weather.forDay(j, date, LocalDateTime.now()) }.getOrNull() }
+
+    /** The forecast JSON, from the cache if it's under an hour old and covers the week. */
+    private fun json(prefs: DesktopPrefs, force: Boolean = false): String? {
         val (lat, lon) = prefs.weatherLatLon ?: return null
         val now = LocalDateTime.now()
         val cached = prefs.weatherJson
         val sameDay = cached != null && Instant.ofEpochMilli(prefs.weatherAt).atZone(ZoneId.systemDefault()).toLocalDate() == now.toLocalDate()
-        if (!force && sameDay && Weather.hasTomorrow(cached) && System.currentTimeMillis() - prefs.weatherAt < FRESH_MS) {
-            return runCatching { Weather.summary(cached!!, now) }.getOrNull()
-        }
+        if (!force && sameDay && Weather.hasDays(cached) && System.currentTimeMillis() - prefs.weatherAt < FRESH_MS) return cached
         val fresh = runCatching { get(Weather.url(lat, lon)) }.getOrNull()
         if (fresh != null) { prefs.weatherJson = fresh; prefs.weatherAt = System.currentTimeMillis() }
-        val json = fresh ?: cached?.takeIf { sameDay } ?: return null
-        return runCatching { Weather.summary(json, now) }.getOrNull()
+        return fresh ?: cached?.takeIf { sameDay }
     }
 
     private fun get(url: String): String {

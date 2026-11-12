@@ -1,6 +1,7 @@
 package uk.tomlowndes.capture
 
 import org.json.JSONObject
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -23,14 +24,33 @@ data class WeatherSummary(
 
 /** Today's forecast from Open-Meteo (free, no key), written up from the hourly data like the morning email. */
 object Weather {
+    /** Days of forecast fetched: today plus six, so the Daily Slip can print up to a week ahead. */
+    const val DAYS = 7
+
     fun url(lat: Double, lon: Double) =
         "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f".format(java.util.Locale.ROOT, lat, lon) +
             "&hourly=temperature_2m,precipitation_probability,weather_code,cloud_cover" +
-            "&daily=temperature_2m_max,temperature_2m_min,sunset,weather_code&timezone=auto&forecast_days=2"
+            "&daily=temperature_2m_max,temperature_2m_min,sunset,weather_code&timezone=auto&forecast_days=$DAYS"
 
     /** True when a cached forecast has tomorrow in it. Older versions cached today only, which left the card on today after sunset. */
     fun hasTomorrow(json: String?): Boolean =
         json != null && runCatching { JSONObject(json).getJSONObject("daily").getJSONArray("sunset").length() > 1 }.getOrDefault(false)
+
+    /** True when a cached forecast covers [n] days. Caches from before v1.27 only had two. */
+    fun hasDays(json: String?, n: Int = DAYS): Boolean =
+        json != null && runCatching { JSONObject(json).getJSONObject("daily").getJSONArray("sunset").length() >= n }.getOrDefault(false)
+
+    /**
+     * The write-up for [date], as if the day hadn't started, for a Daily Slip printed ahead. Null when the forecast
+     * doesn't reach that far. For today it's the same as [summary].
+     */
+    fun forDay(json: String, date: LocalDate, now: LocalDateTime): WeatherSummary? {
+        if (date == now.toLocalDate()) return summary(json, now)
+        val o = JSONObject(json)
+        val sunsets = o.getJSONObject("daily").getJSONArray("sunset")
+        val d = (0 until sunsets.length()).firstOrNull { LocalDateTime.parse(sunsets.getString(it)).toLocalDate() == date } ?: return null
+        return write(o, d, date.atStartOfDay(), null).copy(tomorrow = false)
+    }
 
     private data class Hour(val at: LocalDateTime, val rain: Int, val cloud: Int, val code: Int, val temp: Double?)
 
@@ -42,7 +62,16 @@ object Weather {
         val daily = o.getJSONObject("daily")
         val todaySunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(0))
         val next = !now.isBefore(todaySunset) && daily.getJSONArray("sunset").length() > 1
-        val d = if (next) 1 else 0
+        return write(o, if (next) 1 else 0, now, if (next) now else null)
+    }
+
+    /**
+     * Writes up forecast day [d]. When [tonightFrom] is set, it's tomorrow seen from that evening: written as if the
+     * day hadn't started, plus a line for tonight. Otherwise [now] is where "ahead" starts.
+     */
+    private fun write(o: JSONObject, d: Int, now: LocalDateTime, tonightFrom: LocalDateTime?): WeatherSummary {
+        val next = tonightFrom != null || d > 0
+        val daily = o.getJSONObject("daily")
         val hi = Math.round(daily.getJSONArray("temperature_2m_max").getDouble(d)).toInt()
         val lo = Math.round(daily.getJSONArray("temperature_2m_min").getDouble(d)).toInt()
         val sunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(d))
@@ -59,7 +88,7 @@ object Weather {
             )
         }
         val day = sunset.toLocalDate()
-        val tonight = if (next) tonightLine(hours.filter { it.at.toLocalDate() == now.toLocalDate() && it.at.hour >= now.hour }) else null
+        val tonight = tonightFrom?.let { t -> tonightLine(hours.filter { it.at.toLocalDate() == t.toLocalDate() && it.at.hour >= t.hour }) }
         // For tomorrow, write it up as if the day hadn't started yet.
         val from = if (next) day.atStartOfDay() else now
         val dayHours = hours.filter { it.at.toLocalDate() == day }

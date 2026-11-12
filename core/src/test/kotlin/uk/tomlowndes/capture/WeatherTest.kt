@@ -131,4 +131,23 @@ class WeatherTest {
         assertTrue(u.contains("timezone=auto"))
         assertTrue(u.contains("temperature_2m,"))
     }
+
+    @Test fun `a later day is written up as if it hadn't started`() {
+        val json = twoDays({ t -> if (t.dayOfMonth == 8 && t.hour >= 13) 80 else 5 })
+        val w = Weather.forDay(json, java.time.LocalDate.of(2026, 11, 8), LocalDateTime.of(2026, 11, 7, 9, 0))!!
+        assertTrue(!w.tomorrow)
+        assertNull(w.tonight)
+        assertEquals(12, w.high)
+        assertEquals("Dry morning, wet afternoon", w.headline)
+    }
+
+    @Test fun `a day past the forecast has no weather`() {
+        assertNull(Weather.forDay(twoDays({ 0 }), java.time.LocalDate.of(2026, 11, 20), LocalDateTime.of(2026, 11, 7, 9, 0)))
+    }
+
+    @Test fun `the cache needs the whole week`() {
+        assertTrue(!Weather.hasDays(twoDays({ 0 })))
+        assertTrue(Weather.hasDays(twoDays({ 0 }), 2))
+        assertTrue(Weather.url(51.0, -2.0).contains("forecast_days=${Weather.DAYS}"))
+    }
 }

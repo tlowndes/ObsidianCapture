@@ -92,4 +92,38 @@ class SlipTest {
         }
         return n
     }
+
+    @Test fun aSlipPrintedAheadListsEarlierTasksAsStillLate() {
+        val today = day
+        val friday = day.plusDays(3)
+        val tasks = listOf(
+            task("Due today", today),
+            task("Due Friday", friday),
+            task("Due Saturday", friday.plusDays(1)),
+        )
+        val s = Slip.build(friday, tasks, emptyList(), null, SlipOptions(), today)
+        assertTrue(s.ahead)
+        assertEquals(listOf("Due today"), s.overdue.map { it.text })
+        assertEquals(listOf("Due Friday"), s.today.map { it.text })
+        assertEquals(listOf("Due Saturday"), s.tomorrow.map { it.text })
+        assertEquals("FRIDAY", s.dayWord)
+        assertEquals("SATURDAY", s.nextWord)
+        assertEquals("STILL LATE", s.lateWord)
+    }
+
+    @Test fun todaysSlipKeepsItsWords() {
+        val s = Slip.build(day, emptyList(), emptyList(), null, SlipOptions())
+        assertTrue(!s.ahead)
+        assertEquals("TODAY", s.dayWord)
+        assertEquals("TOMORROW", s.nextWord)
+        assertEquals("OVERDUE", s.lateWord)
+    }
+
+    @Test fun dayStripAndButtonLabels() {
+        assertEquals("Today", Slip.stripLabel(day, day))
+        assertEquals("Tomorrow", Slip.stripLabel(day.plusDays(1), day))
+        assertEquals("Thu", Slip.stripLabel(day.plusDays(2), day))
+        assertEquals("Print", Slip.printLabel(day, day))
+        assertEquals("Print Friday's slip", Slip.printLabel(day.plusDays(3), day))
+    }
 }
