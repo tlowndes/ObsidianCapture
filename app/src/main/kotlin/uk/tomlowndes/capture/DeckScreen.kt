@@ -96,6 +96,7 @@ internal data class DeckData(
     val jobs: List<Job> = emptyList(),
     val routines: List<Routine> = emptyList(),
     val passages: List<Passage> = emptyList(),
+    val dayDone: DayDone = DayDone(),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -151,6 +152,7 @@ fun DeckScreen(
                 project = runCatching { IdeaStore(ctx, uri, prefs).list().firstOrNull { it.status == "active" } }.getOrNull(),
                 unread = runCatching { ReadNote.unread(ReadStore(ctx, uri).inbox()).first }.getOrDefault(0),
                 layout = runCatching { DeckConfig.load(appVault(ctx, uri)) }.getOrDefault(DeckLayout()),
+                dayDone = runCatching { DeckConfig.loadDayDone(appVault(ctx, uri)) }.getOrDefault(DayDone()),
                 stuck = runCatching { FlightNotes.loadStuck(appVault(ctx, uri)).getValue(StuckLength.QUICK) }.getOrDefault(emptyList()),
                 focusMin = runCatching { FlightNotes.loadToday(appVault(ctx, uri)).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull(),
@@ -225,9 +227,9 @@ fun DeckScreen(
         if (!vaultOk) add(NowItem.Line("⚠ Vault not found", "Pick folder ›", warn = true, onClick = onOpenSettings))
         if (HomeCard.PLAN !in hidden) {
             val left = DayPlan.leftToday(data.tasks, today).size
-            if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today.toString())
+            if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today.toString() && !data.dayDone.planned(today))
                 add(NowItem.Line("☀️ Plan today · pick up to ${DayPlan.PICK_MAX}", "Plan ›") { onOpenSub(Sub.PLAN) })
-            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && left > 0)
+            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
                 add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
         }
         if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))

@@ -85,6 +85,41 @@ object DeckConfig {
         }
         VaultIo.write(v, PATH, withLayout(v.read(PATH), layout))
     }
+
+    // ---- Plan today / Shut down done (kept here so the phone and Windows agree) ----
+
+    /** The day ("2026-11-12") Plan today and Shut down were last done on any device; "" if never. */
+    fun dayDone(json: String?): DayDone {
+        val o = parse(json)
+        return DayDone(o.optString("plannedOn", ""), o.optString("shutDownOn", ""))
+    }
+
+    /** [json] with [key] set to [day], unless it already holds a later day. */
+    fun withDone(json: String?, key: String, day: LocalDate): String {
+        val o = parse(json)
+        val had = o.optString(key, "")
+        if (had < day.toString()) o.put(key, day.toString())
+        return o.toString(2)
+    }
+
+    fun loadDayDone(v: Vault): DayDone = dayDone(v.read(PATH))
+
+    fun markPlanned(v: Vault, day: LocalDate) = mark(v, "plannedOn", day)
+    fun markShutDown(v: Vault, day: LocalDate) = mark(v, "shutDownOn", day)
+
+    private fun mark(v: Vault, key: String, day: LocalDate) {
+        if (v.entry(PATH) == null) {
+            v.mkdirs(parentOf(PATH))
+            v.create(parentOf(PATH), nameOf(PATH).removeSuffix(".json"), "json")
+        }
+        VaultIo.write(v, PATH, withDone(v.read(PATH), key, day))
+    }
+}
+
+/** When Plan today / Shut down were last done, from `capture-config.json`. */
+data class DayDone(val plannedOn: String = "", val shutDownOn: String = "") {
+    fun planned(day: LocalDate) = plannedOn == day.toString()
+    fun shutDown(day: LocalDate) = shutDownOn == day.toString()
 }
 
 /** Picking what Flight Deck shows from the vault's tasks. */

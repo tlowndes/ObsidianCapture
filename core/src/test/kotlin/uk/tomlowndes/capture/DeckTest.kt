@@ -102,4 +102,24 @@ class DeckTest {
         DeckConfig.save(v, l)
         assertEquals(l, DeckConfig.load(v))
     }
+
+    @Test fun `Plan today and Shut down done are shared through the config`() {
+        val v = FileVault(tmp.root)
+        DeckConfig.save(v, DeckLayout().toggled(HomeCard.BILLS))
+        assertEquals(DayDone(), DeckConfig.loadDayDone(v))
+        DeckConfig.markPlanned(v, today)
+        DeckConfig.markShutDown(v, today)
+        val d = DeckConfig.loadDayDone(v)
+        assertEquals(true, d.planned(today))
+        assertEquals(true, d.shutDown(today))
+        assertEquals(false, d.planned(today.plusDays(1)))
+        // Other keys are kept.
+        assertEquals(DeckLayout().toggled(HomeCard.BILLS), DeckConfig.load(v))
+    }
+
+    @Test fun `an older day never overwrites a later one`() {
+        val json = DeckConfig.withDone(null, "plannedOn", today)
+        assertEquals(today.toString(), DeckConfig.dayDone(DeckConfig.withDone(json, "plannedOn", today.minusDays(1))).plannedOn)
+        assertEquals(DayDone(), DeckConfig.dayDone("not json"))
+    }
 }

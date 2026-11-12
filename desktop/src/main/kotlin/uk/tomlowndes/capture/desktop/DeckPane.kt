@@ -51,6 +51,7 @@ import uk.tomlowndes.capture.Mood
 import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.Routines
 import uk.tomlowndes.capture.Deck
+import uk.tomlowndes.capture.DayDone
 import uk.tomlowndes.capture.DeckConfig
 import uk.tomlowndes.capture.DeckLayout
 import uk.tomlowndes.capture.FlightNotes
@@ -96,6 +97,7 @@ private data class DeckData(
     val routines: Int = 0,
     val jobs: Int = 0,
     val events: List<CalEvent> = emptyList(),
+    val dayDone: DayDone = DayDone(),
 )
 
 private fun greeting(now: LocalTime = LocalTime.now()) = when {
@@ -127,6 +129,7 @@ fun DeckPane(state: AppState) {
                 project = runCatching { state.ideaStore()!!.list().firstOrNull { it.status.lowercase() == "active" } }.getOrNull(),
                 unread = runCatching { ReadNote.unread(state.readStore()!!.inbox()).first }.getOrDefault(0),
                 layout = runCatching { DeckConfig.load(v) }.getOrDefault(DeckLayout()),
+                dayDone = runCatching { DeckConfig.loadDayDone(v) }.getOrDefault(DayDone()),
                 focusMin = runCatching { FlightNotes.loadToday(v).sumOf { it.minutes } }.getOrDefault(0),
                 habits = runCatching { Habits.load(v) }.getOrNull(),
                 routines = runCatching { Routines.load(v).size }.getOrDefault(0),
@@ -168,6 +171,12 @@ fun DeckPane(state: AppState) {
         state.io { state.writer()!!.f() } ?: return@launch
         reload()
         msg?.let { state.say(it) }
+    }
+
+    /** Plan today / Shut down done: tell the vault too, so the phone stops asking. */
+    fun markDone(f: (uk.tomlowndes.capture.Vault) -> Unit) = scope.launch {
+        val v = state.vault ?: return@launch
+        state.io { f(v) }
     }
 
     // Stuck? (tidy-v1): Next step picks a short task instead.
@@ -215,10 +224,10 @@ fun DeckPane(state: AppState) {
     planning?.let { evening ->
         PlanDialog(
             data.tasks, data.events, evening,
-            onPlan = { chosen -> planning = null; state.prefs.plannedOn = today.toString(); write("Planned ${chosen.size} for today") { chosen.filter { it.due != today }.forEach { rescheduleTask(it, today) } } },
+            onPlan = { chosen -> planning = null; state.prefs.plannedOn = today.toString(); markDone { DeckConfig.markPlanned(it, today) }; write("Planned ${chosen.size} for today") { chosen.filter { it.due != today }.forEach { rescheduleTask(it, today) } } },
             onMove = { t, d -> write { rescheduleTask(t, d) } },
             onDrop = { t -> write { cancelTask(t, today) } },
-            onShutDown = { planning = null; state.prefs.shutDownOn = today.toString() },
+            onShutDown = { planning = null; state.prefs.shutDownOn = today.toString(); markDone { DeckConfig.markShutDown(it, today) } },
             onDismiss = { planning = null },
         )
     }
@@ -229,9 +238,9 @@ fun DeckPane(state: AppState) {
     val nowItems = buildList {
         if (HomeCard.PLAN !in data.layout.hidden) {
             val left = DayPlan.leftToday(data.tasks, today).size
-            if (DayPlan.isMorning(nowDt) && state.prefs.plannedOn != today.toString())
+            if (DayPlan.isMorning(nowDt) && state.prefs.plannedOn != today.toString() && !data.dayDone.planned(today))
                 add(NowItem.Line("☀ Plan today · pick your top ${DayPlan.PICK_MAX}", "Plan ›") { planning = false })
-            else if (DayPlan.isEvening(nowDt) && state.prefs.shutDownOn != today.toString() && left > 0)
+            else if (DayPlan.isEvening(nowDt) && state.prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
                 add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { planning = true })
         }
         if (HomeCard.MOOD !in data.layout.hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true)
