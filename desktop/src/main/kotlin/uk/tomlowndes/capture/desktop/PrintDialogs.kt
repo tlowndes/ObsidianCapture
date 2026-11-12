@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -137,7 +140,9 @@ private suspend fun printImage(state: AppState, img: BufferedImage, progress: (F
 
 @Composable
 private fun PrintFrame(width: Dp, onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
+    // usePlatformDefaultWidth = false: the default caps the dialog at a narrow width, which squeezed the
+    // Daily Slip's left column to a sliver (one word per line, vertical "Copy as image", clipped day tiles).
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         CaptureTheme {
             val shape = RoundedCornerShape(18.dp)
             Box(Modifier.width(width).clip(shape).background(Popup).border(1.dp, Outline, shape).padding(22.dp)) { content() }
@@ -404,7 +409,8 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
     PrintFrame(if (choosing) 520.dp else 920.dp, onClose) {
         if (choosing) { PrinterChooser(state) { choosing = false; printerTick++ }; return@PrintFrame }
         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            Column(Modifier.weight(1f)) {
+            // The switches keep their width; the preview gives way first if the window is small.
+            Column(Modifier.width(440.dp)) {
                 Text(when (mode) { SlipMode.DAILY -> "Daily Slip"; SlipMode.WEEK -> "Week slip"; SlipMode.BILLS -> "Bills slip"; SlipMode.LIST -> "Print a list" }, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
                 val isToday = day == today
                 val dayName = day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
@@ -429,7 +435,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                     SlipSwitch("Show paid bills", "Ticked, with a strike", showPaid) { showPaid = it }
                 } else if (mode == SlipMode.LIST) {
                     Text("FROM", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         sources?.lists.orEmpty().forEach { path ->
                             Chip(path.substringAfterLast('/').removeSuffix(".md"), !useClip && listPath == path) { useClip = false; listPath = path }
                         }
@@ -503,7 +509,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                     TextAction("Close", Muted, onClick = onClose)
                 }
             }
-            Column(Modifier.width(360.dp)) {
+            Column(Modifier.weight(1f, fill = false).widthIn(max = 360.dp)) {
                 Text("PREVIEW", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Primary, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
                 Paper(shown, if (state.vault == null) "Choose your vault first" else null, Modifier.fillMaxWidth().height(560.dp))
             }
