@@ -416,10 +416,10 @@ private fun DayStrip(day: LocalDate, today: LocalDate, onPick: (LocalDate) -> Un
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val room = (maxWidth - DAY_CHIP - DAY_GAP).coerceAtLeast(DAY_CHIP)
         var fit = ((room + DAY_GAP) / stride).toInt().coerceIn(1, days.size)
-        var window = fit * stride - DAY_GAP
+        var window = stride * fit - DAY_GAP
         if (window > room && fit > 1) {
             fit -= 1
-            window = fit * stride - DAY_GAP
+            window = stride * fit - DAY_GAP
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DAY_GAP)) {
             val chips = rememberLazyListState()
