@@ -85,6 +85,10 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var shutDownOn: String
         get() = str("shut_down_on", "")
         set(v) = put("shut_down_on", v)
+    /** The day the Today card's "✓ N earlier" row was left open; it closes again tomorrow. */
+    var earlierOpenOn: String
+        get() = str("earlier_open_on", "")
+        set(v) = put("earlier_open_on", v)
 
     /** Deck cards dragged into the left column (deck-drag-v1), by name. Null until the first drag: the default split. */
     var deckLeft: Set<String>?

@@ -46,6 +46,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -58,6 +59,8 @@ import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
 import uk.tomlowndes.capture.DayPlan
 import uk.tomlowndes.capture.Highlights
+import uk.tomlowndes.capture.HighlightsSeen
+import uk.tomlowndes.capture.Passage
 import uk.tomlowndes.capture.Mood
 import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.Routines
@@ -109,6 +112,8 @@ private data class DeckData(
     val jobs: Int = 0,
     val events: List<CalEvent> = emptyList(),
     val dayDone: DayDone = DayDone(),
+    val passages: List<Passage> = emptyList(),
+    val seen: Set<String>? = null,
 )
 
 private fun greeting(now: LocalTime = LocalTime.now()) = when {
@@ -137,6 +142,7 @@ fun DeckPane(state: AppState) {
     val drag = remember { DeckDrag() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
+    var earlierOpen by remember { mutableStateOf(state.prefs.earlierOpenOn == LocalDate.now().toString()) }
 
     fun reload() = scope.launch {
         val v = state.vault ?: return@launch
@@ -152,12 +158,44 @@ fun DeckPane(state: AppState) {
                 routines = runCatching { Routines.load(v).size }.getOrDefault(0),
                 jobs = runCatching { Jobs.list(v).count { !it.closed } }.getOrDefault(0),
                 events = runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
+                passages = runCatching {
+                    val store = state.readStore()!!
+                    store.list().filter { it.read }.take(15).flatMap { a ->
+                        runCatching { store.load(a.ref) }.getOrNull()?.let { doc -> Highlights.passages(doc).map { Passage(it, doc.title, doc.ref) } }.orEmpty()
+                    }
+                }.getOrDefault(emptyList()),
+                seen = runCatching { HighlightsSeen.load(v) }.getOrNull(),
             )
         } ?: return@launch
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
     LaunchedEffect(state.changes) {
         weather = state.io { DesktopWeather.today(state.prefs) }
+    }
+
+    // Daily highlights (past-events-highlights-v1): today's picks stay fixed; kept/skipped ones drop out.
+    var hlSeen by remember { mutableStateOf(emptySet<String>()) }
+    var hlKept by remember { mutableStateOf(false) }
+    var hlBase by remember { mutableStateOf<Set<String>?>(null) }
+    LaunchedEffect(data.seen) { data.seen?.let { hlSeen = hlSeen + it; if (hlBase == null) hlBase = it } }
+    val hlPicks = remember(data.passages, hlBase) { hlBase?.let { Highlights.pick(data.passages, LocalDate.now(), it) }.orEmpty() }
+    LaunchedEffect(state.vault, state.changes) { hlKept = state.vault?.entry(Highlights.PATH) != null }
+    val hlLeft = hlPicks.filter { Highlights.key(it) !in hlSeen }
+
+    fun markSeen(p: Passage) {
+        val k = Highlights.key(p)
+        hlSeen = hlSeen + k
+        scope.launch { state.vault?.let { v -> state.io { HighlightsSeen.add(v, listOf(k)) } } }
+    }
+
+    fun keepPassage(p: Passage) {
+        markSeen(p)
+        scope.launch {
+            val v = state.vault ?: return@launch
+            state.io("Couldn't write Highlights.md") { Highlights.keep(v, p, LocalDate.now()) } ?: return@launch
+            hlKept = true
+            state.say("Kept in Highlights.md")
+        }
     }
 
     fun tick(t: TaskItem) = scope.launch {
@@ -215,11 +253,23 @@ fun DeckPane(state: AppState) {
                 stuck = stuck, onSplit = { splitting = it }, onStuck = { stuck = !stuck },
             )
             HomeCard.TODAY -> DeckCard {
-                CardHead("Today", if (data.events.isEmpty()) "calendar from the phone" else "${data.events.count { it.on(today) }} events")
-                TodayRows(data.events, TaskViews.billsDue(data.tasks, today)) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
+                val todays = data.events.filter { it.on(today) }
+                val done = todays.count { it.isPast(LocalDateTime.now()) }
+                CardHead("Today", if (data.events.isEmpty()) "calendar from the phone" else "${todays.size} events" + (if (done > 0) " · $done done" else ""))
+                TodayRows(
+                    data.events, TaskViews.billsDue(data.tasks, today), earlierOpen,
+                    onToggleEarlier = { earlierOpen = !earlierOpen; state.prefs.earlierOpenOn = if (earlierOpen) today.toString() else "" }
+                ) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
             HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.tab = Tab.ROUTINES }
-            HomeCard.HIGHLIGHTS -> RowCard("✨ Daily highlights", "open ›") { state.openInObsidian(Highlights.PATH) }
+            HomeCard.HIGHLIGHTS -> if (hlLeft.isNotEmpty()) {
+                val p = hlLeft.first()
+                HighlightsDeckCard(
+                    p, hlPicks.indexOf(p), hlPicks.size, hlKept,
+                    onOpen = { state.openArticle(p.ref) }, onKeep = { keepPassage(p) }, onNext = { markSeen(p) },
+                    onOpenNote = { state.openInObsidian(Highlights.PATH) },
+                )
+            }
             HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).takeIf { it.isNotEmpty() }?.let { bills ->
                 BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
             }
@@ -238,7 +288,8 @@ fun DeckPane(state: AppState) {
     }
 
     fun shows(card: HomeCard): Boolean = when (card) {
-        HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.HIGHLIGHTS, HomeCard.READ_LATER -> true
+        HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.READ_LATER -> true
+        HomeCard.HIGHLIGHTS -> hlLeft.isNotEmpty()
         HomeCard.ROUTINES -> data.routines > 0
         HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).isNotEmpty()
         HomeCard.TOP_TASKS -> top.isNotEmpty()
@@ -626,6 +677,38 @@ private fun BillsCard(bills: List<Bill>, paying: Set<String>, onPaid: (Bill) -> 
                 b.amount?.let { Text(TaskViews.money(it), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (paid) Muted else TextMain) }
                 b.task.due?.let { DuePill(it) }
             }
+        }
+    }
+}
+
+/** Daily highlights (past-events-highlights-v1): one passage from your reading with Open article / ♡ Keep / Next. */
+@Composable
+private fun HighlightsDeckCard(
+    p: Passage, index: Int, count: Int, kept: Boolean,
+    onOpen: () -> Unit, onKeep: () -> Unit, onNext: () -> Unit, onOpenNote: () -> Unit,
+) {
+    DeckCard {
+        CardHead("✨ From your reading", "${index + 1} of $count")
+        Text(
+            "“${p.text}”", fontSize = 15.sp, fontStyle = FontStyle.Italic, lineHeight = 22.sp, fontFamily = FontFamily.Serif,
+            color = TextMain, modifier = Modifier.padding(horizontal = 18.dp)
+        )
+        Text(p.title, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 8.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DeckButton("Open article", primary = false, modifier = Modifier.weight(1f), onClick = onOpen)
+            DeckButton("♡ Keep", primary = false, modifier = Modifier.weight(1f), onClick = onKeep)
+            DeckButton("Next", primary = true, modifier = Modifier.weight(1f), onClick = onNext)
+        }
+        Line()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(count) { n -> Box(Modifier.size(6.dp).clip(CircleShape).background(if (n == index) Primary else Outline)) }
+            }
+            if (kept) Text("Highlights.md ›", fontSize = 12.sp, color = Primary, modifier = Modifier.hand().clickable(onClick = onOpenNote))
         }
     }
 }

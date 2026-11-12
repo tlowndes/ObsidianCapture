@@ -35,7 +35,11 @@ object Highlights {
         return n
     }
 
-    fun key(p: Passage) = p.text.take(80)
+    /** A short id for a passage, kept in capture-config.json so the phone and PC skip the same ones. */
+    fun key(p: Passage) = keyOf(p.text.take(80))
+
+    /** Older builds kept the first 80 characters in phone prefs; this turns those into the short id. */
+    fun keyOf(start: String) = if (start.length == 8 && start.all { it in "0123456789abcdef" }) start else "%08x".format(start.hashCode())
 
     /** Today's [PER_DAY] passages: a different mix each day, never one that was skipped or kept. */
     fun pick(all: List<Passage>, today: LocalDate, seen: Set<String>): List<Passage> {
