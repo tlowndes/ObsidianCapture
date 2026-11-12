@@ -97,6 +97,10 @@ class AppState(val prefs: DesktopPrefs) {
 
     fun openProjects(title: String?) { openProject = title; tab = Tab.PROJECTS }
 
+    /** An article the Read pane should open next (from the Deck's Daily highlights). */
+    var readOpen by mutableStateOf<uk.tomlowndes.capture.ReadRef?>(null)
+    fun openArticle(ref: uk.tomlowndes.capture.ReadRef) { readOpen = ref; tab = Tab.READ }
+
     fun say(msg: String) { scope.launch { snack.showSnackbar(msg, withDismissAction = false) } }
 
     /** Shows [msg] with Undo; runs [undo] if it's pressed. */

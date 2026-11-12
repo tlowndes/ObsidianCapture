@@ -22,6 +22,36 @@ data class CalEvent(
 ) {
     fun isNow(now: LocalDateTime) = !allDay && !now.isBefore(start) && now.isBefore(end)
     fun on(d: LocalDate) = start.isBefore(d.plusDays(1).atStartOfDay()) && (end.isAfter(d.atStartOfDay()) || start.toLocalDate() == d)
+    /** Finished: its end time has passed. All-day events never count as finished. */
+    fun isPast(now: LocalDateTime) = !allDay && !end.isAfter(now)
+}
+
+/** One row of the Deck's Today card (past-events-highlights-v1). */
+sealed class TodayRow {
+    data class Event(val event: CalEvent, val past: Boolean) : TodayRow()
+    /** "✓ N earlier": [open] shows the finished events above it; [allDone] when nothing timed is left today. */
+    data class Earlier(val count: Int, val open: Boolean, val allDone: Boolean) : TodayRow()
+}
+
+/**
+ * Today's events with finished ones faded: one finished event stays in place, two or more fold into an "earlier" row.
+ * All-day events come first and never fade.
+ */
+object TodayEvents {
+    fun rows(events: List<CalEvent>, now: LocalDateTime, open: Boolean): List<TodayRow> {
+        val sorted = events.sortedWith(compareBy({ !it.allDay }, { it.start }))
+        val past = sorted.filter { it.isPast(now) }
+        if (past.size < 2) return sorted.map { TodayRow.Event(it, it.isPast(now)) }
+        val allDay = sorted.filter { it.allDay }
+        val left = sorted.filter { !it.allDay && !it.isPast(now) }
+        val fold = TodayRow.Earlier(past.size, open, left.isEmpty())
+        return allDay.map { TodayRow.Event(it, false) } +
+            (if (open) past.map { TodayRow.Event(it, true) } + fold else listOf(fold)) +
+            left.map { TodayRow.Event(it, false) }
+    }
+
+    fun earlierLabel(r: TodayRow.Earlier) =
+        if (r.open) "hide earlier" else if (r.allDone) "✓ All done for today · ${r.count} earlier" else "✓ ${r.count} earlier"
 }
 
 /** Reading ICS feeds, enough for Proton's share links: VEVENT with DTSTART/DTEND/SUMMARY, RRULE and EXDATE. */

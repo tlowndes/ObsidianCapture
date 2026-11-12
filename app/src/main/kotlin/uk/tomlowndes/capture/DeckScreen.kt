@@ -199,16 +199,31 @@ fun DeckScreen(
     }
 
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
-    var seen by remember { mutableStateOf(prefs.highlightsSeen) }
-    var hl by remember { mutableIntStateOf(0) }
-    val todayPicks = remember(data.passages) { Highlights.pick(data.passages, LocalDate.now(), prefs.highlightsSeen) }
+    // Kept/skipped highlights live in capture-config.json so the phone and PC share them; older builds kept them in prefs.
+    var seen by remember { mutableStateOf(prefs.highlightsSeen.map(Highlights::keyOf).toSet()) }
+    var pickBase by remember { mutableStateOf<Set<String>?>(null) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { runCatching { HighlightsSeen.add(appVault(ctx, uri), seen) } }.getOrNull()?.let {
+            seen = it; prefs.highlightsSeen = it
+            if (pickBase == null) pickBase = it
+        }
+    }
+    val todayPicks = remember(data.passages, pickBase) { Highlights.pick(data.passages, LocalDate.now(), pickBase ?: seen) }
+
+    fun markSeen(p: Passage) {
+        val k = Highlights.key(p)
+        seen = seen + k; prefs.highlightsSeen = seen
+        val uri = vault ?: return
+        scope.launch { withContext(Dispatchers.IO) { runCatching { HighlightsSeen.add(appVault(ctx, uri), listOf(k)) } } }
+    }
     val nowDt = java.time.LocalDateTime.now()
 
     fun setMood(n: Int) = changeHabits { Mood.set(it, n) }
 
     fun keepPassage(p: Passage) {
         val uri = vault ?: return
-        seen = seen + Highlights.key(p); prefs.highlightsSeen = seen
+        markSeen(p)
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { Highlights.keep(appVault(ctx, uri), p, LocalDate.now()) } }
                 .onSuccess { snack.showSnackbar("Kept in Highlights.md") }
@@ -241,6 +256,7 @@ fun DeckScreen(
         }
     }
 
+    var earlierOpen by remember { mutableStateOf(prefs.earlierOpenOn == LocalDate.now().toString()) }
     var habitsOpen by remember { mutableStateOf(false) }
     var routinesOpen by remember { mutableStateOf(false) }
     var highlightOpen by remember { mutableStateOf(false) }
@@ -300,7 +316,9 @@ fun DeckScreen(
                             rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
                         }
                     }
-                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings))
+                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, earlierOpen) {
+                        earlierOpen = !earlierOpen; prefs.earlierOpenOn = if (earlierOpen) LocalDate.now().toString() else null
+                    })
                     if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
                         rows.add {
                             val paid = b.task.raw in paying
@@ -356,10 +374,9 @@ fun DeckScreen(
     if (highlightOpen) {
         if (leftPassages.isEmpty()) highlightOpen = false
         else DeckSheet({ highlightOpen = false }) {
-            val i = hl % leftPassages.size
-            val p = leftPassages[i]
-            HighlightsCard(p, i, leftPassages.size, onOpen = { highlightOpen = false; onOpenArticle(p.ref) }, onKeep = { keepPassage(p) }) {
-                if (leftPassages.size > 1) hl++ else { seen = seen + Highlights.key(p); prefs.highlightsSeen = seen }
+            val p = leftPassages.first()
+            HighlightsCard(p, todayPicks.indexOf(p), todayPicks.size, onOpen = { highlightOpen = false; onOpenArticle(p.ref) }, onKeep = { keepPassage(p) }) {
+                markSeen(p)
             }
         }
     }
