@@ -122,4 +122,31 @@ class DeckTest {
         assertEquals(today.toString(), DeckConfig.dayDone(DeckConfig.withDone(json, "plannedOn", today.minusDays(1))).plannedOn)
         assertEquals(DayDone(), DeckConfig.dayDone("not json"))
     }
+
+    @Test fun `dragging a card puts it before the card it was dropped on`() {
+        val l = DeckLayout(listOf(HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.WEATHER, HomeCard.TOP_TASKS), hidden = setOf(HomeCard.TODAY))
+        assertEquals(listOf(HomeCard.WEATHER, HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.TOP_TASKS), l.placed(HomeCard.WEATHER, HomeCard.NEXT_STEP).order)
+        assertEquals(setOf(HomeCard.TODAY), l.placed(HomeCard.WEATHER, HomeCard.NEXT_STEP).hidden)
+        assertEquals(l, l.placed(HomeCard.WEATHER, HomeCard.WEATHER))
+    }
+
+    @Test fun `dropping at the end of a column goes after its last card`() {
+        val l = DeckLayout(listOf(HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.WEATHER, HomeCard.TOP_TASKS))
+        assertEquals(listOf(HomeCard.TODAY, HomeCard.NEXT_STEP, HomeCard.WEATHER, HomeCard.TOP_TASKS),
+            l.placed(HomeCard.NEXT_STEP, null, listOf(HomeCard.TODAY)).order)
+        assertEquals(listOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.TOP_TASKS, HomeCard.NEXT_STEP),
+            l.placed(HomeCard.NEXT_STEP, null, listOf(HomeCard.TOP_TASKS, HomeCard.WEATHER)).order)
+        assertEquals(l, l.placed(HomeCard.NEXT_STEP, null, emptyList()))
+    }
+
+    @Test fun `phone sections keep Today, Top tasks, More by default and move as a block`() {
+        val l = DeckLayout()
+        assertEquals(listOf(DeckSection.TODAY, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(l))
+        val more = DeckSection.moved(l, DeckSection.MORE, DeckSection.TODAY)
+        assertEquals(listOf(DeckSection.MORE, DeckSection.TODAY, DeckSection.TOP_TASKS), DeckSection.inOrder(more))
+        val tasksLast = DeckSection.moved(l, DeckSection.TOP_TASKS, null)
+        assertEquals(listOf(DeckSection.TODAY, DeckSection.MORE, DeckSection.TOP_TASKS), DeckSection.inOrder(tasksLast))
+        assertEquals(HomeCard.values().toSet(), tasksLast.order.toSet())
+        assertEquals(HomeCard.values().size, tasksLast.order.size)
+    }
 }
