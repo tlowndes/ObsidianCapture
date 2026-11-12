@@ -30,6 +30,22 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
         return copy(order = list)
     }
 
+    /**
+     * Drag on the Deck (deck-drag-v1): puts [card] just before [before] in the saved order, or straight after the
+     * last of [after] when dropped at the end of a list. Hidden cards keep their places.
+     */
+    fun placed(card: HomeCard, before: HomeCard?, after: List<HomeCard> = emptyList()): DeckLayout {
+        if (card == before) return this
+        val list = order.toMutableList()
+        if (!list.remove(card)) return this
+        val at = when {
+            before != null && before in list -> list.indexOf(before)
+            else -> after.filter { it != card && it in list }.maxOfOrNull { list.indexOf(it) + 1 } ?: return this
+        }
+        list.add(at, card)
+        return copy(order = list)
+    }
+
     fun toggled(card: HomeCard): DeckLayout = copy(hidden = if (card in hidden) hidden - card else hidden + card)
 
     val onCount get() = order.count { it !in hidden }
@@ -46,6 +62,37 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
             if (before == null) list.add(card) else list.add(list.indexOf(before) + 1, card)
         }
         return copy(order = list)
+    }
+}
+
+/**
+ * The phone Deck's sections under the Next step hero (tidy-v1), which can be dragged about (deck-drag-v1).
+ * Today sits where its first card is in the shared order, More where its last card is, so the default order keeps
+ * Today, Top tasks, More.
+ */
+enum class DeckSection(val cards: List<HomeCard>) {
+    TODAY(listOf(HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS)),
+    TOP_TASKS(listOf(HomeCard.TOP_TASKS)),
+    MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS));
+
+    fun at(order: List<HomeCard>): Int {
+        val places = cards.map { order.indexOf(it) }.filter { it >= 0 }
+        return (if (this == MORE) places.maxOrNull() else places.minOrNull()) ?: Int.MAX_VALUE
+    }
+
+    companion object {
+        fun inOrder(layout: DeckLayout): List<DeckSection> = values().sortedBy { it.at(layout.order) }
+
+        /** Moves all of [section]'s cards, together, to just before [before]'s cards, or after the others when null. */
+        fun moved(layout: DeckLayout, section: DeckSection, before: DeckSection?): DeckLayout {
+            if (section == before) return layout
+            val list = layout.order.filter { it !in section.cards }.toMutableList()
+            val block = section.cards.filter { it in layout.order }
+            val at = if (before != null) before.cards.map { list.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: list.size
+            else values().filter { it != section }.flatMap { it.cards }.maxOfOrNull { list.indexOf(it) + 1 } ?: list.size
+            list.addAll(at, block)
+            return layout.copy(order = list)
+        }
     }
 }
 

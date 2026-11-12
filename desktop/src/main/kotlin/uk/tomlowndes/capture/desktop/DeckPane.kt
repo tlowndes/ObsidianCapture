@@ -33,6 +33,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -84,8 +95,8 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
 }
 
 /**
- * Cards the desktop Deck shows, and which column each sits in (windows-catchup-v1). Plan today and Mood live in the
- * Now line; Stuck? is a button on Next step; Jobs stays on the phone.
+ * Cards the desktop Deck shows, and which column each starts in (windows-catchup-v1). Plan today and Mood live in the
+ * Now line; Stuck? is a button on Next step. Dragging a card across (deck-drag-v1) keeps its column in [Prefs.deckLeft].
  */
 private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.TOP_TASKS, HomeCard.HABITS)
 private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.JOBS)
@@ -125,6 +136,12 @@ fun DeckPane(state: AppState) {
     var planning by remember { mutableStateOf<Boolean?>(null) }
     var splitting by remember { mutableStateOf<TaskItem?>(null) }
     var stuck by remember { mutableStateOf(false) }
+    var leftSet by remember {
+        mutableStateOf(state.prefs.deckLeft?.mapNotNull { n -> HomeCard.values().firstOrNull { it.name == n } }?.toSet() ?: LEFT)
+    }
+    val drag = remember { DeckDrag() }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val keys = remember { FocusRequester() }
     var earlierOpen by remember { mutableStateOf(state.prefs.earlierOpenOn == LocalDate.now().toString()) }
 
     fun reload() = scope.launch {
@@ -270,6 +287,47 @@ fun DeckPane(state: AppState) {
         }
     }
 
+    fun shows(card: HomeCard): Boolean = when (card) {
+        HomeCard.NEXT_STEP, HomeCard.TODAY, HomeCard.READ_LATER -> true
+        HomeCard.HIGHLIGHTS -> hlLeft.isNotEmpty()
+        HomeCard.ROUTINES -> data.routines > 0
+        HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).isNotEmpty()
+        HomeCard.TOP_TASKS -> top.isNotEmpty()
+        HomeCard.HABITS -> data.habits != null
+        HomeCard.WEATHER -> weather != null || state.prefs.weatherLatLon == null
+        HomeCard.PROJECTS -> data.project != null
+        HomeCard.JOBS -> data.jobs > 0
+        else -> false
+    }
+    val shown = visible.filter { (it in LEFT || it in RIGHT) && shows(it) }
+    val leftCards = shown.filter { it in leftSet }
+    val rightCards = shown.filter { it !in leftSet }
+    drag.columns = leftCards to rightCards
+
+    fun saveLayout(layout: DeckLayout, left: Set<HomeCard>) {
+        data = data.copy(layout = layout)
+        leftSet = left
+        state.prefs.deckLeft = left.map { it.name }.toSet()
+        val v = state.vault ?: return
+        scope.launch { state.io("Couldn't save the card order") { DeckConfig.save(v, layout) } }
+    }
+
+    /** Drop (deck-drag-v1): the order goes to the vault so the phone follows; the column stays on this PC. */
+    fun drop() {
+        val card = drag.card ?: return
+        val spot = drag.target
+        drag.stop()
+        if (spot == null) return
+        val dest = (if (spot.left) leftCards else rightCards).filter { it != card }
+        val oldLayout = data.layout
+        val oldLeft = leftSet
+        val layout = oldLayout.placed(card, dest.getOrNull(spot.index), dest)
+        val left = if (spot.left) oldLeft + card else oldLeft - card
+        if (layout == oldLayout && left == oldLeft) return
+        saveLayout(layout, left)
+        state.offerUndo("Deck order saved · phone too") { saveLayout(oldLayout, oldLeft) }
+    }
+
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
     planning?.let { evening ->
         PlanDialog(
@@ -297,6 +355,11 @@ fun DeckPane(state: AppState) {
             add(NowItem.Mood { n -> changeHabits { Mood.set(it, n) } })
     }
 
+    Box(
+        Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }
+            .focusRequester(keys).focusable()
+            .onPreviewKeyEvent { e -> if (e.key == Key.Escape && e.type == KeyEventType.KeyDown && drag.card != null) { drag.stop(); true } else false }
+    ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
@@ -320,9 +383,15 @@ fun DeckPane(state: AppState) {
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { visible.filter { it in LEFT }.forEach { Show(it) } }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) { visible.filter { it in RIGHT }.forEach { Show(it) } }
+            val pickUp = { runCatching { keys.requestFocus() }; Unit }
+            DeckDragColumn(Modifier.weight(1f), leftCards, true, drag, pickUp, ::drop) { Show(it) }
+            DeckDragColumn(
+                Modifier.weight(1f).onGloballyPositioned { drag.split = it.positionInRoot().x },
+                rightCards, false, drag, pickUp, ::drop
+            ) { Show(it) }
         }
+    }
+    drag.card?.let { c -> LiftedCard(drag, origin) { Show(c) } }
     }
 }
 

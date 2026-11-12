@@ -50,6 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -264,8 +269,113 @@ fun DeckScreen(
     var pulling by remember { mutableStateOf(false) }
     LaunchedEffect(data) { pulling = false }
 
+    // Long-press drag on the sections under Next step (deck-drag-v1). The order is shared with the PC through the vault.
+    val drag = remember { SectionDrag() }
+    val scroll = rememberScrollState()
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    var viewport by remember { mutableStateOf(Rect.Zero) }
+    DragAutoScroll(drag, scroll) { viewport }
+
+    fun saveLayout(l: DeckLayout) {
+        data = data.copy(layout = l)
+        val uri = vault ?: return
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { DeckConfig.save(appVault(ctx, uri), l) } }
+                .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+        }
+    }
+
+    fun dropSection() {
+        val s = drag.section ?: return
+        val index = drag.target
+        val others = drag.others()
+        drag.stop()
+        if (index == null) return
+        val old = data.layout
+        val l = DeckSection.moved(old, s, others.getOrNull(index))
+        if (DeckSection.inOrder(l) == DeckSection.inOrder(old)) return
+        saveLayout(l)
+        scope.launch {
+            if (snack.showSnackbar("Deck order saved · PC too", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) saveLayout(old)
+        }
+    }
+
+    /** One section under Next step: Today (weather, calendar, bills), Top tasks, or the More tiles. */
+    @Composable
+    fun Section(section: DeckSection) {
+        when (section) {
+            DeckSection.TODAY -> {
+                val w = weather
+                val rows = mutableListOf<@Composable () -> Unit>()
+                if (HomeCard.WEATHER !in hidden) {
+                    if (w != null && !showStrip) rows.add {
+                        QuietRow(
+                            w.parts.firstOrNull()?.icon ?: "⛅", "${w.high}° / ${w.low}° · ${w.headline}",
+                            if (w.tomorrow) "tomorrow ▾" else "▾", onClick = { showStrip = true; prefs.weatherStrip = true }
+                        )
+                    }
+                    else if (w == null && !canLocate) rows.add {
+                        QuietRow("📍", "Weather", "Allow location ›", Primary, onClick = { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
+                    }
+                    travel?.let { tr ->
+                        val hm = DateTimeFormatter.ofPattern("HH:mm")
+                        rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
+                    }
+                }
+                if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, earlierOpen) {
+                    earlierOpen = !earlierOpen; prefs.earlierOpenOn = if (earlierOpen) LocalDate.now().toString() else null
+                })
+                if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
+                    rows.add {
+                        val paid = b.task.raw in paying
+                        QuietRow(
+                            null, b.name, listOfNotNull(b.amount?.let { TaskViews.money(it) }, b.task.due?.let { dueLabel(it) }).joinToString(" · "),
+                            rightColour = if (paid) Muted else Amber, textColour = if (paid) Muted else TextMain, strike = paid,
+                            lead = { TickBox(done = paid, onClick = { if (!paid) { paying = paying + b.task.raw; tick(b.task) } }) }
+                        )
+                    }
+                }
+                val expanded = HomeCard.WEATHER !in hidden && w != null && showStrip
+                if (rows.isNotEmpty() || expanded) SectionLabel("Today")
+                if (expanded) {
+                    WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
+                    if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
+                }
+                RowsCard(rows)
+            }
+            DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
+                SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
+                DeckCard {
+                    top.forEachIndexed { i, t ->
+                        if (i > 0) HorizontalDivider(color = Outline)
+                        TaskLine(t, edge = false, onTick = { tick(t) }) { t.due?.let { DuePill(it) } }
+                    }
+                }
+            }
+            DeckSection.MORE -> {
+                // Routines, Projects and Highlights as small tiles.
+                val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
+                val showProject = HomeCard.PROJECTS !in hidden && data.project != null
+                val showHighlight = HomeCard.HIGHLIGHTS !in hidden && leftPassages.isNotEmpty()
+                if (showRoutines || showProject || showHighlight) {
+                    SectionLabel("More")
+                    TileRow {
+                        if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
+                            data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
+                        }
+                        if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
+                        if (showHighlight) Tile("✨", "Highlight", "${leftPassages.size} today") { highlightOpen = true }
+                    }
+                }
+            }
+        }
+    }
+
     PullToRefreshBox(isRefreshing = pulling, onRefresh = { pulling = true; rewalk = true; refresh++ }, modifier = Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
+    Column(
+        Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot(); viewport = it.boundsInRoot() }
+            .verticalScroll(scroll).padding(horizontal = 18.dp)
+    ) {
         DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) })
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
@@ -293,78 +403,21 @@ fun DeckScreen(
             StuckCard(data.stuck.take(3), onOpen = { onOpenSub(Sub.STUCK) }) { onStartFocus(TaskItem("", "${it.emoji} ${it.name}", null, null, ""), it.minutes) }
         }
 
-        val todayGroup = setOf(HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS)
-        var todayDone = false
-        data.layout.visible(low).forEach { card ->
-            when (card) {
-                HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS -> if (!todayDone) {
-                    todayDone = true
-                    val w = weather
-                    val rows = mutableListOf<@Composable () -> Unit>()
-                    if (HomeCard.WEATHER !in hidden) {
-                        if (w != null && !showStrip) rows.add {
-                            QuietRow(
-                                w.parts.firstOrNull()?.icon ?: "⛅", "${w.high}° / ${w.low}° · ${w.headline}",
-                                if (w.tomorrow) "tomorrow ▾" else "▾", onClick = { showStrip = true; prefs.weatherStrip = true }
-                            )
-                        }
-                        else if (w == null && !canLocate) rows.add {
-                            QuietRow("📍", "Weather", "Allow location ›", Primary, onClick = { askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
-                        }
-                        travel?.let { tr ->
-                            val hm = DateTimeFormatter.ofPattern("HH:mm")
-                            rows.add { QuietRow("🚗", "Leave by ${tr.leaveBy.format(hm)} · ${tr.event.title}", "${tr.minutes} min", Primary) }
-                        }
-                    }
-                    if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, earlierOpen) {
-                        earlierOpen = !earlierOpen; prefs.earlierOpenOn = if (earlierOpen) LocalDate.now().toString() else null
-                    })
-                    if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
-                        rows.add {
-                            val paid = b.task.raw in paying
-                            QuietRow(
-                                null, b.name, listOfNotNull(b.amount?.let { TaskViews.money(it) }, b.task.due?.let { dueLabel(it) }).joinToString(" · "),
-                                rightColour = if (paid) Muted else Amber, textColour = if (paid) Muted else TextMain, strike = paid,
-                                lead = { TickBox(done = paid, onClick = { if (!paid) { paying = paying + b.task.raw; tick(b.task) } }) }
-                            )
-                        }
-                    }
-                    val expanded = HomeCard.WEATHER !in hidden && w != null && showStrip
-                    if (rows.isNotEmpty() || expanded) SectionLabel("Today")
-                    if (expanded) {
-                        WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
-                        if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
-                    }
-                    RowsCard(rows)
-                }
-                HomeCard.TOP_TASKS -> if (top.isNotEmpty()) {
-                    SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
-                    DeckCard {
-                        top.forEachIndexed { i, t ->
-                            if (i > 0) HorizontalDivider(color = Outline)
-                            TaskLine(t, edge = false, onTick = { tick(t) }) { t.due?.let { DuePill(it) } }
-                        }
-                    }
-                }
-                else -> {}
+        val sections = DeckSection.inOrder(data.layout)
+        drag.shown = sections
+        var slotAt = 0
+        var slotShown = drag.section == null
+        sections.forEach { section ->
+            if (section != drag.section) {
+                if (!slotShown && drag.target == slotAt) { SectionSlot(drag); slotShown = true }
+                if ((drag.bounds[section]?.height ?: 0f) > 1f) slotAt++
             }
+            DraggableSection(section, drag, ::dropSection) { Section(section) }
         }
-        // Routines, Projects and Highlights as small tiles.
-        val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
-        val showProject = HomeCard.PROJECTS !in hidden && data.project != null
-        val showHighlight = HomeCard.HIGHLIGHTS !in hidden && leftPassages.isNotEmpty()
-        if (showRoutines || showProject || showHighlight) {
-            SectionLabel("More")
-            TileRow {
-                if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
-                    data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
-                }
-                if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
-                if (showHighlight) Tile("✨", "Highlight", "${leftPassages.size} today") { highlightOpen = true }
-            }
-        }
+        if (!slotShown && drag.target == slotAt) SectionSlot(drag)
         Box(Modifier.height(16.dp))
     }
+    drag.section?.let { s -> LiftedSection(drag, origin) { Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { Section(s) } } }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
     if (habitsOpen) data.habits?.let { n ->
