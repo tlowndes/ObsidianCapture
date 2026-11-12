@@ -109,6 +109,7 @@ fun DeckScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
+    var rewalk by remember { mutableStateOf(false) }
     var energy by remember { mutableStateOf(prefs.energy) }
     var later by remember { mutableStateOf(prefs.laterToday) }
     var showStrip by remember { mutableStateOf(prefs.weatherStrip) }
@@ -144,6 +145,7 @@ fun DeckScreen(
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
+        if (rewalk) { VaultScan.invalidate(); rewalk = false } // pull to refresh: walk the whole vault again
         data = withContext(Dispatchers.IO) {
             runCatching { VaultRoute.check(ctx, uri, force = refresh > 0) }
             DeckData(
@@ -244,7 +246,7 @@ fun DeckScreen(
     var pulling by remember { mutableStateOf(false) }
     LaunchedEffect(data) { pulling = false }
 
-    PullToRefreshBox(isRefreshing = pulling, onRefresh = { pulling = true; refresh++ }, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = pulling, onRefresh = { pulling = true; rewalk = true; refresh++ }, modifier = Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) })
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {

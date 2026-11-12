@@ -81,13 +81,15 @@ fun TasksScreen(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val tasks = remember { mutableStateListOf<TaskItem>() }
-    val ticked = remember { mutableStateListOf<TickedTask>() }
+    // The last lists read show at once; reload() then refreshes them from the vault.
+    val snapshot = remember { TaskSnapshot.load(ctx) }
+    val tasks = remember { mutableStateListOf<TaskItem>().apply { snapshot?.let { addAll(it.open) } } }
+    val ticked = remember { mutableStateListOf<TickedTask>().apply { snapshot?.let { addAll(it.done) } } }
     // Rows mid-tick: green and struck through for a moment, then folding away before the note is written.
     val ticking = remember { mutableStateMapOf<TaskItem, Job>() }
     val leaving = remember { mutableStateListOf<TaskItem>() }
     val haptics = LocalHapticFeedback.current
-    var loaded by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(snapshot != null) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var tag by remember { mutableStateOf(prefs.tasksTag) }
     var filtering by remember { mutableStateOf(false) }
@@ -145,8 +147,11 @@ fun TasksScreen(
             }
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }
             r.onSuccess {
-                tasks.clear(); tasks.addAll(it.open); loaded = true
-                ticked.clear(); ticked.addAll(it.done)
+                TaskSnapshot.save(ctx, it)
+                // Only touch the lists when something changed, so an unchanged refresh doesn't redraw every row.
+                if (tasks.toList() != it.open) { tasks.clear(); tasks.addAll(it.open) }
+                if (ticked.toList() != it.done) { ticked.clear(); ticked.addAll(it.done) }
+                loaded = true
                 leaving.retainAll(it.open.toSet())
             }
                 .onFailure { snack.showSnackbar("Couldn't read tasks: ${it.message}") }

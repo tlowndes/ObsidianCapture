@@ -138,14 +138,23 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
 
 private fun androidRoot(ctx: Context, tree: Uri): VaultDoc {
     val root = DocumentFile.fromTreeUri(ctx, tree) ?: error("Vault folder unavailable")
-    return AndroidDoc(ctx, tree, root, DocumentsContract.getTreeDocumentId(tree), root.uri, root.name ?: "", true, root.lastModified(), root.length())
+    return AndroidDoc(ctx, tree, DocumentsContract.getTreeDocumentId(tree), root.uri, root.name ?: "", true, root.lastModified(), root.length())
 }
 
-/** A SAF document. [file] is set for the tree root and anything reached by [VaultDoc.findChild]; listings use a query. */
+private val DOC_COLS = arrayOf(
+    DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+    DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+    DocumentsContract.Document.COLUMN_SIZE
+)
+
+/**
+ * A SAF document, read straight from DocumentsContract queries. DocumentFile.findFile lists a folder and then asks
+ * again for every child's name (one query each), so finding "01 - Inbox/⚡ Quick Task.md" cost a query per file in
+ * the vault root and the inbox; [findChild] here is one query per folder.
+ */
 private class AndroidDoc(
     private val ctx: Context,
     private val tree: Uri,
-    private val file: DocumentFile?,
     private val docId: String,
     private val uri: Uri,
     override val name: String,
@@ -155,33 +164,42 @@ private class AndroidDoc(
 ) : VaultDoc {
     private val cr get() = ctx.contentResolver
 
-    override fun findChild(name: String): VaultDoc? {
-        val f = file?.findFile(name) ?: return null
-        return fromFile(f)
-    }
+    override fun findChild(name: String): VaultDoc? = children().firstOrNull { it.name == name }
 
     override fun children(): List<VaultDoc> {
-        val cols = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-            DocumentsContract.Document.COLUMN_SIZE
-        )
         val out = mutableListOf<VaultDoc>()
-        cr.query(DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId), cols, null, null, null)?.use { c ->
+        cr.query(DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId), DOC_COLS, null, null, null)?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
                 val childName = c.getString(1) ?: continue
                 val isDir = c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
                 val childUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                out.add(AndroidDoc(ctx, tree, null, id, childUri, childName, isDir, c.getLong(3), if (c.isNull(4)) 0L else c.getLong(4)))
+                out.add(AndroidDoc(ctx, tree, id, childUri, childName, isDir, c.getLong(3), if (c.isNull(4)) 0L else c.getLong(4)))
             }
         }
         return out
     }
 
-    override fun mkdir(name: String): VaultDoc? = file?.createDirectory(name)?.let(::fromFile)
+    override fun mkdir(name: String): VaultDoc? = make(DocumentsContract.Document.MIME_TYPE_DIR, name)
 
-    override fun createFile(mime: String, displayName: String): VaultDoc? = file?.createFile(mime, displayName)?.let(::fromFile)
+    override fun createFile(mime: String, displayName: String): VaultDoc? = make(mime, displayName)
+
+    private fun make(mime: String, displayName: String): VaultDoc? {
+        val made = runCatching { DocumentsContract.createDocument(cr, uri, mime, displayName) }.getOrNull() ?: return null
+        return single(made)
+    }
+
+    /** The document at [doc] (a tree document Uri), with its name as the provider settled it. */
+    private fun single(doc: Uri): VaultDoc? {
+        val id = DocumentsContract.getDocumentId(doc)
+        cr.query(doc, DOC_COLS, null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                val isDir = c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+                return AndroidDoc(ctx, tree, id, doc, c.getString(1) ?: "", isDir, c.getLong(3), if (c.isNull(4)) 0L else c.getLong(4))
+            }
+        }
+        return null
+    }
 
     override fun open(): InputStream? = cr.openInputStream(uri)
 
@@ -189,30 +207,25 @@ private class AndroidDoc(
         cr.openOutputStream(uri, "wt")?.use { it.write(bytes); it.flush() } ?: error("Cannot write $name")
     }
 
-    override fun delete() {
-        if (file != null) file.delete() else DocumentsContract.deleteDocument(cr, uri)
-    }
+    override fun delete() { DocumentsContract.deleteDocument(cr, uri) }
 
     override fun moveInto(fromDir: VaultDoc, targetDir: VaultDoc): VaultDoc? {
         val fromUri = (fromDir as AndroidDoc).uri
         val toUri = (targetDir as AndroidDoc).uri
         val moved = runCatching { DocumentsContract.moveDocument(cr, uri, fromUri, toUri) }.getOrNull() ?: return null
-        val movedName = DocumentFile.fromSingleUri(ctx, moved)?.name ?: name
-        return AndroidDoc(ctx, tree, DocumentFile.fromSingleUri(ctx, moved), DocumentsContract.getDocumentId(moved), moved, movedName, false, 0L, length)
+        return single(moved) ?: AndroidDoc(ctx, tree, DocumentsContract.getDocumentId(moved), moved, name, false, 0L, length)
     }
 
     override fun handle(): Any = uri
-
-    private fun fromFile(f: DocumentFile) = AndroidDoc(
-        ctx, tree, f, DocumentsContract.getDocumentId(f.uri), f.uri,
-        f.name ?: "", f.isDirectory, f.lastModified(), f.length()
-    )
 }
 
 // ---- the shared stores, set up for Android: the picked folder, the cache folder, and widget refreshes ----
 
+/** How long Android reuses the vault's note list before walking every folder again (the app's own writes show at once). */
+const val TASK_WALK_TTL_MS = 120_000L
+
 fun VaultWriter(ctx: Context, tree: Uri) =
-    VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json")) { Widgets.tasksChanged(ctx) }
+    VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json"), { Widgets.tasksChanged(ctx) }, TASK_WALK_TTL_MS)
 
 fun ReadStore(ctx: Context, tree: Uri) = ReadStore(appVault(ctx, tree)) { Widgets.readChanged(ctx) }
 
