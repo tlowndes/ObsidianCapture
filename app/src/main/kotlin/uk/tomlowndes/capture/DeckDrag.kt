@@ -99,13 +99,17 @@ class SectionDrag {
     }
 }
 
-/** One Deck section: long-press lifts it. While another is dragged it dims; this one shows as a ghost. */
+/**
+ * One Deck section: long-press lifts it. While another is dragged it dims; this one shows as a ghost.
+ * A column, so a section's children (the Today heading, the forecast, the agenda) sit one under the next.
+ * A box would paint them in the same place and the agenda would cover the weather.
+ */
 @Composable
 fun DraggableSection(section: DeckSection, drag: SectionDrag, onDrop: () -> Unit, content: @Composable () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val active = drag.section
-    Box(
+    Column(
         Modifier.fillMaxWidth()
             .onGloballyPositioned { coords[0] = it; drag.bounds[section] = it.boundsInRoot() }
             .alpha(if (active == null) 1f else if (active == section) 0.35f else 0.55f)
