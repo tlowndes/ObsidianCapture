@@ -18,7 +18,12 @@ data class SlipOptions(
     val tomorrowEvents: Boolean = true,
     /** "In brief": a few lines from Jarvis about the day, at the top (print-summary-v1). */
     val brief: Boolean = true,
+    /** "Don't forget": bills due soon and job follow-ups that are due, above the to-dos (slip-extras-v1). */
+    val dontForget: Boolean = true,
 )
+
+/** One "Don't forget" line: what it is, and the small note on the right ("£142 · today", "follow-up"). */
+data class SlipReminder(val text: String, val note: String)
 
 /** One to-do on the slip. [late] is the date it was due when that's before today. */
 data class SlipTask(val text: String, val tags: List<String>, val late: LocalDate? = null)
@@ -42,6 +47,8 @@ data class SlipContent(
     val brief: String? = null,
     /** True when the slip is for a later day than the one it's printed on (slip-any-day-v1). */
     val ahead: Boolean = false,
+    /** Bills and job follow-ups due, when [SlipOptions.dontForget] is on. Empty leaves the section off. */
+    val dontForget: List<SlipReminder> = emptyList(),
 ) {
     /** Label for the slip's own day: "TODAY", or "FRIDAY" when printed ahead. */
     val dayWord: String get() = if (ahead) Slip.weekday(date) else "TODAY"
@@ -67,6 +74,36 @@ object Slip {
     /** How many days the day strip offers (today plus the next six); the date picker reaches further. */
     const val STRIP_DAYS = 7
 
+    /** "Don't forget" shows bills due up to this many days after the slip's day (and any late ones). */
+    const val BILL_DAYS = 3
+
+    /** When a bill is due, from the slip's day: "today", "late", "Sat" (this week) or "Mon 23 Nov". */
+    fun dueWord(due: LocalDate, date: LocalDate): String = when {
+        due.isBefore(date) -> "late"
+        due == date -> "today"
+        due.isBefore(date.plusDays(7)) -> due.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.UK)
+        else -> shortDate(due)
+    }
+
+    /**
+     * "Don't forget" for [date]: open #bill tasks due by [BILL_DAYS] after it (late ones first), then open job
+     * applications whose follow-up date is [date] or earlier.
+     */
+    fun dontForget(tasks: List<TaskItem>, jobs: List<Job>, date: LocalDate): List<SlipReminder> {
+        val bills = billsFor(tasks, date).map { t ->
+            val b = TaskViews.bill(t)
+            SlipReminder(b.name, listOfNotNull(b.amount?.let { TaskViews.money(it) }, dueWord(t.due!!, date)).joinToString(" · "))
+        }
+        val chase = jobs.filter { !it.closed && it.next != null && !it.next.isAfter(date) }.sortedBy { it.next }.map { j ->
+            SlipReminder("Chase " + listOf(j.company, j.role).filter { it.isNotBlank() }.joinToString(" · "),
+                if (j.next!!.isBefore(date)) "follow-up, was " + j.next.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.UK) else "follow-up")
+        }
+        return bills + chase
+    }
+
+    private fun billsFor(tasks: List<TaskItem>, date: LocalDate): List<TaskItem> =
+        tasks.filter { Deck.isBill(it) && it.due != null && !it.due.isAfter(date.plusDays(BILL_DAYS.toLong())) }.sortedBy { it.due }
+
     /** "FRIDAY". */
     fun weekday(d: LocalDate): String = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.UK).uppercase(Locale.UK)
 
@@ -87,10 +124,14 @@ object Slip {
      */
     fun build(
         date: LocalDate, all: List<TaskItem>, events: List<CalEvent>, weather: WeatherSummary?, o: SlipOptions,
-        today: LocalDate = date,
+        today: LocalDate = date, jobs: List<Job> = emptyList(),
     ): SlipContent {
         // Quick Task can come back from both the note and the vault scan: keep one of each.
-        val tasks = all.distinctBy { Tags.strip(it.text).lowercase() to it.due }
+        val unique = all.distinctBy { Tags.strip(it.text).lowercase() to it.due }
+        val reminders = if (o.dontForget) dontForget(unique, jobs, date) else emptyList()
+        // Bills shown under Don't forget aren't listed again as to-dos.
+        val shownBills = if (o.dontForget) billsFor(unique, date).map { it.raw }.toSet() else emptySet()
+        val tasks = unique.filter { it.raw !in shownBills }
         fun day(d: LocalDate): Pair<List<SlipEvent>, List<SlipEvent>> {
             val on = events.filter { it.on(d) }
             return on.filter { it.allDay }.map { SlipEvent(it.title, null, null, it.location) } to
@@ -117,6 +158,7 @@ object Slip {
             o,
             nextAllDay, nextTimed,
             ahead = date.isAfter(today),
+            dontForget = reminders,
         )
     }
 

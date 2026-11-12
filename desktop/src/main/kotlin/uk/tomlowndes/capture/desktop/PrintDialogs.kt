@@ -48,6 +48,8 @@ import uk.tomlowndes.capture.Jarvis
 import uk.tomlowndes.capture.Slip
 import uk.tomlowndes.capture.SlipOptions
 import uk.tomlowndes.capture.Summary
+import uk.tomlowndes.capture.Job
+import uk.tomlowndes.capture.Jobs
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.Weather
 import uk.tomlowndes.capture.WeatherSummary
@@ -75,6 +77,8 @@ object SlipSettings {
             weather = "weather" in on, calendar = "calendar" in on, month = "month" in on, todo = "todo" in on,
             tomorrow = "tomorrow" in on, blank = "blank" in on, sudoku = "sudoku" in on,
             tomorrowEvents = "tomorrowEvents" in on, brief = "brief" in on,
+            // Saved as "off" so slips set up before it existed get it switched on.
+            dontForget = "noDontForget" !in on,
         )
     }
 
@@ -83,6 +87,7 @@ object SlipSettings {
             "weather".takeIf { o.weather }, "calendar".takeIf { o.calendar }, "month".takeIf { o.month },
             "todo".takeIf { o.todo }, "tomorrow".takeIf { o.tomorrow }, "blank".takeIf { o.blank },
             "sudoku".takeIf { o.sudoku }, "tomorrowEvents".takeIf { o.tomorrowEvents }, "brief".takeIf { o.brief },
+            "noDontForget".takeIf { !o.dontForget },
         ).joinToString(",")
     }
 }
@@ -206,7 +211,7 @@ fun PrinterChooser(state: AppState, onDone: () -> Unit) {
     }
 }
 
-private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?)
+private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?, val jobs: List<Job> = emptyList())
 
 /** Today, Tomorrow, then the next five days as tiles, and 📅 for a later date (slip-any-day-v1). */
 @Composable
@@ -261,6 +266,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                 runCatching { state.writer()!!.listTasks() }.getOrDefault(emptyList()),
                 runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
                 runCatching { DesktopWeather.today(p) }.getOrNull(),
+                runCatching { Jobs.list(v) }.getOrDefault(emptyList()),
             )
         }
     }
@@ -294,7 +300,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         if (dayWeatherFor != day) return@LaunchedEffect
         img = withContext(Dispatchers.Default) {
             runCatching {
-                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today)
+                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today, src.jobs)
                     .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
                 DesktopSlip.draw(content, SLIP_OWNER)
             }.getOrNull()
@@ -335,6 +341,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                 }, opts.weather) { set(opts.copy(weather = it)) }
                 SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
                 SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
+                SlipSwitch("Don't forget", "Bills due soon and job follow-ups", opts.dontForget) { set(opts.copy(dontForget = it)) }
                 SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
                 SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
                 SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }

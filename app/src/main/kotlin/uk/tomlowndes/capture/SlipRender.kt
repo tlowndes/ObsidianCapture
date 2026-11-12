@@ -54,6 +54,7 @@ object SlipRender {
             if (s.brief != null) add { p.brief(s.brief!!) }
             if (s.weather != null) add { p.weather(s.weather!!) }
             if (s.show.calendar) add { p.calendar(s) }
+            if (s.dontForget.isNotEmpty()) add { p.dontForget(s.dontForget) }
             if (s.show.todo) add { p.todo(s) }
             if (s.sudoku != null) add { p.sudoku(s.sudoku!!) }
         }
@@ -299,6 +300,21 @@ object SlipRender {
             if (s.tomorrow.isNotEmpty()) { gap(14f); dayLabel(s.nextWord, s.date.plusDays(1)); s.tomorrow.forEach { task(it) } }
             gap(10f)
             text("from Obsidian · Quick Task and your notes", paint(18f))
+        }
+
+        /** Don't forget (slip-extras-v1): a tick box, the bill or job, and its note on the right. */
+        fun dontForget(items: List<SlipReminder>) {
+            heading("Don't forget", "${items.size}")
+            gap(8f)
+            items.forEach { r ->
+                val top = y
+                tickBox(top)
+                val np = paint(SMALL)
+                val nw = np.measureText(r.note)
+                c.drawText(r.note, WIDTH - M - nw, top + BODY, np)
+                text(r.text, paint(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
+                y = maxOf(y, top + BOX + 6f) + 12f
+            }
         }
 
         fun dayLabel(l: String, d: LocalDate?) {

@@ -5,6 +5,7 @@ import uk.tomlowndes.capture.EscPos
 import uk.tomlowndes.capture.Slip
 import uk.tomlowndes.capture.SlipContent
 import uk.tomlowndes.capture.SlipEvent
+import uk.tomlowndes.capture.SlipReminder
 import uk.tomlowndes.capture.SlipTask
 import uk.tomlowndes.capture.Summary
 import uk.tomlowndes.capture.WeatherSummary
@@ -55,6 +56,7 @@ object DesktopSlip {
             s.brief?.let { b -> add { p.brief(b) } }
             s.weather?.let { w -> add { p.weather(w) } }
             if (s.show.calendar) add { p.calendar(s) }
+            if (s.dontForget.isNotEmpty()) add { p.dontForget(s.dontForget) }
             if (s.show.todo) add { p.todo(s) }
             s.sudoku?.let { su -> add { p.sudoku(su) } }
         }
@@ -316,6 +318,21 @@ object DesktopSlip {
             if (s.tomorrow.isNotEmpty()) { gap(14f); dayLabel(s.nextWord, s.date.plusDays(1)); s.tomorrow.forEach { task(it) } }
             gap(10f)
             text("from Obsidian · Quick Task and your notes", mono(18f))
+        }
+
+        /** Don't forget (slip-extras-v1): a tick box, the bill or job, and its note on the right. */
+        fun dontForget(items: List<SlipReminder>) {
+            heading("Don't forget", "${items.size}")
+            gap(8f)
+            items.forEach { r ->
+                val top = y
+                tickBox(top)
+                val nf = mono(SMALL)
+                val nw = width(r.note, nf)
+                at(r.note, nf, WIDTH - M - nw, top + BODY)
+                text(r.text, mono(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
+                y = maxOf(y, top + BOX + 6f) + 12f
+            }
         }
 
         fun dayLabel(l: String, d: LocalDate?) {

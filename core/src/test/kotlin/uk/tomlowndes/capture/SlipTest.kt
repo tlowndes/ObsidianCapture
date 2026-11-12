@@ -126,4 +126,30 @@ class SlipTest {
         assertEquals("Print", Slip.printLabel(day, day))
         assertEquals("Print Friday's slip", Slip.printLabel(day.plusDays(3), day))
     }
+
+    private fun bill(text: String, due: LocalDate) = TaskItem("- [ ] $text #bill 📅 $due", "$text #bill", due)
+    private fun job(company: String, next: LocalDate?, status: String = "Applied") =
+        Job("02 - Area/Work/Job Hunt/Applications/$company.md", company, "Product Designer", status, next, null)
+
+    @Test fun dontForgetListsBillsDueSoonAndJobFollowUps() {
+        val tasks = listOf(
+            bill("Council tax £142", day),
+            bill("Spotify £11.99", day.plusDays(3)),
+            bill("Phone £20", day.minusDays(1)),
+            bill("Gym £30", day.plusDays(9)),
+            task("Book dentist", day),
+        )
+        val jobs = listOf(job("Monzo", day), job("Wise", day.minusDays(1)), job("Later", day.plusDays(2)), job("Gone", day, "Rejected"))
+        val s = Slip.build(day, tasks, emptyList(), null, SlipOptions(), jobs = jobs)
+        assertEquals(listOf("Phone", "Council tax", "Spotify", "Chase Wise · Product Designer", "Chase Monzo · Product Designer"), s.dontForget.map { it.text })
+        assertEquals(listOf("£20 · late", "£142 · today", "£11.99 · Fri", "follow-up, was Mon", "follow-up"), s.dontForget.map { it.note })
+        // Bills shown there aren't repeated in the to-dos; ones further out stay as they were.
+        assertEquals(listOf("Book dentist"), (s.overdue + s.today).map { it.text })
+    }
+
+    @Test fun dontForgetOffKeepsBillsInToDos() {
+        val s = Slip.build(day, listOf(bill("Council tax £142", day)), emptyList(), null, SlipOptions(dontForget = false), jobs = listOf(job("Monzo", day)))
+        assertTrue(s.dontForget.isEmpty())
+        assertEquals(1, s.today.size)
+    }
 }

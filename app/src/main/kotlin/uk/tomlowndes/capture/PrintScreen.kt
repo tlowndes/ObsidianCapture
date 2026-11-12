@@ -64,18 +64,18 @@ private object SlipPrefs {
         SlipOptions(
             it.getBoolean("weather", true), it.getBoolean("calendar", true), it.getBoolean("month", true),
             it.getBoolean("todo", true), it.getBoolean("tomorrow", true), it.getBoolean("blank", true), it.getBoolean("sudoku", true),
-            it.getBoolean("tomorrowEvents", true), it.getBoolean("brief", true),
+            it.getBoolean("tomorrowEvents", true), it.getBoolean("brief", true), it.getBoolean("dontForget", true),
         )
     }
     fun save(ctx: Context, o: SlipOptions) = p(ctx).edit()
         .putBoolean("weather", o.weather).putBoolean("calendar", o.calendar).putBoolean("month", o.month)
         .putBoolean("todo", o.todo).putBoolean("tomorrow", o.tomorrow).putBoolean("blank", o.blank).putBoolean("sudoku", o.sudoku)
-        .putBoolean("tomorrowEvents", o.tomorrowEvents).putBoolean("brief", o.brief)
+        .putBoolean("tomorrowEvents", o.tomorrowEvents).putBoolean("brief", o.brief).putBoolean("dontForget", o.dontForget)
         .apply()
 }
 
 /** What the slip is built from: loaded once when the screen opens. */
-private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?)
+private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?, val jobs: List<Job> = emptyList())
 
 /**
  * Daily Slip: pick what goes on today's printout, see it, and print it on the pocket thermal printer
@@ -124,7 +124,8 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
             val events = CalendarSync.cached(ctx).filter { on == null || it.id in on }.flatMap { it.events }
             val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
-            SlipSources(tasks, events, weather)
+            val jobs = vault?.let { runCatching { Jobs.list(appVault(ctx, it)) }.getOrNull() }.orEmpty()
+            SlipSources(tasks, events, weather, jobs)
         }
     }
     LaunchedEffect(sources, day) {
@@ -157,7 +158,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         if (dayWeatherFor != day) return@LaunchedEffect
         slip = withContext(Dispatchers.Default) {
             runCatching {
-                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today)
+                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today, src.jobs)
                     .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
                 SlipRender.draw(content, SLIP_OWNER)
             }.getOrNull()
@@ -207,6 +208,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             SettingRow("Tomorrow's events") { AppSwitch(opts.tomorrowEvents) { set(opts.copy(tomorrowEvents = it)) } }
             SettingRow("Month grid", "This month with today marked") { AppSwitch(opts.month) { set(opts.copy(month = it)) } }
         }
+        SettingRow("Don't forget", "Bills due soon and job follow-ups") { AppSwitch(opts.dontForget) { set(opts.copy(dontForget = it)) } }
         SettingRow("To-dos", if (day == today) "Overdue and due today" else "Due $dayName, plus anything still late") { AppSwitch(opts.todo) { set(opts.copy(todo = it)) } }
         if (opts.todo) {
             SettingRow("Tomorrow's to-dos") { AppSwitch(opts.tomorrow) { set(opts.copy(tomorrow = it)) } }
