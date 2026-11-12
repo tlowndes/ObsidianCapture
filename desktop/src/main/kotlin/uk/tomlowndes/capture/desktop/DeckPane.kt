@@ -40,6 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -47,9 +53,11 @@ import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
 import uk.tomlowndes.capture.DayPlan
-import uk.tomlowndes.capture.Highlights
-import uk.tomlowndes.capture.HighlightsSeen
-import uk.tomlowndes.capture.Passage
+import uk.tomlowndes.capture.Journal
+import uk.tomlowndes.capture.JournalEntry
+import uk.tomlowndes.capture.JournalFacts
+import uk.tomlowndes.capture.JournalKind
+import uk.tomlowndes.capture.JournalPrompt
 import uk.tomlowndes.capture.Mood
 import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.Routines
@@ -101,8 +109,7 @@ private data class DeckData(
     val jobs: Int = 0,
     val events: List<CalEvent> = emptyList(),
     val dayDone: DayDone = DayDone(),
-    val passages: List<Passage> = emptyList(),
-    val seen: Set<String>? = null,
+    val journalDone: Boolean = false,
 )
 
 private fun greeting(now: LocalTime = LocalTime.now()) = when {
@@ -141,44 +148,13 @@ fun DeckPane(state: AppState) {
                 routines = runCatching { Routines.load(v).size }.getOrDefault(0),
                 jobs = runCatching { Jobs.list(v).count { !it.closed } }.getOrDefault(0),
                 events = runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
-                passages = runCatching {
-                    val store = state.readStore()!!
-                    store.list().filter { it.read }.take(15).flatMap { a ->
-                        runCatching { store.load(a.ref) }.getOrNull()?.let { doc -> Highlights.passages(doc).map { Passage(it, doc.title, doc.ref) } }.orEmpty()
-                    }
-                }.getOrDefault(emptyList()),
-                seen = runCatching { HighlightsSeen.load(v) }.getOrNull(),
+                journalDone = runCatching { Journal.written(v, LocalDate.now()) }.getOrDefault(false),
             )
         } ?: return@launch
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
     LaunchedEffect(state.changes) {
         weather = state.io { DesktopWeather.today(state.prefs) }
-    }
-
-    // Daily highlights (past-events-highlights-v1): today's picks stay fixed; kept/skipped ones drop out.
-    var hlSeen by remember { mutableStateOf(emptySet<String>()) }
-    var hlKept by remember { mutableStateOf(false) }
-    var hlBase by remember { mutableStateOf<Set<String>?>(null) }
-    LaunchedEffect(data.seen) { data.seen?.let { hlSeen = hlSeen + it; if (hlBase == null) hlBase = it } }
-    val hlPicks = remember(data.passages, hlBase) { hlBase?.let { Highlights.pick(data.passages, LocalDate.now(), it) }.orEmpty() }
-    LaunchedEffect(state.vault, state.changes) { hlKept = state.vault?.entry(Highlights.PATH) != null }
-    val hlLeft = hlPicks.filter { Highlights.key(it) !in hlSeen }
-
-    fun markSeen(p: Passage) {
-        val k = Highlights.key(p)
-        hlSeen = hlSeen + k
-        scope.launch { state.vault?.let { v -> state.io { HighlightsSeen.add(v, listOf(k)) } } }
-    }
-
-    fun keepPassage(p: Passage) {
-        markSeen(p)
-        scope.launch {
-            val v = state.vault ?: return@launch
-            state.io("Couldn't write Highlights.md") { Highlights.keep(v, p, LocalDate.now()) } ?: return@launch
-            hlKept = true
-            state.say("Kept in Highlights.md")
-        }
     }
 
     fun tick(t: TaskItem) = scope.launch {
@@ -245,14 +221,7 @@ fun DeckPane(state: AppState) {
                 ) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
             HomeCard.ROUTINES -> if (data.routines > 0) RowCard("🔁 Routines", "${data.routines} ›") { state.tab = Tab.ROUTINES }
-            HomeCard.HIGHLIGHTS -> if (hlLeft.isNotEmpty()) {
-                val p = hlLeft.first()
-                HighlightsDeckCard(
-                    p, hlPicks.indexOf(p), hlPicks.size, hlKept,
-                    onOpen = { state.openArticle(p.ref) }, onKeep = { keepPassage(p) }, onNext = { markSeen(p) },
-                    onOpenNote = { state.openInObsidian(Highlights.PATH) },
-                )
-            }
+            HomeCard.HIGHLIGHTS -> JournalCard(state, data.events.count { it.on(today) }, data.journalDone) { reload() }
             HomeCard.BILLS -> TaskViews.billsDue(data.tasks, today).takeIf { it.isNotEmpty() }?.let { bills ->
                 BillsCard(bills, paying) { b -> paying = paying + b.task.raw; tick(b.task) }
             }
@@ -612,34 +581,111 @@ private fun BillsCard(bills: List<Bill>, paying: Set<String>, onPaid: (Bill) -> 
     }
 }
 
-/** Daily highlights (past-events-highlights-v1): one passage from your reading with Open article / ♡ Keep / Next. */
+/**
+ * Evening check-in (journal-prompt-v2): before 19:00, or once written, one row; from 19:00 the scales, ticks and
+ * one-liners from `99 - Meta/Journal prompts.md` in two columns. Saves to this month's journal note (Ctrl+Enter).
+ */
 @Composable
-private fun HighlightsDeckCard(
-    p: Passage, index: Int, count: Int, kept: Boolean,
-    onOpen: () -> Unit, onKeep: () -> Unit, onNext: () -> Unit, onOpenNote: () -> Unit,
-) {
-    DeckCard {
-        CardHead("✨ From your reading", "${index + 1} of $count")
-        Text(
-            "“${p.text}”", fontSize = 15.sp, fontStyle = FontStyle.Italic, lineHeight = 22.sp, fontFamily = FontFamily.Serif,
-            color = TextMain, modifier = Modifier.padding(horizontal = 18.dp)
-        )
-        Text(p.title, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 8.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DeckButton("Open article", primary = false, modifier = Modifier.weight(1f), onClick = onOpen)
-            DeckButton("♡ Keep", primary = false, modifier = Modifier.weight(1f), onClick = onKeep)
-            DeckButton("Next", primary = true, modifier = Modifier.weight(1f), onClick = onNext)
+private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val today = LocalDate.now()
+    var open by remember { mutableStateOf(false) }
+    val evening = LocalTime.now().hour >= Journal.ASK_FROM
+    val month = today.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.UK)
+    if (written && !open) {
+        RowCard("📓 Journal", "✓ Written today · open $month ›") { state.openInObsidian(Journal.path(today)) }
+        return
+    }
+    if (!evening && !open) {
+        RowCard("📓 Journal", "write ›") { open = true }
+        return
+    }
+    var prompts by remember { mutableStateOf<List<JournalPrompt>?>(null) }
+    var answers by remember { mutableStateOf(emptyMap<String, String>()) }
+    var note by remember { mutableStateOf("") }
+    var noteOpen by remember { mutableStateOf(false) }
+    var facts by remember { mutableStateOf(JournalFacts(events = events)) }
+    LaunchedEffect(state.vault) {
+        val v = state.vault ?: return@LaunchedEffect
+        state.io { Triple(Journal.loadPrompts(v), Journal.start(v, today, Journal.loadPrompts(v)), Journal.facts(v, today, events)) }?.let { (p, e, f) ->
+            prompts = p; answers = e.answers; note = e.note; noteOpen = e.note.isNotBlank(); facts = f
         }
-        Line()
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                repeat(count) { n -> Box(Modifier.size(6.dp).clip(CircleShape).background(if (n == index) Primary else Outline)) }
+    }
+    fun save() {
+        val v = state.vault ?: return
+        val list = prompts ?: return
+        scope.launch {
+            state.io("Couldn't write the journal") { Journal.saveWithMood(v, today, list, JournalEntry(answers, note), facts) } ?: return@launch
+            state.say("Saved to ${Journal.path(today).substringAfterLast('/')}")
+            open = false
+            onSaved()
+        }
+    }
+    val list = prompts
+    val asked = list?.filter { it.kind != JournalKind.LINE }.orEmpty()
+    DeckCard {
+        Column(Modifier.onPreviewKeyEvent { e ->
+            if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && e.isCtrlPressed) { save(); true } else false
+        }) {
+            CardHead("📓 Evening check-in", if (asked.isEmpty()) null else "${JournalEntry(answers).answered(asked)} of ${asked.size}")
+            if (list == null) {
+                Text("Loading…", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
+                return@Column
             }
-            if (kept) Text("Highlights.md ›", fontSize = 12.sp, color = Primary, modifier = Modifier.hand().clickable(onClick = onOpenNote))
+            @Composable
+            fun Item(p: JournalPrompt, mod: Modifier) {
+                val a = answers[p.key]
+                Row(mod.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${p.emoji} ${p.short}", fontSize = 13.sp, color = TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (p.kind == JournalKind.TICK) {
+                        val on = a == "y"
+                        val shape = RoundedCornerShape(5.dp)
+                        Box(
+                            Modifier.size(18.dp).clip(shape).background(if (on) TaskGreen else Color.Transparent)
+                                .border(1.5.dp, if (on) TaskGreen else Muted, shape).hand()
+                                .clickable { answers = if (on) answers - p.key else answers + (p.key to "y") },
+                            contentAlignment = Alignment.Center
+                        ) { if (on) Text("✓", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1F17)) }
+                    } else p.options.forEachIndexed { n, o ->
+                        val value = if (p.kind == JournalKind.MOOD) (n + 1).toString() else o
+                        val on = a == value
+                        Text(
+                            o, fontSize = 11.5.sp, color = if (on) Primary else Muted,
+                            modifier = Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent)
+                                .border(1.dp, if (on) Primary else Outline, CircleShape).hand()
+                                .clickable { answers = if (on) answers - p.key else answers + (p.key to value) }
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            // Scales down the left, ticks down the right, like the mockup.
+            val scales = asked.filter { it.kind != JournalKind.TICK }
+            val ticks = asked.filter { it.kind == JournalKind.TICK }
+            val half = (scales.size + ticks.size + 1) / 2
+            val colA = (scales + ticks).take(half)
+            val colB = (scales + ticks).drop(half)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                Column(Modifier.weight(1f)) { colA.forEach { Item(it, Modifier.fillMaxWidth()) } }
+                Column(Modifier.weight(1f)) { colB.forEach { Item(it, Modifier.fillMaxWidth()) } }
+            }
+            list.filter { it.kind == JournalKind.LINE }.forEach { p ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${p.emoji} ${p.short}", fontSize = 13.sp, color = TextMain, modifier = Modifier.width(150.dp))
+                    Field(answers[p.key].orEmpty(), { answers = answers + (p.key to it.replace("\n", " ")) }, Modifier.weight(1f), placeholder = "optional", fontSize = 13)
+                }
+            }
+            if (noteOpen) Field(note, { note = it }, Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                placeholder = "Anything else about today", singleLine = false, minLines = 3, fontSize = 13)
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                facts.parts().takeIf { it.isNotEmpty() }?.let {
+                    Text(it.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted,
+                        modifier = Modifier.clip(CircleShape).background(Surface2).padding(horizontal = 9.dp, vertical = 3.dp))
+                }
+                if (!noteOpen) DeckButton("+ Note", primary = false) { noteOpen = true }
+                Box(Modifier.weight(1f))
+                DeckButton("Save · Ctrl+Enter", primary = true) { save() }
+            }
         }
     }
 }

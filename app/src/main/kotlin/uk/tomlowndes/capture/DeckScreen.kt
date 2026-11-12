@@ -161,12 +161,6 @@ fun DeckScreen(
                 calendars = runCatching { CalendarConfig.load(appVault(ctx, uri)) }.getOrNull(),
                 jobs = runCatching { Jobs.list(appVault(ctx, uri)) }.getOrDefault(emptyList()),
                 routines = runCatching { Routines.load(appVault(ctx, uri)) }.getOrDefault(emptyList()),
-                passages = runCatching {
-                    val store = ReadStore(ctx, uri)
-                    store.list().filter { it.read }.take(15).flatMap { a ->
-                        runCatching { store.load(a.ref) }.getOrNull()?.let { doc -> Highlights.passages(doc).map { Passage(it, doc.title, doc.ref) } }.orEmpty()
-                    }
-                }.getOrDefault(emptyList()),
             ).also { DeckCache.save(ctx, it) }
         }
     }
@@ -199,37 +193,16 @@ fun DeckScreen(
     }
 
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
-    // Kept/skipped highlights live in capture-config.json so the phone and PC share them; older builds kept them in prefs.
-    var seen by remember { mutableStateOf(prefs.highlightsSeen.map(Highlights::keyOf).toSet()) }
-    var pickBase by remember { mutableStateOf<Set<String>?>(null) }
-    LaunchedEffect(vault) {
+    // Evening check-in (journal-prompt-v2): written today? Read from this month's journal note.
+    var journalDone by remember { mutableStateOf(false) }
+    var journalOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) { runCatching { HighlightsSeen.add(appVault(ctx, uri), seen) } }.getOrNull()?.let {
-            seen = it; prefs.highlightsSeen = it
-            if (pickBase == null) pickBase = it
-        }
-    }
-    val todayPicks = remember(data.passages, pickBase) { Highlights.pick(data.passages, LocalDate.now(), pickBase ?: seen) }
-
-    fun markSeen(p: Passage) {
-        val k = Highlights.key(p)
-        seen = seen + k; prefs.highlightsSeen = seen
-        val uri = vault ?: return
-        scope.launch { withContext(Dispatchers.IO) { runCatching { HighlightsSeen.add(appVault(ctx, uri), listOf(k)) } } }
+        journalDone = withContext(Dispatchers.IO) { runCatching { Journal.written(appVault(ctx, uri), LocalDate.now()) }.getOrDefault(false) }
     }
     val nowDt = java.time.LocalDateTime.now()
 
     fun setMood(n: Int) = changeHabits { Mood.set(it, n) }
-
-    fun keepPassage(p: Passage) {
-        val uri = vault ?: return
-        markSeen(p)
-        scope.launch {
-            withContext(Dispatchers.IO) { runCatching { Highlights.keep(appVault(ctx, uri), p, LocalDate.now()) } }
-                .onSuccess { snack.showSnackbar("Kept in Highlights.md") }
-                .onFailure { snack.showSnackbar("Failed: ${it.message}") }
-        }
-    }
 
     val low = energy == Energy.LOW
     val maxMin = if (low) SHORT_MIN else null
@@ -249,7 +222,10 @@ fun DeckScreen(
             else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
                 add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
         }
-        if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
+        val checkIn = HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone
+        if (checkIn) add(NowItem.Line("📓 Evening check-in · 1 min", "Write ›") { journalOpen = true })
+        // The check-in asks for mood too, so the mood faces wait until it's done.
+        else if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
         if (Migrate.due(data.tasks, today, prefs.migratedMonth)) {
             val n = Migrate.candidates(data.tasks, today).size
             add(NowItem.Line("Migrate · $n from last month", "Start ›") { onOpenSub(Sub.MIGRATE) })
@@ -259,8 +235,6 @@ fun DeckScreen(
     var earlierOpen by remember { mutableStateOf(prefs.earlierOpenOn == LocalDate.now().toString()) }
     var habitsOpen by remember { mutableStateOf(false) }
     var routinesOpen by remember { mutableStateOf(false) }
-    var highlightOpen by remember { mutableStateOf(false) }
-    val leftPassages = todayPicks.filter { Highlights.key(it) !in seen }
     var pulling by remember { mutableStateOf(false) }
     LaunchedEffect(data) { pulling = false }
 
@@ -349,18 +323,18 @@ fun DeckScreen(
                 else -> {}
             }
         }
-        // Routines, Projects and Highlights as small tiles.
+        // Routines, Projects and Journal as small tiles.
         val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
         val showProject = HomeCard.PROJECTS !in hidden && data.project != null
-        val showHighlight = HomeCard.HIGHLIGHTS !in hidden && leftPassages.isNotEmpty()
-        if (showRoutines || showProject || showHighlight) {
+        val showJournal = HomeCard.HIGHLIGHTS !in hidden
+        if (showRoutines || showProject || showJournal) {
             SectionLabel("More")
             TileRow {
                 if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                     data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                 }
                 if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
-                if (showHighlight) Tile("✨", "Highlight", "${leftPassages.size} today") { highlightOpen = true }
+                if (showJournal) Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true }
             }
         }
         Box(Modifier.height(16.dp))
@@ -371,14 +345,10 @@ fun DeckScreen(
         DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
     }
     if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
-    if (highlightOpen) {
-        if (leftPassages.isEmpty()) highlightOpen = false
-        else DeckSheet({ highlightOpen = false }) {
-            val p = leftPassages.first()
-            HighlightsCard(p, todayPicks.indexOf(p), todayPicks.size, onOpen = { highlightOpen = false; onOpenArticle(p.ref) }, onKeep = { keepPassage(p) }) {
-                markSeen(p)
-            }
-        }
+    if (journalOpen) DeckSheet({ journalOpen = false }) {
+        val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
+        val events = cal.filter { it.id in on }.flatMap { it.events }.count { it.on(LocalDate.now()) }
+        JournalSheet(vault, events, snack) { journalDone = true; journalOpen = false; refresh++ }
     }
 }
 
