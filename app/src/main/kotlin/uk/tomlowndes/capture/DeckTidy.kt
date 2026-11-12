@@ -187,9 +187,13 @@ internal fun RowsCard(rows: List<@Composable () -> Unit>) {
     }
 }
 
-/** Today's rows from the calendar: current event highlighted; Connect or Reconnect when needed. */
+/**
+ * Today's rows from the calendar: current event highlighted, finished ones faded and, from two up, folded into
+ * "✓ N earlier" (past-events-highlights-v1); Connect or Reconnect when needed.
+ */
 internal fun calendarRows(
-    sources: List<CalendarSource>?, cache: List<CalendarCache>, onConnect: () -> Unit
+    sources: List<CalendarSource>?, cache: List<CalendarCache>, onConnect: () -> Unit,
+    earlierOpen: Boolean = false, onToggleEarlier: () -> Unit = {}
 ): List<@Composable () -> Unit> {
     if (sources == null) return emptyList()
     if (sources.isEmpty()) return listOf<@Composable () -> Unit>({ QuietRow("📅", "Calendar", "Connect ›", Primary, onClick = onConnect) })
@@ -198,13 +202,41 @@ internal fun calendarRows(
     val today = LocalDate.now()
     val now = LocalDateTime.now()
     val hm = DateTimeFormatter.ofPattern("HH:mm")
-    val events = mine.flatMap { it.events }.filter { it.on(today) }.sortedWith(compareBy({ !it.allDay }, { it.start }))
+    val events = mine.flatMap { it.events }.filter { it.on(today) }
     val out = mutableListOf<@Composable () -> Unit>()
     if (mine.any { !it.ok }) out.add { QuietRow("📅", "Calendar out of date", "Reconnect ›", Amber, onClick = onConnect) }
-    events.forEach { e ->
-        out.add { QuietRow("📅", e.title, if (e.allDay) "all day" else e.start.toLocalTime().format(hm), highlight = e.isNow(now)) }
+    TodayEvents.rows(events, now, earlierOpen).forEach { r ->
+        when (r) {
+            is TodayRow.Earlier -> out.add {
+                QuietRow(
+                    null, TodayEvents.earlierLabel(r), if (r.open) "▴" else "show ▾", textColour = Muted, onClick = onToggleEarlier
+                )
+            }
+            is TodayRow.Event -> {
+                val e = r.event
+                val live = e.isNow(now)
+                out.add {
+                    QuietRow(
+                        "📅", e.title, if (e.allDay) "all day" else e.start.toLocalTime().format(hm), highlight = live,
+                        rightColour = if (r.past) PastFaint else if (live) Primary else Muted,
+                        textColour = if (r.past) PastFaint else TextMain,
+                        trailing = if (live) ({ NowBadge() }) else null
+                    )
+                }
+            }
+        }
     }
     return out
+}
+
+private val PastFaint = Color(0xFF5C6478)
+
+@Composable
+private fun NowBadge() {
+    Text(
+        "now", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Primary,
+        modifier = Modifier.border(1.dp, Color(0xFF2F3D63), RoundedCornerShape(99.dp)).padding(horizontal = 7.dp, vertical = 1.dp)
+    )
 }
 
 /** A small tile in the More row. */

@@ -112,6 +112,12 @@ fun ReadPane(state: AppState) {
         .filter { query.isBlank() || it.title.contains(query.trim(), true) || it.snippet.contains(query.trim(), true) }
     val current = all.firstOrNull { it.ref == open }
 
+    // Opened from the Deck's Daily highlights: jump to its shelf and open it.
+    LaunchedEffect(state.readOpen, articles) {
+        val want = state.readOpen ?: return@LaunchedEffect
+        val a = articles?.firstOrNull { it.ref == want || it.ref.file == want.file } ?: return@LaunchedEffect
+        shelf = a.shelf(); query = ""; open = a.ref; state.readOpen = null
+    }
     LaunchedEffect(shown.map { it.ref }) { if (open == null || shown.none { it.ref == open } && current == null) open = shown.firstOrNull()?.ref }
 
     fun change(msg: String? = null, block: ReadStore.() -> Unit) = scope.launch {

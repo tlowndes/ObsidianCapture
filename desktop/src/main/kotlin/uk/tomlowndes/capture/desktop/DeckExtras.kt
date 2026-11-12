@@ -42,6 +42,8 @@ import uk.tomlowndes.capture.Priority
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.TaskRules
 import uk.tomlowndes.capture.TaskViews
+import uk.tomlowndes.capture.TodayEvents
+import uk.tomlowndes.capture.TodayRow
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -152,23 +154,50 @@ fun PlanDialog(
     dating?.let { t -> PickDateDialog(today.plusDays(1), onPick = { d -> dating = null; if (d != null) { sorted.add(t.raw); onMove(t, d) } }, onDismiss = { dating = null }) }
 }
 
-/** Today (tidy-v1): the day's calendar events and bills due, one quiet row each. */
+/**
+ * Today (tidy-v1): the day's calendar events and bills due, one quiet row each. Finished events fade, and from two up
+ * fold into "✓ N earlier" (past-events-highlights-v1); the event on now is tinted with a "now" badge.
+ */
 @Composable
-fun TodayRows(events: List<CalEvent>, bills: List<Bill>, onBills: () -> Unit) {
+fun TodayRows(events: List<CalEvent>, bills: List<Bill>, earlierOpen: Boolean = false, onToggleEarlier: () -> Unit = {}, onBills: () -> Unit) {
     val today = LocalDate.now()
+    val now = java.time.LocalDateTime.now()
     val time = DateTimeFormatter.ofPattern("HH:mm")
-    val todays = events.filter { it.on(today) }.sortedBy { it.start }
+    val todays = events.filter { it.on(today) }
     val due = bills.filter { it.task.due?.isAfter(today) == false }
     if (todays.isEmpty() && due.isEmpty()) {
         Text("Nothing in the calendar today.", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
         return
     }
-    todays.forEach { e ->
+    TodayEvents.rows(todays, now, earlierOpen).forEach { r ->
         Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(LinkBlue))
-            Text(e.title, fontSize = 13.5.sp, color = TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (e.allDay) "all day" else "${e.start.format(time)} – ${e.end.format(time)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+        when (r) {
+            is TodayRow.Earlier -> Row(
+                Modifier.fillMaxWidth().hand().clickable(onClick = onToggleEarlier).padding(horizontal = 18.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(TodayEvents.earlierLabel(r), fontSize = 12.5.sp, color = Muted, modifier = Modifier.weight(1f))
+                Text(if (r.open) "▴" else "show ▾", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+            }
+            is TodayRow.Event -> {
+                val e = r.event
+                val live = e.isNow(now)
+                Row(
+                    Modifier.fillMaxWidth().background(if (live) PrimaryTint else Color.Transparent).padding(horizontal = 18.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (r.past) Faint else LinkBlue))
+                    Text(e.title, fontSize = 13.5.sp, color = if (r.past) Faint else TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (live) Text(
+                        "now", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Primary,
+                        modifier = Modifier.border(1.dp, NextBorder, CircleShape).padding(horizontal = 7.dp, vertical = 1.dp)
+                    )
+                    Text(
+                        if (e.allDay) "all day" else "${e.start.format(time)} – ${e.end.format(time)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        color = if (r.past) Faint else if (live) Primary else Muted
+                    )
+                }
+            }
         }
     }
     due.forEach { b ->

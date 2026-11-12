@@ -55,6 +55,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var shutDownOn: String?
         get() = p.getString("shut_down_on", null)
         set(v) { p.edit().putString("shut_down_on", v).apply() }
+    /** The day the Today card's "✓ N earlier" row was left open; it closes again tomorrow. */
+    var earlierOpenOn: String?
+        get() = p.getString("earlier_open_on", null)
+        set(v) { p.edit().putString("earlier_open_on", v).apply() }
     /** Daily highlights: passages already kept or skipped (so they don't come back), and today's picks. */
     var highlightsSeen: Set<String>
         get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()

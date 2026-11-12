@@ -116,6 +116,41 @@ object DeckConfig {
     }
 }
 
+/** Daily highlights already kept or skipped on any device (short ids from [Highlights.key]), in `capture-config.json`. */
+object HighlightsSeen {
+    private const val KEY = "highlightsSeen"
+    private const val MAX = 1000
+
+    fun read(json: String?): Set<String> {
+        val a = json?.takeIf { it.isNotBlank() }?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }?.optJSONArray(KEY)
+            ?: return emptySet()
+        return (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    /** [json] with [add] appended to the seen list (oldest dropped past [MAX]); other keys kept. */
+    fun with(json: String?, add: Collection<String>): String {
+        val o = json?.takeIf { it.isNotBlank() }?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } ?: org.json.JSONObject()
+        val list = read(json).toMutableList().let { have -> (have + add.filter { it !in have }).distinct() }.takeLast(MAX)
+        o.put(KEY, JSONArray(list))
+        return o.toString(2)
+    }
+
+    fun load(v: Vault): Set<String> = read(v.read(DeckConfig.PATH))
+
+    fun add(v: Vault, keys: Collection<String>): Set<String> {
+        val path = DeckConfig.PATH
+        if (v.entry(path) == null) {
+            v.mkdirs(parentOf(path))
+            v.create(parentOf(path), nameOf(path).removeSuffix(".json"), "json")
+        }
+        val now = v.read(path)
+        if (keys.all { it in read(now) }) return read(now)
+        val out = with(now, keys)
+        VaultIo.write(v, path, out)
+        return read(out)
+    }
+}
+
 /** When Plan today / Shut down were last done, from `capture-config.json`. */
 data class DayDone(val plannedOn: String = "", val shutDownOn: String = "") {
     fun planned(day: LocalDate) = plannedOn == day.toString()
