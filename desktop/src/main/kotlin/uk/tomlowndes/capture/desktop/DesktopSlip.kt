@@ -9,6 +9,9 @@ import uk.tomlowndes.capture.SlipReminder
 import uk.tomlowndes.capture.SlipTask
 import uk.tomlowndes.capture.Summary
 import uk.tomlowndes.capture.WeatherSummary
+import uk.tomlowndes.capture.WeekContent
+import uk.tomlowndes.capture.WeekDay
+import uk.tomlowndes.capture.WeekOptions
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
@@ -62,6 +65,14 @@ object DesktopSlip {
         }
         sections.forEachIndexed { i, f -> if (i > 0) p.dashed(); f() }
         p.footer(owner, now)
+    }
+
+    /** The Week slip (slip-week-v2): the week's days one under another, with a tear line between them. */
+    fun drawWeek(w: WeekContent, now: LocalDateTime = LocalDateTime.now()): BufferedImage = page { p ->
+        p.weekHeader(w)
+        w.days.forEachIndexed { i, d -> if (i > 0) p.dashed(); p.weekDay(d, w.show) }
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", mono(SMALL), center = true)
     }
 
     fun drawSummary(d: Summary.Doc, now: LocalDateTime = LocalDateTime.now()): BufferedImage = page { p ->
@@ -324,15 +335,58 @@ object DesktopSlip {
         fun dontForget(items: List<SlipReminder>) {
             heading("Don't forget", "${items.size}")
             gap(8f)
-            items.forEach { r ->
-                val top = y
-                tickBox(top)
-                val nf = mono(SMALL)
-                val nw = width(r.note, nf)
-                at(r.note, nf, WIDTH - M - nw, top + BODY)
-                text(r.text, mono(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
-                y = maxOf(y, top + BOX + 6f) + 12f
+            items.forEach { reminder(it) }
+        }
+
+        /** A tick box, the text, and a small note on the right ("£142 · today"). */
+        fun reminder(r: SlipReminder) {
+            val top = y
+            tickBox(top)
+            val nf = mono(SMALL)
+            val nw = if (r.note.isEmpty()) 0f else width(r.note, nf)
+            if (r.note.isNotEmpty()) at(r.note, nf, WIDTH - M - nw, top + BODY)
+            text(r.text, mono(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
+            y = maxOf(y, top + BOX + 6f) + 12f
+        }
+
+        fun weekHeader(w: WeekContent) {
+            text(w.title, head(96f), center = true, spacing = 0.9f)
+            gap(4f)
+            text(w.range, head(36f), center = true)
+            gap(8f)
+            text(w.sub, mono(SMALL), center = true)
+            solid()
+        }
+
+        /** One day block: black label for today, outlined for the rest, then events, to-dos, bills and a line to write on. */
+        fun weekDay(d: WeekDay, o: WeekOptions) {
+            gap(6f)
+            val top = y
+            val lw = if (d.today) label(d.label, M.toFloat(), top, BODY) else {
+                val lf = mono(BODY, true)
+                val w = width(d.label, lf) + 14f
+                box(M + 1.5f, top + 1.5f, M + w, top + BODY + 8f, 3f)
+                at(d.label, lf, M + 7f, top + BODY)
+                w
             }
+            val dn = "${d.date.dayOfMonth}"
+            val df = mono(BODY + 4, true)
+            at(dn, df, M + lw + 14f, top + BODY + 2f)
+            if (d.today) at("today", mono(SMALL), M + lw + 28f + width(dn, df), top + BODY)
+            y = top + BODY + 30f
+            val tw = 108f
+            d.events.forEach { e ->
+                val t = y
+                at(e.start ?: "all day", mono(if (e.start == null) SMALL else BODY, true), M.toFloat(), t + BODY)
+                y = t
+                text(e.title, mono(BODY), M + tw, inner - tw)
+                gap(10f)
+            }
+            if (d.events.isNotEmpty() && (d.tasks.isNotEmpty() || d.bills.isNotEmpty())) gap(4f)
+            d.tasks.forEach { task(it) }
+            d.bills.forEach { reminder(it) }
+            if (d.empty) { text("Nothing planned.", mono(BODY).deriveFont(Font.ITALIC)); gap(6f) }
+            if (o.writeLine) { gap(30f); line(M.toFloat(), y, WIDTH - M.toFloat(), y, 2f); gap(6f) }
         }
 
         fun dayLabel(l: String, d: LocalDate?) {

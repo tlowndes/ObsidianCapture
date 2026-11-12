@@ -64,6 +64,20 @@ object SlipRender {
         return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
     }
 
+    /** The Week slip (slip-week-v2): the week's days one under another, with a tear line between them. */
+    fun drawWeek(w: WeekContent, now: LocalDateTime = LocalDateTime.now()): Bitmap {
+        val tall = Bitmap.createBitmap(WIDTH, MAX_HEIGHT, Bitmap.Config.ARGB_8888)
+        val c = Canvas(tall)
+        c.drawColor(0xFFFFFFFF.toInt())
+        val p = Pen(c)
+        p.weekHeader(w)
+        w.days.forEachIndexed { i, d -> if (i > 0) p.dashed(); p.weekDay(d, w.show) }
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", paint(SMALL), align = Layout.Alignment.ALIGN_CENTER)
+        val h = (p.y + 40).toInt().coerceAtMost(MAX_HEIGHT)
+        return Bitmap.createBitmap(tall, 0, 0, WIDTH, h).also { if (it !== tall) tall.recycle() }
+    }
+
     /** A Print summary slip (print-summary-v1): title, where it came from, then the points or paragraph. */
     fun drawSummary(d: Summary.Doc, now: LocalDateTime = LocalDateTime.now()): Bitmap {
         val tall = Bitmap.createBitmap(WIDTH, MAX_HEIGHT, Bitmap.Config.ARGB_8888)
@@ -306,15 +320,58 @@ object SlipRender {
         fun dontForget(items: List<SlipReminder>) {
             heading("Don't forget", "${items.size}")
             gap(8f)
-            items.forEach { r ->
-                val top = y
-                tickBox(top)
-                val np = paint(SMALL)
-                val nw = np.measureText(r.note)
-                c.drawText(r.note, WIDTH - M - nw, top + BODY, np)
-                text(r.text, paint(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
-                y = maxOf(y, top + BOX + 6f) + 12f
+            items.forEach { reminder(it) }
+        }
+
+        /** A tick box, the text, and a small note on the right ("£142 · today"). */
+        fun reminder(r: SlipReminder) {
+            val top = y
+            tickBox(top)
+            val np = paint(SMALL)
+            val nw = if (r.note.isEmpty()) 0f else np.measureText(r.note)
+            if (r.note.isNotEmpty()) c.drawText(r.note, WIDTH - M - nw, top + BODY, np)
+            text(r.text, paint(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
+            y = maxOf(y, top + BOX + 6f) + 12f
+        }
+
+        fun weekHeader(w: WeekContent) {
+            text(w.title, paint(96f, headFace), align = Layout.Alignment.ALIGN_CENTER, spacing = 0.9f)
+            gap(4f)
+            text(w.range, paint(36f, headFace).apply { letterSpacing = 0.04f }, align = Layout.Alignment.ALIGN_CENTER)
+            gap(8f)
+            text(w.sub, paint(SMALL), align = Layout.Alignment.ALIGN_CENTER)
+            solid()
+        }
+
+        /** One day block: black label for today, outlined for the rest, then events, to-dos, bills and a line to write on. */
+        fun weekDay(d: WeekDay, o: WeekOptions) {
+            gap(6f)
+            val top = y
+            val lw = if (d.today) label(d.label, M.toFloat(), top, BODY) else {
+                val lp = paint(BODY, monoBold)
+                val w = lp.measureText(d.label) + 14f
+                c.drawRect(M + 1.5f, top + 1.5f, M + w, top + BODY + 8f, stroke(3f))
+                c.drawText(d.label, M + 7f, top + BODY, lp)
+                w
             }
+            val dn = "${d.date.dayOfMonth}"
+            val dp = paint(BODY + 4, monoBold)
+            c.drawText(dn, M + lw + 14f, top + BODY + 2f, dp)
+            if (d.today) c.drawText("today", M + lw + 28f + dp.measureText(dn), top + BODY, paint(SMALL))
+            y = top + BODY + 30f
+            val tw = 108f
+            d.events.forEach { e ->
+                val t = y
+                c.drawText(e.start ?: "all day", M.toFloat(), t + BODY, paint(if (e.start == null) SMALL else BODY, monoBold))
+                y = t
+                text(e.title, paint(BODY), M + tw, inner - tw)
+                gap(10f)
+            }
+            if (d.events.isNotEmpty() && (d.tasks.isNotEmpty() || d.bills.isNotEmpty())) gap(4f)
+            d.tasks.forEach { task(it) }
+            d.bills.forEach { reminder(it) }
+            if (d.empty) { text("Nothing planned.", paint(BODY, Typeface.create(Typeface.MONOSPACE, Typeface.ITALIC))); gap(6f) }
+            if (o.writeLine) { gap(30f); c.drawLine(M.toFloat(), y, WIDTH - M.toFloat(), y, stroke(2f)); gap(6f) }
         }
 
         fun dayLabel(l: String, d: LocalDate?) {

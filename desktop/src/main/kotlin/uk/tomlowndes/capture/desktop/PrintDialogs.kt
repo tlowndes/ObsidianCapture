@@ -53,6 +53,8 @@ import uk.tomlowndes.capture.Jobs
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.Weather
 import uk.tomlowndes.capture.WeatherSummary
+import uk.tomlowndes.capture.WeekOptions
+import uk.tomlowndes.capture.WeekSlip
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
@@ -88,6 +90,21 @@ object SlipSettings {
             "todo".takeIf { o.todo }, "tomorrow".takeIf { o.tomorrow }, "blank".takeIf { o.blank },
             "sudoku".takeIf { o.sudoku }, "tomorrowEvents".takeIf { o.tomorrowEvents }, "brief".takeIf { o.brief },
             "noDontForget".takeIf { !o.dontForget },
+        ).joinToString(",")
+    }
+}
+
+/** The Week slip switches (slip-week-v2), kept as the ones switched off so new ones start on. */
+object WeekSettings {
+    fun load(p: DesktopPrefs): WeekOptions {
+        val off = p.weekSlipOff?.split(",")?.toSet().orEmpty()
+        return WeekOptions("events" !in off, "todo" !in off, "bills" !in off, "writeLine" !in off, "skipPast" !in off)
+    }
+
+    fun save(p: DesktopPrefs, o: WeekOptions) {
+        p.weekSlipOff = listOfNotNull(
+            "events".takeIf { !o.events }, "todo".takeIf { !o.todo }, "bills".takeIf { !o.bills },
+            "writeLine".takeIf { !o.writeLine }, "skipPast".takeIf { !o.skipPast },
         ).joinToString(",")
     }
 }
@@ -258,6 +275,11 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
     var progress by remember { mutableStateOf<Float?>(null) }
     var choosing by remember { mutableStateOf(false) }
     var printerTick by remember { mutableIntStateOf(0) }
+    // Daily | Week (slip-week-v2). The Week slip is its own printout.
+    var weekMode by remember { mutableStateOf(false) }
+    var nextWeek by remember { mutableStateOf(WeekSlip.startsOnNext(today)) }
+    var wopts by remember { mutableStateOf(WeekSettings.load(p)) }
+    var weekImg by remember { mutableStateOf<BufferedImage?>(null) }
 
     LaunchedEffect(state.vault) {
         val v = state.vault ?: return@LaunchedEffect
@@ -307,9 +329,18 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         }
     }
 
+    LaunchedEffect(sources, wopts, nextWeek) {
+        val src = sources ?: return@LaunchedEffect
+        weekImg = withContext(Dispatchers.Default) {
+            runCatching { DesktopSlip.drawWeek(WeekSlip.build(today, nextWeek, src.tasks, src.events, wopts)) }.getOrNull()
+        }
+    }
+
     fun set(o: SlipOptions) { opts = o; SlipSettings.save(p, o) }
+    fun setWeek(o: WeekOptions) { wopts = o; WeekSettings.save(p, o) }
+    val shown = if (weekMode) weekImg else img
     fun print() {
-        val i = img ?: return
+        val i = shown ?: return
         if (progress != null) return
         scope.launch { if (!printImage(state, i) { progress = it }) choosing = true }
     }
@@ -322,41 +353,64 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         if (choosing) { PrinterChooser(state) { choosing = false; printerTick++ }; return@PrintFrame }
         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Daily Slip", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
+                Text(if (weekMode) "Week slip" else "Daily Slip", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
                 val isToday = day == today
                 val dayName = day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
-                Sub(if (isToday) "Today's weather, calendar and to-dos on your pocket printer." else "$dayName's weather, calendar and to-dos.",
-                    Modifier.padding(top = 2.dp, bottom = 8.dp))
-                Text("DAY", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
-                DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
-                Spacer(Modifier.height(8.dp))
-                val w = dayWeather?.takeIf { dayWeatherFor == day }
-                SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
-                SlipSwitch("Weather", when {
-                    w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
-                    isToday -> "Today's forecast"
-                    dayWeatherFor != day -> "Getting the forecast…"
-                    day.isAfter(today.plusDays(Weather.DAYS - 1L)) -> "No forecast that far out"
-                    else -> "No forecast for $dayName yet"
-                }, opts.weather) { set(opts.copy(weather = it)) }
-                SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
-                SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
-                SlipSwitch("Don't forget", "Bills due soon and job follow-ups", opts.dontForget) { set(opts.copy(dontForget = it)) }
-                SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
-                SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
-                SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }
+                Sub(when {
+                    weekMode -> "The week ahead, one day under another."
+                    isToday -> "Today's weather, calendar and to-dos on your pocket printer."
+                    else -> "$dayName's weather, calendar and to-dos."
+                }, Modifier.padding(top = 2.dp, bottom = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                    DayTile("Daily", "", !weekMode) { weekMode = false }
+                    DayTile("Week", "", weekMode) { weekMode = true }
+                }
+                if (weekMode) {
+                    Text("WEEK", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val mon = WeekSlip.monday(today)
+                        DayTile("This week", WeekSlip.pickLabel(mon), !nextWeek) { nextWeek = false }
+                        DayTile("Next week", WeekSlip.pickLabel(mon.plusDays(7)), nextWeek) { nextWeek = true }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    SlipSwitch("Events", "Times and titles from your Proton calendars", wopts.events) { setWeek(wopts.copy(events = it)) }
+                    SlipSwitch("To-dos", "Due that day, as tick boxes", wopts.todo) { setWeek(wopts.copy(todo = it)) }
+                    SlipSwitch("Bills", "With the amount", wopts.bills) { setWeek(wopts.copy(bills = it)) }
+                    SlipSwitch("Write-in line", "A blank line under each day", wopts.writeLine) { setWeek(wopts.copy(writeLine = it)) }
+                    SlipSwitch("Past days", "Leave out days already gone", wopts.skipPast) { setWeek(wopts.copy(skipPast = it)) }
+                } else {
+                    Text("DAY", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
+                    Spacer(Modifier.height(8.dp))
+                    val w = dayWeather?.takeIf { dayWeatherFor == day }
+                    SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
+                    SlipSwitch("Weather", when {
+                        w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
+                        isToday -> "Today's forecast"
+                        dayWeatherFor != day -> "Getting the forecast…"
+                        day.isAfter(today.plusDays(Weather.DAYS - 1L)) -> "No forecast that far out"
+                        else -> "No forecast for $dayName yet"
+                    }, opts.weather) { set(opts.copy(weather = it)) }
+                    SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
+                    SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
+                    SlipSwitch("Don't forget", "Bills due soon and job follow-ups", opts.dontForget) { set(opts.copy(dontForget = it)) }
+                    SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
+                    SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
+                    SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }
+                }
                 Spacer(Modifier.height(12.dp))
                 key(printerTick) { PrinterLine(state, progress) { choosing = true } }
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton(Slip.printLabel(day, today), enabled = img != null && progress == null, hint = "Ctrl P") { print() }
-                    TextAction("Copy as image", Muted) { img?.let { copyImage(it); state.say("Slip copied as a picture") } }
+                    PrimaryButton(if (weekMode) (if (nextWeek) "Print next week" else "Print this week") else Slip.printLabel(day, today),
+                        enabled = shown != null && progress == null, hint = "Ctrl P") { print() }
+                    TextAction("Copy as image", Muted) { shown?.let { copyImage(it); state.say("Slip copied as a picture") } }
                     Spacer(Modifier.weight(1f))
                     TextAction("Close", Muted, onClick = onClose)
                 }
             }
             Column(Modifier.width(360.dp)) {
                 Text("PREVIEW", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Primary, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
-                Paper(img, if (state.vault == null) "Choose your vault first" else null, Modifier.fillMaxWidth().height(560.dp))
+                Paper(shown, if (state.vault == null) "Choose your vault first" else null, Modifier.fillMaxWidth().height(560.dp))
             }
         }
     }
