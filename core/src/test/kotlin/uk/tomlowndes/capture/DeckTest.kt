@@ -139,14 +139,34 @@ class DeckTest {
         assertEquals(l, l.placed(HomeCard.NEXT_STEP, null, emptyList()))
     }
 
-    @Test fun `phone sections keep Today, Top tasks, More by default and move as a block`() {
+    @Test fun `phone sections put the agenda after the weather and they move apart`() {
         val l = DeckLayout()
-        assertEquals(listOf(DeckSection.TODAY, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(l))
-        val more = DeckSection.moved(l, DeckSection.MORE, DeckSection.TODAY)
-        assertEquals(listOf(DeckSection.MORE, DeckSection.TODAY, DeckSection.TOP_TASKS), DeckSection.inOrder(more))
-        val tasksLast = DeckSection.moved(l, DeckSection.TOP_TASKS, null)
-        assertEquals(listOf(DeckSection.TODAY, DeckSection.MORE, DeckSection.TOP_TASKS), DeckSection.inOrder(tasksLast))
-        assertEquals(HomeCard.values().toSet(), tasksLast.order.toSet())
-        assertEquals(HomeCard.values().size, tasksLast.order.size)
+        assertEquals(listOf(DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(l))
+        val agendaFirst = DeckSection.moved(l, DeckSection.AGENDA, DeckSection.WEATHER)
+        assertEquals(listOf(DeckSection.AGENDA, DeckSection.WEATHER, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(agendaFirst))
+        assertEquals(true, agendaFirst.order.indexOf(HomeCard.TODAY) < agendaFirst.order.indexOf(HomeCard.WEATHER))
+        val weatherLast = DeckSection.moved(l, DeckSection.WEATHER, null)
+        assertEquals(DeckSection.AGENDA, DeckSection.inOrder(weatherLast).first())
+        assertEquals(false, weatherLast.order.indexOf(HomeCard.WEATHER) < weatherLast.order.indexOf(HomeCard.TODAY))
+        assertEquals(HomeCard.values().toSet(), weatherLast.order.toSet())
+        assertEquals(HomeCard.values().size, weatherLast.order.size)
+        val more = DeckSection.moved(l, DeckSection.MORE, DeckSection.WEATHER)
+        assertEquals(listOf(DeckSection.MORE, DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.TOP_TASKS), DeckSection.inOrder(more))
+    }
+
+    @Test fun `a saved order gains the calendar straight after the weather and drops nothing`() {
+        val json = "{\"cards\":[\"NEXT_STEP\",\"WEATHER\",\"BILLS\",\"TOP_TASKS\"],\"hiddenCards\":[\"BILLS\"]}"
+        val l = DeckConfig.layout(json)
+        assertEquals(HomeCard.TODAY, l.order[l.order.indexOf(HomeCard.WEATHER) + 1])
+        assertEquals(true, HomeCard.BILLS in l.hidden)
+        assertEquals(HomeCard.values().size, l.order.distinct().size)
+        assertEquals(true, l.order.containsAll(HomeCard.values().toList()))
+    }
+
+    @Test fun `a saved order that already placed the calendar keeps that place`() {
+        val json = "{\"cards\":[\"TODAY\",\"NEXT_STEP\",\"WEATHER\"],\"hiddenCards\":[]}"
+        val l = DeckConfig.layout(json)
+        assertEquals(HomeCard.TODAY, l.order.first())
+        assertEquals(HomeCard.values().size, l.order.size)
     }
 }

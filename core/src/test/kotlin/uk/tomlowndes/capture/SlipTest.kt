@@ -123,6 +123,9 @@ class SlipTest {
         assertEquals("Today", Slip.stripLabel(day, day))
         assertEquals("Tomorrow", Slip.stripLabel(day.plusDays(1), day))
         assertEquals("Thu", Slip.stripLabel(day.plusDays(2), day))
+        assertEquals("Today", Slip.chipLabel(day, day))
+        assertEquals("Tmrw", Slip.chipLabel(day.plusDays(1), day))
+        assertEquals("Thu", Slip.chipLabel(day.plusDays(2), day))
         assertEquals("Print", Slip.printLabel(day, day))
         assertEquals("Print Friday's slip", Slip.printLabel(day.plusDays(3), day))
     }
