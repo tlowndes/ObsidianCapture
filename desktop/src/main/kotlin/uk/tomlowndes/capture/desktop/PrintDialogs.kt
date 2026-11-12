@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,9 +51,17 @@ import uk.tomlowndes.capture.Jarvis
 import uk.tomlowndes.capture.Slip
 import uk.tomlowndes.capture.SlipOptions
 import uk.tomlowndes.capture.Summary
+import uk.tomlowndes.capture.Job
+import uk.tomlowndes.capture.Jobs
+import uk.tomlowndes.capture.NoteIndex
+import uk.tomlowndes.capture.PrintDocs
+import uk.tomlowndes.capture.ShareAs
+import uk.tomlowndes.capture.TickedTask
 import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.Weather
 import uk.tomlowndes.capture.WeatherSummary
+import uk.tomlowndes.capture.WeekOptions
+import uk.tomlowndes.capture.WeekSlip
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
@@ -77,6 +86,8 @@ object SlipSettings {
             weather = "weather" in on, calendar = "calendar" in on, month = "month" in on, todo = "todo" in on,
             tomorrow = "tomorrow" in on, blank = "blank" in on, sudoku = "sudoku" in on,
             tomorrowEvents = "tomorrowEvents" in on, brief = "brief" in on,
+            // Saved as "off" so slips set up before it existed get it switched on.
+            dontForget = "noDontForget" !in on,
         )
     }
 
@@ -85,6 +96,22 @@ object SlipSettings {
             "weather".takeIf { o.weather }, "calendar".takeIf { o.calendar }, "month".takeIf { o.month },
             "todo".takeIf { o.todo }, "tomorrow".takeIf { o.tomorrow }, "blank".takeIf { o.blank },
             "sudoku".takeIf { o.sudoku }, "tomorrowEvents".takeIf { o.tomorrowEvents }, "brief".takeIf { o.brief },
+            "noDontForget".takeIf { !o.dontForget },
+        ).joinToString(",")
+    }
+}
+
+/** The Week slip switches (slip-week-v2), kept as the ones switched off so new ones start on. */
+object WeekSettings {
+    fun load(p: DesktopPrefs): WeekOptions {
+        val off = p.weekSlipOff?.split(",")?.toSet().orEmpty()
+        return WeekOptions("events" !in off, "todo" !in off, "bills" !in off, "writeLine" !in off, "skipPast" !in off)
+    }
+
+    fun save(p: DesktopPrefs, o: WeekOptions) {
+        p.weekSlipOff = listOfNotNull(
+            "events".takeIf { !o.events }, "todo".takeIf { !o.todo }, "bills".takeIf { !o.bills },
+            "writeLine".takeIf { !o.writeLine }, "skipPast".takeIf { !o.skipPast },
         ).joinToString(",")
     }
 }
@@ -210,7 +237,18 @@ fun PrinterChooser(state: AppState, onDone: () -> Unit) {
     }
 }
 
-private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?)
+private data class SlipSources(
+    val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?, val jobs: List<Job> = emptyList(),
+    val done: List<TickedTask> = emptyList(), val lists: List<String> = emptyList(),
+)
+
+/** Which printout the window is making (printables-v1). */
+private enum class SlipMode(val label: String) { DAILY("Daily"), WEEK("Week"), BILLS("Bills"), LIST("List") }
+
+/** Text on the Windows clipboard, or "" when there's none. */
+private fun clipboardText(): String = runCatching {
+    Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as? String
+}.getOrNull().orEmpty()
 
 /** Today, Tomorrow, then the next five days as tiles, and 📅 for a later date (slip-any-day-v1). */
 @Composable
@@ -257,14 +295,39 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
     var progress by remember { mutableStateOf<Float?>(null) }
     var choosing by remember { mutableStateOf(false) }
     var printerTick by remember { mutableIntStateOf(0) }
+    // Daily | Week (slip-week-v2). The Week slip is its own printout.
+    var mode by remember { mutableStateOf(if (state.slipClipboard) SlipMode.LIST else SlipMode.DAILY) }
+    val weekMode = mode == SlipMode.WEEK
+    var large by remember { mutableStateOf(p.slipLarge.also { DesktopSlip.large = it }) }
+    var billsNext by remember { mutableStateOf(false) }
+    var showPaid by remember { mutableStateOf(true) }
+    var billsImg by remember { mutableStateOf<BufferedImage?>(null) }
+    // List: a list note, typed text, or the clipboard (tray › Print clipboard).
+    val clip = remember { if (state.slipClipboard) clipboardText() else "" }
+    LaunchedEffect(Unit) { state.slipClipboard = false }
+    var listPath by remember { mutableStateOf<String?>(null) }
+    var useClip by remember { mutableStateOf(clip.isNotBlank()) }
+    var clipText by remember { mutableStateOf(clip) }
+    var clipAs by remember { mutableStateOf(ShareAs.TEXT) }
+    var typed by remember { mutableStateOf("") }
+    var byHeading by remember { mutableStateOf(true) }
+    var skipTicked by remember { mutableStateOf(true) }
+    var listImg by remember { mutableStateOf<BufferedImage?>(null) }
+    var nextWeek by remember { mutableStateOf(WeekSlip.startsOnNext(today)) }
+    var wopts by remember { mutableStateOf(WeekSettings.load(p)) }
+    var weekImg by remember { mutableStateOf<BufferedImage?>(null) }
 
     LaunchedEffect(state.vault) {
         val v = state.vault ?: return@LaunchedEffect
         sources = withContext(Dispatchers.IO) {
+            val lists = runCatching { state.writer()!!.listTaskLists() }.getOrNull()
             SlipSources(
-                runCatching { state.writer()!!.listTasks() }.getOrDefault(emptyList()),
+                lists?.open.orEmpty(),
                 runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
                 runCatching { DesktopWeather.today(p) }.getOrNull(),
+                runCatching { Jobs.list(v) }.getOrDefault(emptyList()),
+                lists?.done.orEmpty(),
+                runCatching { NoteIndex.paths(v).filter { PrintDocs.looksLikeList(it.path) }.sortedByDescending { it.modified }.take(6).map { it.path } }.getOrDefault(emptyList()),
             )
         }
     }
@@ -293,21 +356,48 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         brief = r.getOrNull(); briefFor = forDay
         briefNote = if (brief != null) null else "Couldn't reach Jarvis, so it prints without it"
     }
-    LaunchedEffect(sources, opts, brief, day, dayWeatherFor) {
+    LaunchedEffect(sources, opts, brief, day, dayWeatherFor, large) {
         val src = sources ?: return@LaunchedEffect
         if (dayWeatherFor != day) return@LaunchedEffect
         img = withContext(Dispatchers.Default) {
             runCatching {
-                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today)
+                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today, src.jobs)
                     .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
                 DesktopSlip.draw(content, SLIP_OWNER)
             }.getOrNull()
         }
     }
 
+    LaunchedEffect(sources, billsNext, showPaid, large) {
+        val src = sources ?: return@LaunchedEffect
+        val month = today.withDayOfMonth(1).plusMonths(if (billsNext) 1 else 0)
+        billsImg = withContext(Dispatchers.Default) { runCatching { DesktopSlip.drawBills(PrintDocs.bills(src.tasks, src.done, month, showPaid, today)) }.getOrNull() }
+    }
+    LaunchedEffect(sources, listPath, useClip, clipText, clipAs, typed, byHeading, skipTicked, large) {
+        val path = listPath
+        val v = state.vault
+        val doc = when {
+            useClip -> clipText.takeIf { it.isNotBlank() }?.let { PrintDocs.shared(PrintDocs.shareTitle(null, it), it, clipAs, "clipboard", Slip.printedAt(LocalDateTime.now()).removePrefix("Printed ")) }
+            path != null && v != null -> withContext(Dispatchers.IO) {
+                runCatching { PrintDocs.listFrom(path.substringAfterLast('/').removeSuffix(".md"), v.read(path).orEmpty(), byHeading, skipTicked, today) }.getOrNull()
+            }
+            typed.isNotBlank() -> PrintDocs.typed(typed, today)
+            else -> null
+        }
+        listImg = doc?.let { d -> withContext(Dispatchers.Default) { runCatching { DesktopSlip.drawList(d) }.getOrNull() } }
+    }
+    LaunchedEffect(sources, wopts, nextWeek, large) {
+        val src = sources ?: return@LaunchedEffect
+        weekImg = withContext(Dispatchers.Default) {
+            runCatching { DesktopSlip.drawWeek(WeekSlip.build(today, nextWeek, src.tasks, src.events, wopts)) }.getOrNull()
+        }
+    }
+
     fun set(o: SlipOptions) { opts = o; SlipSettings.save(p, o) }
+    fun setWeek(o: WeekOptions) { wopts = o; WeekSettings.save(p, o) }
+    val shown = when (mode) { SlipMode.DAILY -> img; SlipMode.WEEK -> weekImg; SlipMode.BILLS -> billsImg; SlipMode.LIST -> listImg }
     fun print() {
-        val i = img ?: return
+        val i = shown ?: return
         if (progress != null) return
         scope.launch { if (!printImage(state, i) { progress = it }) choosing = true }
     }
@@ -321,40 +411,107 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             // The switches keep their width; the preview gives way first if the window is small.
             Column(Modifier.width(440.dp)) {
-                Text("Daily Slip", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
+                Text(when (mode) { SlipMode.DAILY -> "Daily Slip"; SlipMode.WEEK -> "Week slip"; SlipMode.BILLS -> "Bills slip"; SlipMode.LIST -> "Print a list" }, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
                 val isToday = day == today
                 val dayName = day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
-                Sub(if (isToday) "Today's weather, calendar and to-dos on your pocket printer." else "$dayName's weather, calendar and to-dos.",
-                    Modifier.padding(top = 2.dp, bottom = 8.dp))
-                Text("DAY", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
-                DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
-                Spacer(Modifier.height(8.dp))
-                val w = dayWeather?.takeIf { dayWeatherFor == day }
-                SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
-                SlipSwitch("Weather", when {
-                    w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
-                    isToday -> "Today's forecast"
-                    dayWeatherFor != day -> "Getting the forecast…"
-                    day.isAfter(today.plusDays(Weather.DAYS - 1L)) -> "No forecast that far out"
-                    else -> "No forecast for $dayName yet"
-                }, opts.weather) { set(opts.copy(weather = it)) }
-                SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
-                SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
-                SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
-                SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
-                SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }
+                Sub(when {
+                    weekMode -> "The week ahead, one day under another."
+                    mode == SlipMode.BILLS -> "The month's bills: left to pay, and paid."
+                    mode == SlipMode.LIST -> "From a vault note, the clipboard, or type one now."
+                    isToday -> "Today's weather, calendar and to-dos on your pocket printer."
+                    else -> "$dayName's weather, calendar and to-dos."
+                }, Modifier.padding(top = 2.dp, bottom = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                    SlipMode.values().forEach { m -> DayTile(m.label, "", mode == m) { mode = m } }
+                }
+                val monthName = { plus: Long -> today.withDayOfMonth(1).plusMonths(plus).format(java.time.format.DateTimeFormatter.ofPattern("MMMM", java.util.Locale.UK)) }
+                if (mode == SlipMode.BILLS) {
+                    Text("MONTH", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DayTile("This month", monthName(0), !billsNext) { billsNext = false }
+                        DayTile("Next month", monthName(1), billsNext) { billsNext = true }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    SlipSwitch("Show paid bills", "Ticked, with a strike", showPaid) { showPaid = it }
+                } else if (mode == SlipMode.LIST) {
+                    Text("FROM", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        sources?.lists.orEmpty().forEach { path ->
+                            Chip(path.substringAfterLast('/').removeSuffix(".md"), !useClip && listPath == path) { useClip = false; listPath = path }
+                        }
+                        Chip("📋 Clipboard", useClip) { useClip = true; clipText = clipboardText() }
+                        Chip("📝 Type a list", !useClip && listPath == null) { useClip = false; listPath = null }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    when {
+                        useClip -> {
+                            if (clipText.isBlank()) Sub("Nothing on the clipboard. Copy some text, then pick Clipboard again.")
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(ShareAs.TEXT, ShareAs.TICKS).forEach { a -> Chip(a.label, clipAs == a, small = true) { clipAs = a } }
+                            }
+                        }
+                        listPath == null -> Field(typed, { typed = it }, Modifier.fillMaxWidth(), "One item per line", singleLine = false, minLines = 5)
+                        else -> {
+                            SlipSwitch("Group by heading", "Uses the note's ## headings", byHeading) { byHeading = it }
+                            SlipSwitch("Leave out ticked items", "Only what's still to get", skipTicked) { skipTicked = it }
+                        }
+                    }
+                } else if (weekMode) {
+                    Text("WEEK", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val mon = WeekSlip.monday(today)
+                        DayTile("This week", WeekSlip.pickLabel(mon), !nextWeek) { nextWeek = false }
+                        DayTile("Next week", WeekSlip.pickLabel(mon.plusDays(7)), nextWeek) { nextWeek = true }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    SlipSwitch("Events", "Times and titles from your Proton calendars", wopts.events) { setWeek(wopts.copy(events = it)) }
+                    SlipSwitch("To-dos", "Due that day, as tick boxes", wopts.todo) { setWeek(wopts.copy(todo = it)) }
+                    SlipSwitch("Bills", "With the amount", wopts.bills) { setWeek(wopts.copy(bills = it)) }
+                    SlipSwitch("Write-in line", "A blank line under each day", wopts.writeLine) { setWeek(wopts.copy(writeLine = it)) }
+                    SlipSwitch("Past days", "Leave out days already gone", wopts.skipPast) { setWeek(wopts.copy(skipPast = it)) }
+                } else {
+                    Text("DAY", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                    DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
+                    Spacer(Modifier.height(8.dp))
+                    val w = dayWeather?.takeIf { dayWeatherFor == day }
+                    SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
+                    SlipSwitch("Weather", when {
+                        w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
+                        isToday -> "Today's forecast"
+                        dayWeatherFor != day -> "Getting the forecast…"
+                        day.isAfter(today.plusDays(Weather.DAYS - 1L)) -> "No forecast that far out"
+                        else -> "No forecast for $dayName yet"
+                    }, opts.weather) { set(opts.copy(weather = it)) }
+                    SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
+                    SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
+                    SlipSwitch("Don't forget", "Bills due soon and job follow-ups", opts.dontForget) { set(opts.copy(dontForget = it)) }
+                    SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
+                    SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
+                    SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }
+                }
                 Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                    Text("Text size", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(end = 4.dp))
+                    Chip("Normal", !large, small = true) { large = false; p.slipLarge = false; DesktopSlip.large = false }
+                    Chip("Large", large, small = true) { large = true; p.slipLarge = true; DesktopSlip.large = true }
+                }
                 key(printerTick) { PrinterLine(state, progress) { choosing = true } }
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton(Slip.printLabel(day, today), enabled = img != null && progress == null, hint = "Ctrl P") { print() }
-                    TextAction("Copy as image", Muted) { img?.let { copyImage(it); state.say("Slip copied as a picture") } }
+                    PrimaryButton(when (mode) {
+                        SlipMode.WEEK -> if (nextWeek) "Print next week" else "Print this week"
+                        SlipMode.BILLS -> "Print ${monthName(if (billsNext) 1 else 0)}'s bills"
+                        SlipMode.LIST -> "Print list"
+                        SlipMode.DAILY -> Slip.printLabel(day, today)
+                    },
+                        enabled = shown != null && progress == null, hint = "Ctrl P") { print() }
+                    TextAction("Copy as image", Muted) { shown?.let { copyImage(it); state.say("Slip copied as a picture") } }
                     Spacer(Modifier.weight(1f))
                     TextAction("Close", Muted, onClick = onClose)
                 }
             }
             Column(Modifier.weight(1f, fill = false).widthIn(max = 360.dp)) {
                 Text("PREVIEW", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Primary, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
-                Paper(img, if (state.vault == null) "Choose your vault first" else null, Modifier.fillMaxWidth().height(560.dp))
+                Paper(shown, if (state.vault == null) "Choose your vault first" else null, Modifier.fillMaxWidth().height(560.dp))
             }
         }
     }
@@ -376,6 +533,7 @@ private fun SlipSwitch(title: String, sub: String, on: Boolean, onChange: (Boole
 fun PrintSummaryDialog(state: AppState, source: PrintSource, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val p = state.prefs
+    remember { DesktopSlip.large = p.slipLarge }
     val ready = DesktopJarvis.ready(p)
     val chat = source is PrintSource.Chat
     var length by remember { mutableStateOf(Summary.Length.BULLETS) }

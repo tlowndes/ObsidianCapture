@@ -122,6 +122,7 @@ fun TasksScreen(
     var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
     var dayView by remember { mutableStateOf(prefs.upcomingDay) }
     var billsOpen by remember { mutableStateOf(false) }
+    var addingBill by remember { mutableStateOf(false) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
     var fitting by remember { mutableStateOf<AgendaItem.Gap?>(null) }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
@@ -475,8 +476,8 @@ fun TasksScreen(
         } else if (upcoming) {
             val events = cal.flatMap { it.events }
             val bills = TaskViews.billsMonth(tasks, ticked, today)
-            val billsTop: (@Composable () -> Unit)? = if (bills.empty) null else {
-                { BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }) { b -> complete(b.task) } }
+            val billsTop: (@Composable () -> Unit) = {
+                BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }, { addingBill = true }) { b -> complete(b.task) }
             }
             UpcomingList(
                 days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
@@ -633,6 +634,16 @@ fun TasksScreen(
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }
     val qa = quickAlert
+    if (addingBill) AddBillSheet(Bills.suggestions(tasks, ticked), onAdd = { text, due ->
+        addingBill = false
+        val uri = vault
+        if (uri != null) scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).addTask(text, due.toString()) } }
+            reload()
+            snack.showSnackbar(r.fold({ "Bill added" }, { "Couldn't add the bill: ${it.message}" }))
+        }
+    }, onDismiss = { addingBill = false })
+
     if (guardSheet != null && qa != null) QuickGuardSheet(qa, guardSheet?.takeIf { it > 0 },
         onFix = { guard("Steps put back under their task") { fixQuick() } },
         onRestore = { guardSheet = null; onOpenGuardBackups() },

@@ -208,6 +208,14 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var slipParts: String?
         get() = p.get("slip_parts", null)
         set(v) = put("slip_parts", v)
+    /** Text size Large for every slip (printables-v1). */
+    var slipLarge: Boolean
+        get() = p.getBoolean("slip_large", false)
+        set(v) { p.putBoolean("slip_large", v); p.flush() }
+    /** Week slip switches that are off, as "bills,writeLine,…" (slip-week-v2). */
+    var weekSlipOff: String?
+        get() = p.get("week_slip_off", null)
+        set(v) = put("week_slip_off", v)
 
     fun draft(key: String): String = str("draft_${key.hashCode()}", "")
     fun setDraft(key: String, text: String) = put("draft_${key.hashCode()}", text.ifEmpty { null })

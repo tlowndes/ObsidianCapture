@@ -67,7 +67,7 @@ private const val ROW_H = 38
 private const val SEP_H = 11
 private const val PAD = 6
 private const val SHADOW = 10
-private const val PANEL_H = PAD * 2 + HEADER_H + ROW_H * 5 + SEP_H + 2
+private const val PANEL_H = PAD * 2 + HEADER_H + ROW_H * 6 + SEP_H + 2
 private const val WIN_W = PANEL_W + SHADOW * 2
 private const val WIN_H = PANEL_H + SHADOW * 2
 
@@ -118,7 +118,7 @@ private fun menuPosition(at: Point): WindowPosition {
 @Composable
 fun TrayMenuWindow(
     at: Point, icon: Painter, hotkeyLabel: String, onClose: () -> Unit,
-    onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit,
+    onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onClipboard: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit,
 ) {
     val winState = rememberWindowState(size = DpSize(WIN_W.dp, WIN_H.dp), position = menuPosition(at))
     Window(
@@ -139,14 +139,14 @@ fun TrayMenuWindow(
             fun pick(action: () -> Unit) = { onClose(); action() }
             TrayMenu(
                 hotkeyLabel,
-                onQuick = pick(onQuick), onOpen = pick(onOpen), onSlip = pick(onSlip), onSettings = pick(onSettings), onQuit = pick(onQuit),
+                onQuick = pick(onQuick), onOpen = pick(onOpen), onSlip = pick(onSlip), onClipboard = pick(onClipboard), onSettings = pick(onSettings), onQuit = pick(onQuit),
             )
         }
     }
 }
 
 @Composable
-private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit) {
+private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Unit, onSlip: () -> Unit, onClipboard: () -> Unit, onSettings: () -> Unit, onQuit: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
     Box(Modifier.fillMaxSize().padding(SHADOW.dp)) {
         Column(
@@ -164,6 +164,7 @@ private fun TrayMenu(hotkeyLabel: String, onQuick: () -> Unit, onOpen: () -> Uni
             MenuRow("Quick capture", DrawScope::plusIcon, keys = hotkeyLabel.split(" + "), onClick = onQuick)
             MenuRow("Open Flight Deck", DrawScope::windowIcon, onClick = onOpen)
             MenuRow("Daily Slip", DrawScope::slipIcon, onClick = onSlip)
+            MenuRow("Print clipboard", DrawScope::slipIcon, onClick = onClipboard)
             Box(Modifier.fillMaxWidth().height(SEP_H.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
             }
