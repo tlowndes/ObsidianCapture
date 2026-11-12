@@ -107,7 +107,7 @@ object DesktopUpdate {
         val rel = release ?: return
         val asset = rel.asset(".msi") ?: return
         val token = prefs.githubToken ?: return
-        val dest = File(File(prefs.cacheDir, "updates"), asset.name)
+        val dest = File(updateDir(), asset.name)
         phase = Phase.DOWNLOADING
         error = null
         done = 0; total = asset.size
@@ -122,6 +122,16 @@ object DesktopUpdate {
     }
 
     /**
+     * Where updates are downloaded. Must be outside the install folder (LOCALAPPDATA\Vault Capture),
+     * because the MSI removes the old version first, and an MSI running from inside that folder
+     * fails with error 1316, leaving no app installed.
+     */
+    private fun updateDir(): File {
+        val base = System.getenv("TEMP") ?: System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir")
+        return File(base, "VaultCapture-updates")
+    }
+
+    /**
      * Writes a small script that waits for this app to close, runs the MSI with a progress bar,
      * then opens the new version; starts it and quits.
      */
@@ -131,10 +141,15 @@ object DesktopUpdate {
         val script = File(msi.parentFile, "install-update.cmd")
         script.writeText(
             buildString {
+                val log = File(msi.parentFile, "install-update.log").absolutePath
                 appendLine("@echo off")
                 appendLine("echo Updating Vault Capture...")
                 appendLine("ping -n 3 127.0.0.1 >nul")
-                appendLine("msiexec /i \"${msi.absolutePath}\" /passive /norestart")
+                appendLine("msiexec /i \"${msi.absolutePath}\" /passive /norestart /l*v \"$log\"")
+                // If the quiet install fails, open the normal installer so the app isn't left missing.
+                appendLine("if errorlevel 1 (")
+                appendLine("  msiexec /i \"${msi.absolutePath}\"")
+                appendLine(")")
                 if (exe != null) appendLine("start \"\" \"$exe\"")
             }.replace("\n", "\r\n")
         )
