@@ -15,8 +15,14 @@ data class TickedTask(val raw: String, val text: String, val done: LocalDate?, v
 /** Open tasks plus ticked ones (Quick Task's Archive first, newest first, then the rest of the vault). */
 data class TaskLists(val open: List<TaskItem>, val done: List<TickedTask>)
 
-/** Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active. */
-data class Completion(val doneLine: String, val nextLine: String?)
+/**
+ * Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active.
+ * In Quick Task, [at] is the line it was on and [steps] its subtasks as they were, so Undo can put both back.
+ */
+data class Completion(val doneLine: String, val nextLine: String?, val at: Int = -1, val steps: List<String> = emptyList())
+
+/** Where a removed task was ([at]) and, in Quick Task, its subtasks as they were, for Undo. */
+data class Removed(val at: Int, val steps: List<String> = emptyList())
 
 /**
  * Tasks and quick notes in the vault. [cacheFile] keeps the vault-wide task scan between runs; [onTasksChanged]
@@ -100,8 +106,9 @@ class VaultWriter(
      */
     fun completeTask(t: TaskItem, recurring: Boolean = true): Completion {
         val c = TaskNote.completion(t.raw, LocalDate.now(), recurring)
-        edit(noteOf(t)) { if (isQuick(t)) TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
-        return c
+        var out = c
+        edit(noteOf(t)) { if (isQuick(t)) out = TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
+        return out
     }
 
     /**
@@ -157,20 +164,20 @@ class VaultWriter(
         return updated
     }
 
-    /** Removes the task. Returns the line it was on, for [restoreTask]. */
-    fun deleteTask(t: TaskItem): Int {
-        var at = -1
-        edit(noteOf(t)) { at = VaultTasks.delete(it, t.raw) }
-        return at
+    /** Removes the task. Returns where it was, for [restoreTask]. In Quick Task its subtasks stay, moved up a level. */
+    fun deleteTask(t: TaskItem): Removed {
+        var out = Removed(-1)
+        edit(noteOf(t)) { out = if (isQuick(t)) TaskNote.delete(it, t.raw) else Removed(VaultTasks.delete(it, t.raw)) }
+        return out
     }
 
     /** Undo for [completeTask] (pass its [Completion]), [deleteTask] (its line [at]) or a reschedule ([replace]). */
-    fun restoreTask(t: TaskItem, done: Completion?, replace: String? = null, at: Int? = null) {
+    fun restoreTask(t: TaskItem, done: Completion?, replace: String? = null, at: Removed? = null) {
         if (isQuick(t)) {
             val file = taskFile(true) ?: return
-            edit(file) { TaskNote.restore(it, t.raw, done, replace) }
+            edit(file) { TaskNote.restore(it, t.raw, done, replace, at) }
         } else {
-            edit(noteOf(t)) { VaultTasks.restoreInPlace(it, t.raw, done, replace, at) }
+            edit(noteOf(t)) { VaultTasks.restoreInPlace(it, t.raw, done, replace, at?.at) }
         }
     }
 
