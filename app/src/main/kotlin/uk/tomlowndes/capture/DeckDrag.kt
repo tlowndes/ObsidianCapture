@@ -101,8 +101,7 @@ class SectionDrag {
 
 /**
  * One Deck section: long-press lifts it. While another is dragged it dims; this one shows as a ghost.
- * A column, so a section's children (the Today heading, the forecast, the agenda) sit one under the next.
- * A box would paint them in the same place and the agenda would cover the weather.
+ * A column, so a heading and its card sit one under the next. A box would paint them in the same place.
  */
 @Composable
 fun DraggableSection(section: DeckSection, drag: SectionDrag, onDrop: () -> Unit, content: @Composable () -> Unit) {

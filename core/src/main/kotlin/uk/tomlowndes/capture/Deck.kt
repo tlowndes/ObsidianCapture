@@ -66,12 +66,15 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
 }
 
 /**
- * The phone Deck's sections under the Next step hero (tidy-v1), which can be dragged about (deck-drag-v1).
- * Today sits where its first card is in the shared order, More where its last card is, so the default order keeps
- * Today, Top tasks, More.
+ * The phone Deck's blocks under the Next step hero (tidy-v1), each dragged on its own (deck-drag-v1).
+ * Weather and the agenda are separate: the agenda is the calendar card (and the bills that share its card).
+ * A block sits where its first card is in the shared order, More where its last card is. The default order
+ * puts the agenda straight after the weather. A saved order that never listed the calendar gets it there too,
+ * via [DeckLayout.normalised], and every other card stays put.
  */
 enum class DeckSection(val cards: List<HomeCard>) {
-    TODAY(listOf(HomeCard.WEATHER, HomeCard.TODAY, HomeCard.BILLS)),
+    WEATHER(listOf(HomeCard.WEATHER)),
+    AGENDA(listOf(HomeCard.TODAY, HomeCard.BILLS)),
     TOP_TASKS(listOf(HomeCard.TOP_TASKS)),
     MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS));
 
