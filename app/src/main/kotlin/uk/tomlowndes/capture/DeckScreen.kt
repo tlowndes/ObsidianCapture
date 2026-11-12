@@ -196,6 +196,7 @@ fun DeckScreen(
     // Evening check-in (journal-prompt-v2): written today? Read from this month's journal note.
     var journalDone by remember { mutableStateOf(false) }
     var journalOpen by remember { mutableStateOf(false) }
+    var journalSkipped by remember { mutableStateOf(prefs.journalSkippedOn) }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         journalDone = withContext(Dispatchers.IO) { runCatching { Journal.written(appVault(ctx, uri), LocalDate.now()) }.getOrDefault(false) }
@@ -222,8 +223,10 @@ fun DeckScreen(
             else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
                 add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
         }
-        val checkIn = HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone
-        if (checkIn) add(NowItem.Line("📓 Evening check-in · 1 min", "Write ›") { journalOpen = true })
+        val checkIn = HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone && journalSkipped != today.toString()
+        if (checkIn) add(NowItem.Line("📓 Evening check-in · 1 min", "Write ›", onDismiss = {
+            journalSkipped = today.toString(); prefs.journalSkippedOn = journalSkipped
+        }) { journalOpen = true })
         // The check-in asks for mood too, so the mood faces wait until it's done.
         else if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
         if (Migrate.due(data.tasks, today, prefs.migratedMonth)) {

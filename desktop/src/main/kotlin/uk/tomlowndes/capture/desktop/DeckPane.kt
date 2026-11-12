@@ -45,6 +45,12 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -605,6 +611,16 @@ private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved:
     var note by remember { mutableStateOf("") }
     var noteOpen by remember { mutableStateOf(false) }
     var facts by remember { mutableStateOf(JournalFacts(events = events)) }
+    val dictation = remember { DesktopDictation() }
+    DisposableEffect(Unit) { onDispose { dictation.stop() } }
+    fun toggleMic() {
+        if (dictation.listening) {
+            val t = Journal.tidySpoken(dictation.stop())
+            if (t.isNotEmpty()) { note = listOf(note.trim(), t).filter { it.isNotEmpty() }.joinToString("\n"); noteOpen = true }
+        } else if (!dictation.start()) state.say("Couldn't start Windows dictation")
+    }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     LaunchedEffect(state.vault) {
         val v = state.vault ?: return@LaunchedEffect
         state.io { Triple(Journal.loadPrompts(v), Journal.start(v, today, Journal.loadPrompts(v)), Journal.facts(v, today, events)) }?.let { (p, e, f) ->
@@ -624,8 +640,25 @@ private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved:
     val list = prompts
     val asked = list?.filter { it.kind != JournalKind.LINE }.orEmpty()
     DeckCard {
-        Column(Modifier.onPreviewKeyEvent { e ->
+        // 1–9 and 0 tick (or step through) the rows in order, unless you're typing in a box.
+        val keyed = (asked.filter { it.kind != JournalKind.TICK } + asked.filter { it.kind == JournalKind.TICK }).take(10)
+        val digits = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine, Key.Zero)
+        Column(Modifier.focusRequester(focus).focusable().onPreviewKeyEvent { e ->
             if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && e.isCtrlPressed) { save(); true } else false
+        }.onKeyEvent { e ->
+            val i = digits.indexOf(e.key)
+            if (e.type != KeyEventType.KeyDown || i < 0 || e.isCtrlPressed || e.isAltPressed) return@onKeyEvent false
+            val p = keyed.getOrNull(i) ?: return@onKeyEvent false
+            val a = answers[p.key]
+            answers = when (p.kind) {
+                JournalKind.TICK -> if (a == "y") answers - p.key else answers + (p.key to "y")
+                else -> {
+                    val values = if (p.kind == JournalKind.MOOD) p.options.indices.map { (it + 1).toString() } else p.options
+                    val next = values.indexOf(a) + 1
+                    if (next >= values.size) answers - p.key else answers + (p.key to values[next])
+                }
+            }
+            true
         }) {
             CardHead("📓 Evening check-in", if (asked.isEmpty()) null else "${JournalEntry(answers).answered(asked)} of ${asked.size}")
             if (list == null) {
@@ -636,6 +669,8 @@ private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved:
             fun Item(p: JournalPrompt, mod: Modifier) {
                 val a = answers[p.key]
                 Row(mod.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val n = keyed.indexOf(p)
+                    if (n >= 0) Text(if (n == 9) "0" else "${n + 1}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Faint)
                     Text("${p.emoji} ${p.short}", fontSize = 13.sp, color = TextMain, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (p.kind == JournalKind.TICK) {
                         val on = a == "y"
@@ -675,6 +710,8 @@ private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved:
                     Field(answers[p.key].orEmpty(), { answers = answers + (p.key to it.replace("\n", " ")) }, Modifier.weight(1f), placeholder = "optional", fontSize = 13)
                 }
             }
+            if (dictation.listening) Text(dictation.heard.ifBlank { "Listening… (Windows dictation)" }, fontSize = 12.sp, color = Muted,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
             if (noteOpen) Field(note, { note = it }, Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
                 placeholder = "Anything else about today", singleLine = false, minLines = 3, fontSize = 13)
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -682,6 +719,7 @@ private fun JournalCard(state: AppState, events: Int, written: Boolean, onSaved:
                     Text(it.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted,
                         modifier = Modifier.clip(CircleShape).background(Surface2).padding(horizontal = 9.dp, vertical = 3.dp))
                 }
+                DeckButton(if (dictation.listening) "■ Stop" else "🎤", primary = false) { toggleMic() }
                 if (!noteOpen) DeckButton("+ Note", primary = false) { noteOpen = true }
                 Box(Modifier.weight(1f))
                 DeckButton("Save · Ctrl+Enter", primary = true) { save() }

@@ -200,6 +200,14 @@ object Journal {
         return lines.joinToString("\n").trimEnd() + "\n"
     }
 
+    /** Speech-to-text tidied a little for the note: trimmed, capital first letter, ends with a full stop. */
+    fun tidySpoken(text: String): String {
+        val t = text.trim().replace(Regex("\\s+"), " ")
+        if (t.isEmpty()) return ""
+        val cap = t.replaceFirstChar { it.uppercaseChar() }
+        return if (cap.last() in ".!?") cap else "$cap."
+    }
+
     /** Tasks ticked and focus minutes for [day], plus [events] from the calendar the caller already has. */
     fun facts(v: Vault, day: LocalDate, events: Int?): JournalFacts = JournalFacts(
         tasks = runCatching { WeeklyReview.done(v, day).count { it.done == day } }.getOrNull(),

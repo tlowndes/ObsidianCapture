@@ -1,6 +1,12 @@
 package uk.tomlowndes.capture
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +65,31 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
     var noteOpen by remember { mutableStateOf(false) }
     var facts by remember { mutableStateOf(JournalFacts(events = events)) }
     var saving by remember { mutableStateOf(false) }
+
+    // 🎤: Android's own speech-to-text (as Jarvis uses); tap to start, tap again to add what was heard to the note.
+    val speech = remember { PhoneSpeech(ctx) }
+    var listening by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { speech.cancel() } }
+    var heardNow by remember { mutableStateOf("") }
+    LaunchedEffect(listening) { while (listening) { heardNow = speech.soFar; kotlinx.coroutines.delay(250) } }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (!ok) scope.launch { snack.showSnackbar("The journal needs the microphone to hear you") }
+    }
+    fun toggleMic() {
+        if (listening) {
+            listening = false
+            speech.stop { heard ->
+                val t = Journal.tidySpoken(heard)
+                if (t.isNotEmpty()) { note = listOf(note.trim(), t).filter { it.isNotEmpty() }.joinToString("\n"); noteOpen = true }
+            }
+            return
+        }
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            askMic.launch(Manifest.permission.RECORD_AUDIO); return
+        }
+        if (!PhoneSpeech.available(ctx)) { scope.launch { snack.showSnackbar("Speech-to-text isn't available on this phone") }; return }
+        speech.start(); listening = true
+    }
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
@@ -122,6 +153,10 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
             shape = RoundedCornerShape(12.dp), minLines = 3, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
         )
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (listening) "■ Stop" else "🎤", fontSize = 13.sp, color = if (listening) Warn else TextMain,
+                modifier = Modifier.clip(CircleShape).background(if (listening) OverdueTint else Color.Transparent)
+                    .border(1.dp, if (listening) Warn else Outline, CircleShape).clickable { toggleMic() }
+                    .padding(horizontal = 12.dp, vertical = 7.dp))
             if (!noteOpen) Text("+ Note", fontSize = 12.5.sp, modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape)
                 .clickable { noteOpen = true }.padding(horizontal = 12.dp, vertical = 7.dp))
             Box(Modifier.weight(1f))
@@ -139,6 +174,7 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
                 }
             }
         }
+        if (listening) Text(heardNow.ifBlank { "Listening…" }, fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
         Text("Saves to ${Journal.path(today)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 10.dp))
     }
 }
