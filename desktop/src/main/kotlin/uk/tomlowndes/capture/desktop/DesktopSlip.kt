@@ -182,6 +182,12 @@ object DesktopSlip {
             gap(8f)
             val left = s.daysInYear - s.dayOfYear
             text("Week ${s.week}   Day ${s.dayOfYear}/${s.daysInYear}   $left days to go", mono(SMALL), center = true)
+            if (s.ahead) {
+                gap(12f)
+                val w = width(Slip.AHEAD_STAMP, mono(SMALL, true)) + 14f
+                label(Slip.AHEAD_STAMP, (WIDTH - w) / 2, y)
+                y += SMALL + 8f
+            }
             solid()
         }
 
@@ -245,10 +251,10 @@ object DesktopSlip {
             val next = s.nextAllDay.size + s.nextEvents.size
             heading("Calendar", if (n == 0) "clear" else "$n event" + if (n == 1) "" else "s")
             gap(6f)
-            if (next > 0) { gap(2f); dayLabel("TODAY", s.date) }
+            if (next > 0) { gap(2f); dayLabel(s.dayWord, s.date) }
             events(s.allDay, s.events)
-            if (n == 0) { text("Nothing in the calendar today.", mono(BODY)); gap(8f) }
-            if (next > 0) { gap(8f); dayLabel("TOMORROW", s.date.plusDays(1)); events(s.nextAllDay, s.nextEvents) }
+            if (n == 0) { text(s.clearLine, mono(BODY)); gap(8f) }
+            if (next > 0) { gap(8f); dayLabel(s.nextWord, s.date.plusDays(1)); events(s.nextAllDay, s.nextEvents) }
             if (s.show.month) { gap(6f); month(s.date) }
         }
 
@@ -302,12 +308,12 @@ object DesktopSlip {
         fun todo(s: SlipContent) {
             val open = s.overdue.size + s.today.size + s.tomorrow.size
             heading("To-do", "$open open")
-            if (s.overdue.isNotEmpty()) { gap(8f); dayLabel("OVERDUE", null); s.overdue.forEach { task(it) } }
-            gap(8f); dayLabel("TODAY", s.date)
+            if (s.overdue.isNotEmpty()) { gap(8f); dayLabel(s.lateWord, null); s.overdue.forEach { task(it) } }
+            gap(8f); dayLabel(s.dayWord, s.date)
             if (s.today.isEmpty() && s.overdue.isEmpty()) text("Nothing due. Enjoy it.", mono(BODY))
             s.today.forEach { task(it) }
             if (s.show.blank) repeat(3) { blankLine() }
-            if (s.tomorrow.isNotEmpty()) { gap(14f); dayLabel("TOMORROW", s.date.plusDays(1)); s.tomorrow.forEach { task(it) } }
+            if (s.tomorrow.isNotEmpty()) { gap(14f); dayLabel(s.nextWord, s.date.plusDays(1)); s.tomorrow.forEach { task(it) } }
             gap(10f)
             text("from Obsidian · Quick Task and your notes", mono(18f))
         }

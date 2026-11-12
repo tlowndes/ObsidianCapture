@@ -60,11 +60,13 @@ object Summary {
     fun dayPrompt(s: SlipContent): String {
         val b = StringBuilder()
         b.append("Write my day in brief for the top of a printed slip: up to three short plain sentences, friendly, ")
-        b.append("say what to start with. UK spelling, no intro, no markdown. Today is ${s.date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }} ${Slip.shortDate(s.date)}.\n")
+        b.append("say what to start with. UK spelling, no intro, no markdown. ")
+        val day = "${s.date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }} ${Slip.shortDate(s.date)}"
+        b.append(if (s.ahead) "I'm planning ahead: this slip is for $day, not today. Talk about that day.\n" else "Today is $day.\n")
         s.weather?.let { b.append("Weather: ${it.headline}\n") }
         (s.allDay + s.events).forEach { e -> b.append("Event: ${listOfNotNull(e.start, e.title, e.place).joinToString(" ")}\n") }
         s.overdue.forEach { b.append("Overdue: ${it.text}\n") }
-        s.today.forEach { b.append("Today: ${it.text}\n") }
+        s.today.forEach { b.append((if (s.ahead) "That day: " else "Today: ") + "${it.text}\n") }
         return b.toString()
     }
 

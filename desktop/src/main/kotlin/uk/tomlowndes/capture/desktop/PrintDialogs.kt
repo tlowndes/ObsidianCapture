@@ -49,6 +49,7 @@ import uk.tomlowndes.capture.Slip
 import uk.tomlowndes.capture.SlipOptions
 import uk.tomlowndes.capture.Summary
 import uk.tomlowndes.capture.TaskItem
+import uk.tomlowndes.capture.Weather
 import uk.tomlowndes.capture.WeatherSummary
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
@@ -207,6 +208,31 @@ fun PrinterChooser(state: AppState, onDone: () -> Unit) {
 
 private data class SlipSources(val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?)
 
+/** Today, Tomorrow, then the next five days as tiles, and 📅 for a later date (slip-any-day-v1). */
+@Composable
+private fun DayStrip(day: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit, onMore: () -> Unit) {
+    val days = (0 until Slip.STRIP_DAYS).map { today.plusDays(it.toLong()) }
+    val beyond = day !in days
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        days.forEach { d -> DayTile(Slip.stripLabel(d, today), d.dayOfMonth.toString(), d == day) { onPick(d) } }
+        DayTile(if (beyond) day.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.UK) else "📅",
+            if (beyond) day.dayOfMonth.toString() else "", beyond, onMore)
+    }
+}
+
+@Composable
+private fun DayTile(top: String, num: String, on: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        Modifier.clip(shape).background(if (on) PrimaryTint else Surface1).border(1.dp, if (on) Primary else Outline, shape)
+            .clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(top, fontSize = 11.sp, color = if (on) Primary else Muted)
+        if (num.isNotEmpty()) Text(num, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else TextMain)
+    }
+}
+
 /** Daily Slip (windows-printing-v1, frame 1): switches on the left, the paper on the right, Print. */
 @Composable
 fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
@@ -215,7 +241,14 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
     var opts by remember { mutableStateOf(SlipSettings.load(p)) }
     var sources by remember { mutableStateOf<SlipSources?>(null) }
     var brief by remember { mutableStateOf<String?>(null) }
+    var briefFor by remember { mutableStateOf<LocalDate?>(null) }
     var briefNote by remember { mutableStateOf<String?>(null) }
+    // The day the slip is for (slip-any-day-v1). Opens on today every time.
+    val today = remember { LocalDate.now() }
+    var day by remember { mutableStateOf(today) }
+    var pickingDay by remember { mutableStateOf(false) }
+    var dayWeather by remember { mutableStateOf<WeatherSummary?>(null) }
+    var dayWeatherFor by remember { mutableStateOf<LocalDate?>(null) }
     var img by remember { mutableStateOf<BufferedImage?>(null) }
     var progress by remember { mutableStateOf<Float?>(null) }
     var choosing by remember { mutableStateOf(false) }
@@ -231,28 +264,38 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
             )
         }
     }
-    // In brief: asked once per opening, only while the switch is on.
-    LaunchedEffect(sources, opts.brief) {
+    LaunchedEffect(sources, day) {
         val src = sources ?: return@LaunchedEffect
-        if (!opts.brief || brief != null) return@LaunchedEffect
+        dayWeather = if (day == today) src.weather else withContext(Dispatchers.IO) { runCatching { DesktopWeather.forDay(p, day) }.getOrNull() }
+        dayWeatherFor = day
+    }
+    // In brief: asked once per day picked, only while the switch is on.
+    LaunchedEffect(sources, opts.brief, day, dayWeatherFor) {
+        val src = sources ?: return@LaunchedEffect
+        if (dayWeatherFor != day) return@LaunchedEffect
+        if (!opts.brief || (brief != null && briefFor == day)) return@LaunchedEffect
         if (!DesktopJarvis.ready(p)) { briefNote = "Set up Jarvis in Settings to use this"; return@LaunchedEffect }
+        brief = null
         briefNote = "Asking Jarvis…"
-        val today = LocalDate.now()
+        val forDay = day
         val r = withContext(Dispatchers.IO) {
             runCatching {
-                if (Jarvis.isDemo(p.jarvisAddress)) Summary.demoBrief(today)
+                if (Jarvis.isDemo(p.jarvisAddress)) Summary.demoBrief(forDay)
                 else Summary.brief(Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!,
-                    Summary.dayPrompt(Slip.build(today, src.tasks, src.events, src.weather, SlipOptions())), "obsidian", speak = false).reply)
+                    Summary.dayPrompt(Slip.build(forDay, src.tasks, src.events, dayWeather, SlipOptions(), today)), "obsidian", speak = false).reply)
             }
         }
-        brief = r.getOrNull()
+        if (forDay != day) return@LaunchedEffect
+        brief = r.getOrNull(); briefFor = forDay
         briefNote = if (brief != null) null else "Couldn't reach Jarvis, so it prints without it"
     }
-    LaunchedEffect(sources, opts, brief) {
+    LaunchedEffect(sources, opts, brief, day, dayWeatherFor) {
         val src = sources ?: return@LaunchedEffect
+        if (dayWeatherFor != day) return@LaunchedEffect
         img = withContext(Dispatchers.Default) {
             runCatching {
-                val content = Slip.build(LocalDate.now(), src.tasks, src.events, src.weather, opts).copy(brief = brief?.takeIf { opts.brief })
+                val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today)
+                    .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
                 DesktopSlip.draw(content, SLIP_OWNER)
             }.getOrNull()
         }
@@ -267,24 +310,38 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
     val printsAtOpen = remember { state.slipPrint }
     LaunchedEffect(state.slipPrint) { if (state.slipPrint > printsAtOpen) print() }
 
+    if (pickingDay) PickDateDialog(day, onPick = { d -> if (d != null && !d.isBefore(today)) day = d; pickingDay = false }, onDismiss = { pickingDay = false })
+
     PrintFrame(if (choosing) 520.dp else 920.dp, onClose) {
         if (choosing) { PrinterChooser(state) { choosing = false; printerTick++ }; return@PrintFrame }
         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("Daily Slip", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextMain)
-                Sub("Today's weather, calendar and to-dos on your pocket printer.", Modifier.padding(top = 2.dp, bottom = 8.dp))
-                val w = sources?.weather
-                SlipSwitch("In brief", briefNote ?: "Jarvis sums up the day in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
-                SlipSwitch("Weather", w?.headline ?: "Today's forecast", opts.weather) { set(opts.copy(weather = it)) }
-                SlipSwitch("Calendar", "Today's events, and tomorrow's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
-                SlipSwitch("Month grid", "This month with today marked", opts.month) { set(opts.copy(month = it)) }
-                SlipSwitch("To-dos", "Overdue and due today, then tomorrow", opts.todo) { set(opts.copy(todo = it)) }
+                val isToday = day == today
+                val dayName = day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
+                Sub(if (isToday) "Today's weather, calendar and to-dos on your pocket printer." else "$dayName's weather, calendar and to-dos.",
+                    Modifier.padding(top = 2.dp, bottom = 8.dp))
+                Text("DAY", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Faint, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 6.dp))
+                DayStrip(day, today, onPick = { day = it }, onMore = { pickingDay = true })
+                Spacer(Modifier.height(8.dp))
+                val w = dayWeather?.takeIf { dayWeatherFor == day }
+                SlipSwitch("In brief", briefNote ?: if (isToday) "Jarvis sums up the day in 3 lines" else "Jarvis sums up $dayName in 3 lines", opts.brief) { set(opts.copy(brief = it)) }
+                SlipSwitch("Weather", when {
+                    w != null -> if (isToday) w.headline else "Forecast for ${dayName.take(3)}: ${w.high}°, ${w.headline.replaceFirstChar { it.lowercase() }}"
+                    isToday -> "Today's forecast"
+                    dayWeatherFor != day -> "Getting the forecast…"
+                    day.isAfter(today.plusDays(Weather.DAYS - 1L)) -> "No forecast that far out"
+                    else -> "No forecast for $dayName yet"
+                }, opts.weather) { set(opts.copy(weather = it)) }
+                SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
+                SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
+                SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
                 SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
-                SlipSwitch("Sudoku", "A new puzzle each day", opts.sudoku) { set(opts.copy(sudoku = it)) }
+                SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }
                 Spacer(Modifier.height(12.dp))
                 key(printerTick) { PrinterLine(state, progress) { choosing = true } }
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("Print", enabled = img != null && progress == null, hint = "Ctrl P") { print() }
+                    PrimaryButton(Slip.printLabel(day, today), enabled = img != null && progress == null, hint = "Ctrl P") { print() }
                     TextAction("Copy as image", Muted) { img?.let { copyImage(it); state.say("Slip copied as a picture") } }
                     Spacer(Modifier.weight(1f))
                     TextAction("Close", Muted, onClick = onClose)

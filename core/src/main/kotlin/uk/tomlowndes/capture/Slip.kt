@@ -40,7 +40,18 @@ data class SlipContent(
     val nextAllDay: List<SlipEvent> = emptyList(), val nextEvents: List<SlipEvent> = emptyList(),
     /** Jarvis's In brief lines, filled in by the app after [Slip.build] when [SlipOptions.brief] is on. */
     val brief: String? = null,
-)
+    /** True when the slip is for a later day than the one it's printed on (slip-any-day-v1). */
+    val ahead: Boolean = false,
+) {
+    /** Label for the slip's own day: "TODAY", or "FRIDAY" when printed ahead. */
+    val dayWord: String get() = if (ahead) Slip.weekday(date) else "TODAY"
+    /** Label for the day after: "TOMORROW", or "SATURDAY" when printed ahead. */
+    val nextWord: String get() = if (ahead) Slip.weekday(date.plusDays(1)) else "TOMORROW"
+    /** Label for tasks due before the slip's day. */
+    val lateWord: String get() = if (ahead) "STILL LATE" else "OVERDUE"
+    /** Shown when the calendar is clear. */
+    val clearLine: String get() = if (ahead) "Nothing in the calendar that day." else "Nothing in the calendar today."
+}
 
 /** The Daily Slip: a till-roll printout of today's weather, calendar and to-dos, for a pocket thermal printer. */
 object Slip {
@@ -50,8 +61,33 @@ object Slip {
     /** Undated tasks only appear when there are fewer dated ones than this, so the slip stays short. */
     const val UNDATED_FILL = 6
 
+    /** Stamp printed under the header of a slip printed ahead. */
+    const val AHEAD_STAMP = "PLANNED AHEAD"
+
+    /** How many days the day strip offers (today plus the next six); the date picker reaches further. */
+    const val STRIP_DAYS = 7
+
+    /** "FRIDAY". */
+    fun weekday(d: LocalDate): String = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.UK).uppercase(Locale.UK)
+
+    /** The day strip's labels: "Today", "Tomorrow", then "Sat", "Sun"… */
+    fun stripLabel(d: LocalDate, today: LocalDate): String = when (d) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.UK)
+    }
+
+    /** "Print Friday's slip", or plain "Print" for today. */
+    fun printLabel(d: LocalDate, today: LocalDate): String =
+        if (d == today) "Print" else "Print " + d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.UK) + "'s slip"
+
+    /**
+     * Builds the slip for [date]. [today] is the day it's printed: when [date] is later, the slip is "printed ahead"
+     * and anything due before [date] is listed as still late.
+     */
     fun build(
         date: LocalDate, all: List<TaskItem>, events: List<CalEvent>, weather: WeatherSummary?, o: SlipOptions,
+        today: LocalDate = date,
     ): SlipContent {
         // Quick Task can come back from both the note and the vault scan: keep one of each.
         val tasks = all.distinctBy { Tags.strip(it.text).lowercase() to it.due }
@@ -80,6 +116,7 @@ object Slip {
             if (o.sudoku) Sudoku.forDay(date) else null,
             o,
             nextAllDay, nextTimed,
+            ahead = date.isAfter(today),
         )
     }
 
