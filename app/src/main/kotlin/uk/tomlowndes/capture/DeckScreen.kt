@@ -277,7 +277,7 @@ fun DeckScreen(
         }
     }
 
-    /** One section under Next step: Today (weather, calendar, bills), Top tasks, or the More tiles. */
+    /** One section under Next step: Today (agenda, then the open forecast), Top tasks, or the More tiles. */
     @Composable
     fun Section(section: DeckSection) {
         when (section) {
@@ -314,11 +314,13 @@ fun DeckScreen(
                 }
                 val expanded = HomeCard.WEATHER !in hidden && w != null && showStrip
                 if (rows.isNotEmpty() || expanded) SectionLabel("Today")
-                if (expanded) {
-                    WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
-                    if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
-                }
+                // Agenda first, in the flow. Opening or closing "hide earlier" changes its height and the
+                // forecast below moves with it, instead of the list painting over the temperature tiles.
                 RowsCard(rows)
+                if (expanded) {
+                    if (rows.isNotEmpty()) Box(Modifier.height(8.dp))
+                    WeatherCard(w!!, null, true) { showStrip = false; prefs.weatherStrip = false }
+                }
             }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
