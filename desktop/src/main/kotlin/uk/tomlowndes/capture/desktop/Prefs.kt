@@ -173,6 +173,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = uk.tomlowndes.capture.AssistantName.clean(str("assistant_name", ""))
         set(v) = put("assistant_name", uk.tomlowndes.capture.AssistantName.clean(v))
 
+    /** Key findings length. Long is the default. */
+    var findingsLength: uk.tomlowndes.capture.KeyFindings.Length
+        get() = uk.tomlowndes.capture.KeyFindings.Length.fromStored(str("findings_length", ""))
+        set(v) = put("findings_length", v.stored)
+
     /** Settings › Jarvis (windows-jarvis-v1). The token is encrypted for this Windows user, never in the vault. */
     var jarvisAddress: String
         get() = str("jarvis_address", "")

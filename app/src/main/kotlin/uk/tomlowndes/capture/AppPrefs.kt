@@ -228,6 +228,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = AssistantName.clean(p.getString("assistant_name", null))
         set(v) { p.edit().putString("assistant_name", AssistantName.clean(v)).apply() }
 
+    /** Key findings length. Long is the default. */
+    var findingsLength: KeyFindings.Length
+        get() = KeyFindings.Length.fromStored(p.getString("findings_length", null))
+        set(v) { p.edit().putString("findings_length", v.stored).apply() }
+
     /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
     var jarvisAddress: String
         get() = p.getString("jarvis_address", "").orEmpty()

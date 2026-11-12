@@ -72,7 +72,7 @@ Three modes, and it reopens on the last one used:
 
 ### Assistant
 
-Hold the big button to talk, let go to send (slide off to cancel). Settings › the assistant's name is a text field; blank goes back to Tower. **Claude from the phone** is off until you add a Claude API key and turn it on. It costs money. While it is on, every assistant job on the phone (chat, sorting, research, Break it down, print summaries, the day's brief) calls Claude directly, and error messages do not ask about Tailscale. Nano on the phone, then the Oracle server, are used only when that switch is off.
+Hold the big button to talk, let go to send (slide off to cancel). Settings › the assistant's name is a text field; blank goes back to Tower. **Claude from the phone** is off until you add a Claude API key and turn it on. It costs money. While it is on, every assistant job on the phone (chat, sorting, research, Break it down, print summaries, the day's brief, key findings) calls Claude directly, and error messages do not ask about Tailscale. Key findings, from the Vault note or from a message like "key findings for …", asks for Long (a few short paragraphs, the default) or Short (a few one-line bullets) before anything is written, then shows them to check. Links are only ones already in the article. On Windows the same action uses the server. Nano on the phone, then the Oracle server, are used only when that switch is off.
 
 When the switch is off, a recording can go to `POST /voice` on the
 Oracle box over Tailscale, with a bearer token. That server hands it to the Claude CLI and answers with what it heard, the reply and an

@@ -80,7 +80,9 @@ import uk.tomlowndes.capture.NoteInfo
 import uk.tomlowndes.capture.NoteTags
 import uk.tomlowndes.capture.NoteText
 import uk.tomlowndes.capture.Tags
+import uk.tomlowndes.capture.KeyFindings
 import uk.tomlowndes.capture.VaultBrowse
+import uk.tomlowndes.capture.VaultNote
 import uk.tomlowndes.capture.VaultSearch
 import uk.tomlowndes.capture.VaultTasks
 import java.io.File
@@ -245,6 +247,7 @@ private fun NoteView(
     var draft by remember(path) { mutableStateOf("") }
     var tagging by remember(path) { mutableStateOf(false) }
     var clash by remember(path) { mutableStateOf<Clash?>(null) }
+    var findingsOpen by remember(path) { mutableStateOf(false) }
 
     LaunchedEffect(path, state.changes) { if (editing == null) text = state.io("Couldn't open it") { state.vault?.read(path) } }
 
@@ -307,6 +310,7 @@ private fun NoteView(
                 startEdit(start..lines.indexOfLast { it.isNotBlank() }.coerceAtLeast(start - 1))
             }
             Chip("＃ Tag", small = true) { tagging = !tagging }
+            Chip("Key findings", small = true) { findingsOpen = true }
             Chip("🧾 Print", small = true) { state.printSummaryOf = PrintSource.Note(VaultTasks.noteName(path), t) }
             Chip("↗ Open in Obsidian", small = true) { state.openInObsidian(path) }
         }
@@ -388,6 +392,16 @@ private fun NoteView(
                 Text("›", color = Primary, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(40.dp))
+        }
+    }
+    if (findingsOpen) text?.let { body ->
+        KeyFindingsDialog(
+            state, path, body, KeyFindings.related(all.map { VaultNote(it.path, it.modified) }, path),
+            onDismiss = { findingsOpen = false }
+        ) { written ->
+            findingsOpen = false
+            landed(written, "Key findings saved")
+            state.changed()
         }
     }
 }

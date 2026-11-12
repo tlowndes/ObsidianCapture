@@ -559,6 +559,7 @@ private fun NoteScreen(
     var menu by remember { mutableStateOf(false) }
     var summarising by remember(path) { mutableStateOf(false) }
     var listing by remember(path) { mutableStateOf(false) }
+    var findings by remember(path) { mutableStateOf(false) }
     var printMenu by remember(path) { mutableStateOf(false) }
     fun v() = appVault(ctx, vault)
 
@@ -637,6 +638,7 @@ private fun NoteScreen(
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("‹", fontSize = 26.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 16.dp, top = 4.dp, bottom = 4.dp))
                     Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { findings = true }) { Text("Key findings", color = Primary, fontSize = 14.sp) }
                     Box {
                         TextButton(onClick = { printMenu = true }) { Text("🧾", fontSize = 18.sp) }
                         DropdownMenu(printMenu, { printMenu = false }) {
@@ -734,6 +736,10 @@ private fun NoteScreen(
     if (summarising) text?.let { body ->
         PrintSummarySheet(SummarySource.Note(VaultTasks.noteName(path), body), snack) { summarising = false }
     }
+    if (findings) KeyFindingsSheet(
+        vault, path, t, KeyFindings.related(notes.map { VaultNote(it.path, it.modified) }, path), snack,
+        onDismiss = { findings = false }
+    ) { written -> findings = false; landed(written, "Key findings saved") }
     if (adding) AddToNoteDialog(VaultNote(path, 0), onDismiss = { adding = false }) { line, asTask, due ->
         adding = false
         scope.launch {
