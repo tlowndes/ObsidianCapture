@@ -73,6 +73,7 @@ fun main(args: Array<String>) {
                     onQuick = { state.quickVisible = true },
                     onOpen = { state.windowVisible = true },
                     onSlip = { state.tab = Tab.DECK; state.slipOpen = true; state.windowVisible = true },
+                    onClipboard = { state.slipClipboard = true; state.slipOpen = true; state.windowVisible = true },
                     onSettings = { state.tab = Tab.SETTINGS; state.windowVisible = true },
                     onQuit = ::exitApplication,
                 )

@@ -71,6 +71,7 @@ sealed class SummarySource {
 internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val prefs = remember { AppPrefs(ctx) }
+    remember { SlipText.load(ctx) }
     val address = remember { prefs.jarvisAddress }
     val token = remember { SecretStore(ctx).jarvisToken.orEmpty() }
     val demo = Jarvis.isDemo(address)
@@ -158,6 +159,41 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
             confirmButton = { TextButton(onClick = { doc = doc?.edited(t); editing = null }) { Text("Done", color = Primary) } },
             dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel", color = Muted) } }
         )
+    }
+}
+
+/** Print as list (printables-v1): a vault note's list lines as tick boxes, grouped by its headings. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PrintListSheet(title: String, body: String, snack: SnackbarHostState, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    remember { SlipText.load(ctx) }
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var byHeading by remember { mutableStateOf(true) }
+    var skipTicked by remember { mutableStateOf(true) }
+    var paper by remember { mutableStateOf<Bitmap?>(null) }
+    var count by remember { mutableIntStateOf(0) }
+    LaunchedEffect(byHeading, skipTicked) {
+        val d = PrintDocs.listFrom(title, body, byHeading, skipTicked)
+        count = d.count
+        paper = if (d.count == 0) null else withContext(Dispatchers.Default) { runCatching { SlipRender.drawList(d) }.getOrNull() }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
+            Text("Print as list", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text("$title · $count open", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+            SettingRow("Group by heading", "Uses the note's ## headings") { AppSwitch(byHeading) { byHeading = it } }
+            SettingRow("Leave out ticked items") { AppSwitch(skipTicked) { skipTicked = it } }
+            Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 120.dp).clip(RoundedCornerShape(6.dp)).background(Color.White).padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val b = paper
+                if (b == null) Text("No list lines in this note (- or - [ ]).", fontSize = 13.sp, color = Color.DarkGray, modifier = Modifier.padding(20.dp))
+                else Image(b.asImageBitmap(), "Preview of the list slip", Modifier.fillMaxWidth(0.86f), contentScale = ContentScale.FillWidth, filterQuality = FilterQuality.Medium)
+            }
+            SlipPrintButton(paper, snack, Modifier.padding(top = 10.dp))
+        }
     }
 }
 

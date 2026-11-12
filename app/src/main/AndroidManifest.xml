@@ -42,6 +42,15 @@
         <service android:name=".FocusService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Focus countdown timer the user starts" />
         </service>
+        <!-- Print from share (printables-v1): "Print slip" in the share sheet -->
+        <activity android:name=".PrintShareActivity" android:exported="true" android:label="Print slip"
+            android:icon="@mipmap/ic_launcher" android:taskAffinity="" android:excludeFromRecents="true">
+            <intent-filter android:label="Print slip">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
         <!-- Add-task / save-link sheet opened from the capture widget -->
         <activity android:name=".QuickCaptureActivity" android:exported="false"
             android:theme="@style/Theme.VaultCapture.Sheet" android:taskAffinity="" android:excludeFromRecents="true"

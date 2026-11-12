@@ -1,13 +1,16 @@
 package uk.tomlowndes.capture.desktop
 
+import uk.tomlowndes.capture.BillsDoc
 import uk.tomlowndes.capture.DayPart
 import uk.tomlowndes.capture.EscPos
+import uk.tomlowndes.capture.ListDoc
 import uk.tomlowndes.capture.Slip
 import uk.tomlowndes.capture.SlipContent
 import uk.tomlowndes.capture.SlipEvent
 import uk.tomlowndes.capture.SlipReminder
 import uk.tomlowndes.capture.SlipTask
 import uk.tomlowndes.capture.Summary
+import uk.tomlowndes.capture.TaskViews
 import uk.tomlowndes.capture.WeatherSummary
 import uk.tomlowndes.capture.WeekContent
 import uk.tomlowndes.capture.WeekDay
@@ -38,10 +41,13 @@ object DesktopSlip {
     const val WIDTH = 576
     private const val MAX_HEIGHT = 7000
     private const val M = 6
-    private const val BODY = 27f
-    private const val SMALL = 22f
-    private const val BOX = 42f
-    private const val TEXT_X = 60f
+    /** Text size Large (printables-v1): about 25% bigger text and tick boxes on every slip. Set before drawing. */
+    @Volatile var large = false
+    private val scale get() = if (large) 1.25f else 1f
+    private val BODY get() = 27f * scale
+    private val SMALL get() = 22f * scale
+    private val BOX get() = 42f * scale
+    private val TEXT_X get() = 60f * scale
 
     private val fonts by lazy { GraphicsEnvironment.getLocalGraphicsEnvironment().availableFontFamilyNames.toSet() }
     private fun head(size: Float): Font {
@@ -71,6 +77,25 @@ object DesktopSlip {
     fun drawWeek(w: WeekContent, now: LocalDateTime = LocalDateTime.now()): BufferedImage = page { p ->
         p.weekHeader(w)
         w.days.forEachIndexed { i, d -> if (i > 0) p.dashed(); p.weekDay(d, w.show) }
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", mono(SMALL), center = true)
+    }
+
+    /** A list (shopping list slip) or shared text (Print clipboard), printables-v1. */
+    fun drawList(d: ListDoc, now: LocalDateTime = LocalDateTime.now()): BufferedImage = page { p ->
+        p.docHeader(d.title, d.sub)
+        d.body?.let { p.text(it, mono(BODY), spacing = 1.15f) }
+        d.groups.forEach { g ->
+            g.heading?.let { p.gap(10f); p.text(it, mono(SMALL, true)); p.gap(6f) }
+            g.items.forEach { p.reminder(SlipReminder(it, "")) }
+        }
+        p.gap(10f); p.solid()
+        p.text(Slip.printedAt(now) + " · Flight Deck", mono(SMALL), center = true)
+    }
+
+    /** The Bills slip (printables-v1): left to pay, then the month's bills to pay and paid. */
+    fun drawBills(b: BillsDoc, now: LocalDateTime = LocalDateTime.now()): BufferedImage = page { p ->
+        p.bills(b)
         p.gap(10f); p.solid()
         p.text(Slip.printedAt(now) + " · Flight Deck", mono(SMALL), center = true)
     }
@@ -347,6 +372,47 @@ object DesktopSlip {
             if (r.note.isNotEmpty()) at(r.note, nf, WIDTH - M - nw, top + BODY)
             text(r.text, mono(BODY), M + TEXT_X, inner - TEXT_X - nw - 16f)
             y = maxOf(y, top + BOX + 6f) + 12f
+        }
+
+        fun docHeader(title: String, sub: String) {
+            text(title, head(72f), center = true, spacing = 0.9f)
+            if (sub.isNotEmpty()) { gap(6f); text(sub, mono(SMALL), center = true) }
+            solid()
+        }
+
+        fun bills(b: BillsDoc) {
+            text("BILLS", head(72f), center = true, spacing = 0.9f)
+            gap(4f)
+            text(b.title, head(36f), center = true)
+            solid()
+            val top = y
+            val lf = mono(BODY, true)
+            at("Left to pay", lf, M.toFloat(), top + BODY)
+            val left = TaskViews.money(b.left)
+            at(left, lf, WIDTH - M - width(left, lf), top + BODY)
+            y = top + BODY + 10f
+            val sf = mono(SMALL)
+            val total = "of " + TaskViews.money(b.left + b.paidTotal)
+            at("Paid " + TaskViews.money(b.paidTotal), sf, M.toFloat(), y + SMALL)
+            at(total, sf, WIDTH - M - width(total, sf), y + SMALL)
+            y += SMALL + 18f
+            if (b.toPay.isNotEmpty()) {
+                text("TO PAY", mono(SMALL, true)); gap(6f)
+                b.toPay.forEach { reminder(SlipReminder(it.name, listOfNotNull(b.day(it).ifEmpty { null }, it.amount?.let { a -> TaskViews.money(a) }).joinToString(" · "))) }
+            } else text("Nothing left to pay.", mono(BODY))
+            if (b.paid.isNotEmpty()) {
+                gap(8f); text("PAID", mono(SMALL, true)); gap(6f)
+                b.paid.forEach { bill ->
+                    val t = y
+                    rect(M + 3f, t + 2f, M + 1f + BOX, t + BOX)
+                    val note = listOfNotNull(b.day(bill).ifEmpty { null }, bill.amount?.let { a -> TaskViews.money(a) }).joinToString(" · ")
+                    val nw = width(note, sf)
+                    at(note, sf, WIDTH - M - nw, t + BODY)
+                    val tf = mono(BODY).deriveFont(mapOf(java.awt.font.TextAttribute.STRIKETHROUGH to java.awt.font.TextAttribute.STRIKETHROUGH_ON))
+                    text(bill.name, tf, M + TEXT_X, inner - TEXT_X - nw - 16f)
+                    y = maxOf(y, t + BOX + 6f) + 12f
+                }
+            }
         }
 
         fun weekHeader(w: WeekContent) {

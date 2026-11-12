@@ -558,6 +558,8 @@ private fun NoteScreen(
     var clash by remember(path) { mutableStateOf<Clash?>(null) }
     var menu by remember { mutableStateOf(false) }
     var summarising by remember(path) { mutableStateOf(false) }
+    var listing by remember(path) { mutableStateOf(false) }
+    var printMenu by remember(path) { mutableStateOf(false) }
     fun v() = appVault(ctx, vault)
 
     suspend fun load() {
@@ -635,7 +637,13 @@ private fun NoteScreen(
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("‹", fontSize = 26.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 16.dp, top = 4.dp, bottom = 4.dp))
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { summarising = true }) { Text("🧾", fontSize = 18.sp) }
+                    Box {
+                        TextButton(onClick = { printMenu = true }) { Text("🧾", fontSize = 18.sp) }
+                        DropdownMenu(printMenu, { printMenu = false }) {
+                            DropdownMenuItem({ Text("Print summary") }, { printMenu = false; summarising = true })
+                            DropdownMenuItem({ Text("Print as list") }, { printMenu = false; listing = true })
+                        }
+                    }
                     Box {
                         TextButton(onClick = { menu = true }) { Text("⋯", fontSize = 20.sp, color = Muted) }
                         DropdownMenu(menu, { menu = false }) {
@@ -722,6 +730,7 @@ private fun NoteScreen(
         tagging = false
         change(if (wanted.size == 1) "Saved 1 tag" else "Saved ${wanted.size} tags") { NoteTags.set(it, wanted, toProps) }
     }
+    if (listing) text?.let { body -> PrintListSheet(VaultTasks.noteName(path), body, snack) { listing = false } }
     if (summarising) text?.let { body ->
         PrintSummarySheet(SummarySource.Note(VaultTasks.noteName(path), body), snack) { summarising = false }
     }

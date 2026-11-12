@@ -61,6 +61,8 @@ class AppState(val prefs: DesktopPrefs) {
     var printSummaryOf by mutableStateOf<PrintSource?>(null)
     /** The Daily Slip dialog (Deck 🧾, Ctrl+P on Deck, tray menu). */
     var slipOpen by mutableStateOf(false)
+    /** Open the Daily Slip window on List with the clipboard text (tray › Print clipboard, printables-v1). */
+    var slipClipboard by mutableStateOf(false)
     /** Bumped by Ctrl+P while the Daily Slip is open, to print it. */
     var slipPrint by mutableIntStateOf(0)
     /** Shows a Windows notification from the tray icon. */
