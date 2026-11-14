@@ -48,7 +48,8 @@ fun MainWindow(state: AppState) {
             if (state.vault == null && state.tab != Tab.SETTINGS) Welcome(state)
             else when (state.tab) {
                 Tab.DECK -> DeckPane(state)
-                Tab.TASKS -> TasksPane(state)
+                Tab.TASKS -> TasksPane(state, upcoming = false)
+                Tab.UPCOMING -> TasksPane(state, upcoming = true)
                 Tab.PROJECTS -> ProjectsPane(state)
                 Tab.VAULT -> VaultPane(state)
                 Tab.READ -> ReadPane(state)
@@ -95,6 +96,10 @@ private fun Sidebar(state: AppState) {
             Text("Flight Deck", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextMain)
             Text(state.prefs.vault?.absolutePath ?: "No vault picked", fontSize = 11.sp, color = Muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            HeadlessSync.sidebarLine()?.let { (line, good) ->
+                Text(line, fontSize = 11.sp, color = if (good) TaskGreen else Amber, modifier = Modifier.padding(top = 3.dp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 2.dp).padding(bottom = 16.dp).clip(CircleShape).background(Primary)
@@ -107,7 +112,7 @@ private fun Sidebar(state: AppState) {
         }
         NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
-        TagNav(state)
+        NavItem(state, Tab.UPCOMING, "🗓", "Upcoming")
         NavItem(state, Tab.JARVIS, "🎙", state.prefs.assistantName)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
@@ -132,31 +137,6 @@ private fun Sidebar(state: AppState) {
             )
         }
     }
-}
-
-/** TAGS under Tasks: Work, Personal and the most used tags, with counts. A click filters the Tasks pane. */
-@Composable
-private fun TagNav(state: AppState) {
-    val tags = state.tagCounts.filter { it.second > 0 }
-    if (tags.isEmpty()) return
-    Text("TAGS", fontSize = 10.5.sp, letterSpacing = 1.3.sp, color = Faint, fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp))
-    tags.forEach { (tag, n) ->
-        val on = state.tab == Tab.TASKS && state.taskTag == tag
-        val (fg, _) = tagColour(tag)
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 1.dp).clip(RoundedCornerShape(10.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                .hand().clickable { state.taskTag = if (on) null else tag; state.taskNote = null; state.tab = Tab.TASKS }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(8.dp).clip(CircleShape).background(fg)) }
-            Text(Tags.label(tag), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted,
-                modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$n", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold)
-        }
-    }
-    Box(Modifier.height(8.dp))
 }
 
 @Composable

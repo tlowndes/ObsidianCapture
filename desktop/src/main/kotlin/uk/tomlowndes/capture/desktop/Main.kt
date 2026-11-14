@@ -43,6 +43,8 @@ fun main(args: Array<String>) {
     }
     val startHidden = "--hidden" in args
     val state = AppState(DesktopPrefs()).apply { windowVisible = !startHidden }
+    // Background sync with Obsidian Headless, when it's switched on in Settings (windows-nav-sync-v1).
+    HeadlessSync.start(state)
     thread(isDaemon = true, name = "single-instance") {
         while (true) {
             val s = runCatching { server.accept() }.getOrNull() ?: break

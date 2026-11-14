@@ -27,10 +27,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = p.get("task_order", null) ?: if (sortByDue) "due" else "note"
         set(v) = put("task_order", v)
 
-    /** Tasks tab shows the Upcoming week instead of the list. */
-    var tasksUpcoming: Boolean
-        get() = p.getBoolean("tasks_upcoming", false)
-        set(v) { p.putBoolean("tasks_upcoming", v); p.flush() }
+
+    /** Background sync with Obsidian Headless (windows-nav-sync-v1). */
+    var bgSync: Boolean
+        get() = p.getBoolean("bg_sync", false)
+        set(v) { p.putBoolean("bg_sync", v); p.flush() }
 
     /** Projects tab: last updated first (true) or by title A–Z (false). */
     var ideasByUpdated: Boolean

@@ -112,6 +112,7 @@ private fun VaultPage(state: AppState) {
     var ideas by remember { mutableStateOf(p.ideasDir) }
     var images by remember { mutableStateOf(p.imagesDir) }
     Setting("Vault folder", p.vault?.absolutePath ?: "Not picked yet") { Chip("Change…", small = true) { pickVault(state) } }
+    BackgroundSyncSettings(state)
     Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
     FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
     FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
@@ -459,5 +460,55 @@ private fun PrinterSettingsPage(state: AppState) {
     }
     Setting("Bluetooth", "Pair the printer here first if it isn't listed") {
         Chip("Open Bluetooth settings", small = true) { state.browse("ms-settings:bluetooth") }
+    }
+}
+
+/** Settings › Vault & folders › Background sync (windows-nav-sync-v1). */
+@Composable
+private fun BackgroundSyncSettings(state: AppState) {
+    val p = state.prefs
+    var on by remember { mutableStateOf(p.bgSync) }
+    val st = HeadlessSync.status
+    Text("BACKGROUND SYNC", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Sub("Keeps the vault synced with Obsidian Sync without opening Obsidian.")
+    Setting("Sync in the background", "Runs Obsidian Headless hidden while Flight Deck is running") {
+        Toggle(on) { on = it; p.bgSync = it; HeadlessSync.applyNow(state) }
+    }
+    if (!on) return
+    val (text, colour) = when (st) {
+        HeadlessSync.Status.RUNNING -> (HeadlessSync.sidebarLine()?.first ?: "● Syncing…") + " · watching for changes" to TaskGreen
+        HeadlessSync.Status.PAUSED -> "● Paused · Obsidian is open" to Amber
+        HeadlessSync.Status.NOT_SET_UP -> "● Not set up" to Amber
+        HeadlessSync.Status.NO_NODE -> "● Needs Node 22 or later" + (HeadlessSync.nodeVersion?.let { " (found $it)" } ?: "") to Amber
+        HeadlessSync.Status.STOPPED -> "● Sync stopped" + (HeadlessSync.lastLine?.let { " · $it" } ?: "") to Warn
+        else -> "● Checking…" to Muted
+    }
+    Column {
+        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 20.dp)) {
+                Text("Status", fontSize = 14.5.sp, color = TextMain)
+                Text(text, fontSize = 12.sp, color = colour, modifier = Modifier.padding(top = 2.dp), maxLines = 2)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (st == HeadlessSync.Status.STOPPED || st == HeadlessSync.Status.RUNNING)
+                    Chip("Show log", small = true, color = Muted) { runCatching { java.awt.Desktop.getDesktop().open(HeadlessSync.logFile) } }
+                if (st == HeadlessSync.Status.RUNNING || st == HeadlessSync.Status.STOPPED)
+                    Chip("Sync now", small = true) { HeadlessSync.syncNow(state) }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+    }
+    Setting("When Obsidian is open", "Pauses, so two copies never sync the same vault. Starts again when you close Obsidian.") {}
+    if (st == HeadlessSync.Status.NO_NODE) {
+        Setting("Setup", "Obsidian Headless needs Node.js 22 or later. Install it, then come back here.") {
+            Chip("Install Node", small = true) { state.browse("https://nodejs.org/en/download") }
+        }
+    } else {
+        Setting("Setup", if (st == HeadlessSync.Status.NOT_SET_UP) "One time: sign in to Obsidian and pick the remote vault for this folder" else "Signed in and linked to a remote vault") {
+            Chip(if (st == HeadlessSync.Status.NOT_SET_UP) "Set up…" else "Set up again…", small = true) {
+                val v = p.vault ?: return@Chip state.say("Pick a vault first")
+                runCatching { HeadlessSync.openSetup(v) }.onFailure { state.say("Couldn't open setup: ${it.message}") }
+            }
+        }
     }
 }
