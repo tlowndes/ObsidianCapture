@@ -18,9 +18,19 @@ data class SortResult(
     val note: String?,
     val noteTitle: String? = null,
     val transcript: String? = null,
+    /** Set: [note] is added to this existing note instead of becoming a new inbox note. */
+    val addTo: NoteTarget? = null,
+    /** Tags for a new note, without the #. */
+    val noteTags: List<String> = emptyList(),
 ) {
     val isEmpty get() = tasks.isEmpty() && ideas.isEmpty() && note.isNullOrBlank()
 }
+
+/**
+ * An existing note the assistant's text is added to. [title] is the name as said or picked; [path] is set once it
+ * is matched to a real note (until then Check and save asks); [heading] is the section it goes under, or null for the end.
+ */
+data class NoteTarget(val title: String, val path: String? = null, val heading: String? = null)
 
 /** Save failed. [message] is what to show the user; a retry of the same result won't add a second copy. */
 class SortSaveException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -44,7 +54,26 @@ object Sorting {
         val noteObj = o.optJSONObject("note")
         val note = (if (noteObj != null) noteObj.optNullableString("markdown") else o.optNullableString("note"))?.trim()?.takeIf { it.isNotEmpty() }
         val title = noteObj?.optNullableString("title")?.let(::safeTitle)?.takeIf { note != null }
-        return SortResult(tasks, ideas, note, title, o.optNullableString("transcript")?.trim()?.takeIf { it.isNotEmpty() })
+        val addTo = parseTarget(o.opt("addTo"))?.takeIf { note != null }
+        val tags = o.optJSONArray("tags").strings().map { it.trim().removePrefix("#").lowercase() }.filter { it.matches(Regex("[\\w/-]+")) }
+        return SortResult(tasks, ideas, note, if (addTo != null) null else title, o.optNullableString("transcript")?.trim()?.takeIf { it.isNotEmpty() }, addTo, tags)
+    }
+
+    /** `addTo` as a name, or {"note" | "title", "path", "heading"}. Null when it names nothing. */
+    private fun parseTarget(v: Any?): NoteTarget? = when (v) {
+        is String -> v.trim().takeIf { it.isNotEmpty() }?.let { NoteTarget(it) }
+        is JSONObject -> (v.optNullableString("note") ?: v.optNullableString("title"))?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { NoteTarget(it, v.optNullableString("path"), v.optNullableString("heading")?.trim()?.takeIf { h -> h.isNotEmpty() }) }
+        else -> null
+    }
+
+    /** A short title for a note made from [text]: its first sentence, plain, at most six words. */
+    fun titleFrom(text: String, today: LocalDate = LocalDate.now()): String {
+        val first = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+            .replace(Regex("[*_`>#]+"), "").replace(Regex("^[-+]\\s+"), "")
+            .split(Regex("(?<=[.!?])\\s")).firstOrNull().orEmpty().trim().trimEnd('.', '!', '?', ':')
+        val words = first.split(Regex("\\s+")).filter { it.isNotEmpty() }.take(6).joinToString(" ")
+        return safeTitle(words) ?: "Note $today"
     }
 
     /** A note title that is safe as a file name in every vault (no slashes, colons, # or brackets). */
@@ -55,7 +84,8 @@ object Sorting {
     /** The file a tidied note is saved as: the note, then the raw transcript folded in an Obsidian callout. */
     fun noteBody(r: SortResult, today: LocalDate): String {
         val md = r.note?.trim().orEmpty()
-        val head = "---\ncreated: $today\nsource: jarvis\n---\n\n"
+        val tags = r.noteTags.takeIf { it.isNotEmpty() }?.joinToString("") { "\n  - $it" }?.let { "tags:$it\n" }.orEmpty()
+        val head = "---\ncreated: $today\nsource: tower\n$tags---\n\n"
         val raw = r.transcript?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { t -> "\n\n> [!quote]- Transcript\n" + t.lines().joinToString("\n") { "> $it".trimEnd() } }
             .orEmpty()
@@ -115,6 +145,12 @@ object Sorting {
 
     private fun saveNote(r: SortResult, writer: VaultWriter, today: LocalDate, undo: ArrayDeque<() -> Unit>) {
         val short = r.note?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        r.addTo?.let { t ->
+            val path = t.path ?: throw SortSaveException("Pick which note to add to.")
+            val entry = writer.appendToNote(path, t.heading, short, today)
+            if (entry != null) undo.addFirst { writer.removeFromNote(path, entry) }
+            return
+        }
         val body = if (r.noteTitle != null) noteBody(r, today) else short + "\n"
         val name = r.noteTitle ?: "Capture $today"
         val already = writer.hasInboxNote(name, body)
@@ -137,6 +173,8 @@ object Sorting {
         .put("tasks", JSONArray(r.tasks.map { JSONObject().put("text", it.text).put("tag", it.tag ?: JSONObject.NULL).put("due", it.due?.toString() ?: JSONObject.NULL) }))
         .put("ideas", JSONArray(r.ideas))
         .put("note", if (r.noteTitle != null) JSONObject().put("title", r.noteTitle).put("markdown", r.note) else (r.note ?: JSONObject.NULL))
+        .put("addTo", r.addTo?.let { JSONObject().put("note", it.title).put("path", it.path ?: JSONObject.NULL).put("heading", it.heading ?: JSONObject.NULL) } ?: JSONObject.NULL)
+        .put("tags", JSONArray(r.noteTags))
         .put("transcript", r.transcript ?: JSONObject.NULL)
         .toString()
 
