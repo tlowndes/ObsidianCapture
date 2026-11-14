@@ -113,7 +113,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
                             withContext(Dispatchers.IO) { Outbox(java.io.File(ctx.filesDir, "outbox.json")).succeed(Outbox.id(Outbox.SAVE_SORT, Sorting.toJson(r))) }
                             setFound(null); checking = false
                             snack.showSnackbar(
-                                if (r.addTo != null) "Added to ${r.addTo.title}" else if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved"
+                                if (r.addTo != null) "Added to ${r.addTo?.title}" else if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved"
                             )
                         }
                         .onFailure {
