@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -86,6 +87,8 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
     var filter by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
     var openSteps by remember { mutableStateOf(setOf<String>()) }
+    // Subtasks open in a side panel instead, when Settings says so (windows-settings-gaps-v1). The parent's raw line.
+    var panelFor by remember { mutableStateOf<String?>(null) }
     // Quick Task guard (quick-task-guard-v1): what looks off, and the Show me dialog (the last good copy's time).
     var quickAlert by remember { mutableStateOf<QuickGuard.Alert?>(null) }
     var guardSince by remember { mutableStateOf<Long?>(null) }
@@ -302,9 +305,13 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
             @Composable
             fun rows(items: List<TaskItem>) = items.forEach { t ->
                 val kids = nested.children[t].orEmpty()
-                TaskRow(t, ::tick, actions, sel, steps = kids.size, stepsOpen = t.raw in openSteps,
-                    onSteps = { openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw })
-                if (t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sel, sub = true) }
+                val inline = state.prefs.subtasksInline
+                TaskRow(t, ::tick, actions, sel, steps = kids.size, stepsOpen = if (inline) t.raw in openSteps else panelFor == t.raw,
+                    onSteps = {
+                        if (inline) openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw
+                        else panelFor = if (panelFor == t.raw) null else t.raw
+                    })
+                if (inline && t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sel, sub = true) }
             }
             when (order) {
                 "note" -> rows(nested.top)
@@ -342,6 +349,12 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
             }
             if (selecting) Box(Modifier.height(90.dp))
         }
+    }
+    if (!upcoming && !state.prefs.subtasksInline) nested.top.firstOrNull { it.raw == panelFor }?.let { parent ->
+        StepsPanel(parent, nested.children[parent].orEmpty(),
+            row = { c -> TaskRow(c, ::tick, actions, sel, sub = true) },
+            onAdd = { breaking = parent }, onClose = { panelFor = null },
+            modifier = Modifier.align(Alignment.TopEnd))
     }
     if (selecting) {
         val picked = all.filter { it.raw in selected }
@@ -583,5 +596,34 @@ private fun TagChip(label: String, dot: Color?, n: Int, on: Boolean, onClick: ()
         if (dot != null) Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
         Text(label, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) Primary else TextMain)
         Text("$n", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Side panel for a task's steps (windows-settings-gaps-v1), the PC version of the phone's pop-out sheet,
+ * so the list doesn't jump. ✕, or clicking the task's steps again, closes it.
+ */
+@Composable
+private fun StepsPanel(
+    parent: TaskItem, steps: List<TaskItem>,
+    row: @Composable (TaskItem) -> Unit, onAdd: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.width(380.dp).fillMaxHeight().background(Surface2).border(1.dp, Outline)
+            .padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text(parent.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextMain)
+                Text("${steps.size} step${if (steps.size == 1) "" else "s"} left · " + parent.path.substringAfterLast('/').removeSuffix(".md"),
+                    fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+            }
+            Text("✕", fontSize = 15.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable(onClick = onClose).padding(6.dp))
+        }
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            steps.forEach { row(it) }
+            Text("＋ Add steps", fontSize = 13.5.sp, color = Faint,
+                modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).hand().clickable(onClick = onAdd).padding(8.dp))
+        }
     }
 }

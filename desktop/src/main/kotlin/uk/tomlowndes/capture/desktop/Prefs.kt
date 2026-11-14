@@ -28,6 +28,35 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         set(v) = put("task_order", v)
 
 
+    /** Claude from this PC (windows-settings-gaps-v1). The key is encrypted for this Windows user, never in the vault. */
+    var pcBrain: Boolean
+        get() = p.getBoolean("pc_brain", false)
+        set(v) { p.putBoolean("pc_brain", v); p.flush() }
+    var brainClever: Boolean
+        get() = p.getBoolean("brain_clever", false)
+        set(v) { p.putBoolean("brain_clever", v); p.flush() }
+    var claudeKey: String?
+        get() = p.get("claude_key", null)?.let { enc ->
+            runCatching { String(Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(enc)), Charsets.UTF_8) }.getOrNull()
+        }
+        set(v) {
+            val t = v?.trim()?.ifEmpty { null }
+            put("claude_key", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
+        }
+    var brainSpend: uk.tomlowndes.capture.PhoneBrain.Spend
+        get() = uk.tomlowndes.capture.PhoneBrain.Spend(str("brain_month", ""), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
+        set(v) { p.put("brain_month", v.month); p.putLong("brain_micro_usd", v.microUsd); p.putInt("brain_answers", v.answers); p.flush() }
+
+    /** Steps open under their task (true) or in a side panel (false). */
+    var subtasksInline: Boolean
+        get() = p.getBoolean("subtasks_inline", true)
+        set(v) { p.putBoolean("subtasks_inline", v); p.flush() }
+
+    /** Piholegotchi's address on the home network; blank is off. */
+    var piholegotchiAddress: String
+        get() = str("piholegotchi_address", "")
+        set(v) = put("piholegotchi_address", v.trim().ifEmpty { null })
+
     /** Background sync with Obsidian Headless (windows-nav-sync-v1). */
     var bgSync: Boolean
         get() = p.getBoolean("bg_sync", false)

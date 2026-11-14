@@ -41,6 +41,8 @@ import javax.swing.UIManager
 
 @Composable
 fun MainWindow(state: AppState) {
+    // Piholegotchi shows the Focus session while it runs (windows-settings-gaps-v1).
+    LaunchedEffect(state.focus) { DesktopPi.sendFocus(state) }
     Row(Modifier.fillMaxSize().background(Bg)) {
         Sidebar(state)
         Box(Modifier.fillMaxHeight().width(1.dp).background(Divider))
