@@ -133,16 +133,23 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
 
     private fun scratch(name: String) = name.endsWith(".capture-tmp") || name.endsWith(".capture-bak")
 
-    /** Restores any note in [folder] that was left under a backup name, then drops leftover scratch files. */
-    private fun healFolder(folder: VaultDoc) {
-        val names = folder.children().map { it.name }.toSet()
+    /**
+     * Restores any note in [folder] that was left under a backup name, then drops leftover scratch files.
+     * Returns the folder's children (one query, or a second one only when something was healed).
+     */
+    private fun healFolder(folder: VaultDoc, kids: List<VaultDoc> = folder.children()): List<VaultDoc> {
+        val names = kids.map { it.name }.toSet()
+        var changed = false
         for (n in names) {
             if (!n.endsWith(".capture-bak") || !n.startsWith(".")) continue
             val real = n.removePrefix(".").removeSuffix(".capture-bak")
             if (real.isEmpty()) continue
             if (real !in names) folder.findChild(n)?.rename(real) else folder.findChild(n)?.delete()
+            changed = true
         }
-        folder.children().filter { it.name.endsWith(".capture-tmp") }.forEach { it.delete() }
+        val tmps = kids.filter { it.name.endsWith(".capture-tmp") }
+        tmps.forEach { it.delete() }
+        return if (changed || tmps.isNotEmpty()) folder.children() else kids
     }
 
     override fun entry(path: String): Vault.Entry? =
@@ -150,24 +157,30 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
 
     override fun list(dir: String): List<Vault.Entry> {
         val d = find(dir)?.takeIf { it.isDirectory } ?: return emptyList()
-        healFolder(d)
-        return d.children().filter { !scratch(it.name) }.map { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
+        return healFolder(d).filter { !scratch(it.name) }.map { Vault.Entry(it.name, it.isDirectory, it.modified, it.length) }
     }
 
     override fun notes(skip: (String) -> Boolean): List<VaultNote> {
-        val out = mutableListOf<VaultNote>()
-        fun walk(doc: VaultDoc, prefix: String) {
-            healFolder(doc)
-            val dirs = mutableListOf<Pair<VaultDoc, String>>()
-            for (e in doc.children()) {
+        // One children query per folder, and the top-level folders are listed side by side (the provider is slow per call).
+        val dirs = mutableListOf<Pair<VaultDoc, String>>()
+        val out = java.util.Collections.synchronizedList(mutableListOf<VaultNote>())
+        fun walk(doc: VaultDoc, prefix: String, top: Boolean) {
+            val sub = mutableListOf<Pair<VaultDoc, String>>()
+            for (e in healFolder(doc)) {
                 val path = prefix + e.name
-                if (e.isDirectory) { if (!skip(path)) dirs.add(e to "$path/") }
+                if (e.isDirectory) { if (!skip(path)) sub.add(e to "$path/") }
                 else if (e.name.endsWith(".md") && !e.name.startsWith(".") && !scratch(e.name)) out.add(VaultNote(path, e.modified))
             }
-            dirs.forEach { (d, p) -> walk(d, p) }
+            if (top) dirs.addAll(sub) else sub.forEach { (d, p) -> walk(d, p, false) }
         }
-        walk(root, "")
-        return out
+        walk(root, "", true)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, maxOf(1, dirs.size)))
+        try {
+            dirs.map { (d, p) -> pool.submit { walk(d, p, false) } }.forEach { it.get() }
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw (e.cause ?: e)
+        } finally { pool.shutdown() }
+        return out.toList().sortedBy { it.path }
     }
 
     override fun mkdirs(dir: String) { folder(dir) }

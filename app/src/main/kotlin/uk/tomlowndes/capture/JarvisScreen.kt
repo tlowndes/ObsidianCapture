@@ -277,6 +277,9 @@ fun JarvisScreen(
     }
 
     fun pauseAudio() { runCatching { if (playing) player[0]?.pause() }; playing = false; voiceOut.stop() }
+    /** The chat's mute button: the same switch as Settings › Play replies aloud. Muting also stops a reply mid-sentence. */
+    var speakOn by remember { mutableStateOf(prefs.jarvisSpeak) }
+    fun toggleMute() { speakOn = !speakOn; prefs.jarvisSpeak = speakOn; if (!speakOn) { pauseAudio(); speakingId = null } }
 
     /** Reads an answer out in the phone's voice; tapping the one being read stops it. */
     fun sayAloud(m: Jarvis.ChatMsg) {
@@ -387,7 +390,7 @@ fun JarvisScreen(
                     val today = java.time.LocalDate.now()
                     if (PhoneBrain.worthSorting(t)) PhoneBrain.sortOrAnswer(claudeKey, t, today, who).let { ApiOutcome(it.reply, it.sorted, emptyList(), it.inTok, it.outTok, PhoneBrain.FAST) }
                     else PhoneBrain.chat(claudeKey, model, turns, today, listOf("#work", "#personal"), who) { so -> main.post { streaming = so } }
-                        .let { a -> ApiOutcome(a.text.ifBlank { "Done." }, a.tasks.takeIf { it.isNotEmpty() }?.let { SortResult(it, emptyList(), null) }, emptyList(), a.inputTokens, a.outputTokens, a.model) }
+                        .let { a -> ApiOutcome(a.text.ifBlank { "Done." }, PhoneBrain.sortedOf(a.tasks, a.notes), emptyList(), a.inputTokens, a.outputTokens, a.model) }
                 }
             }
             PhoneBrain.endFlight(flight)
@@ -761,6 +764,12 @@ fun JarvisScreen(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
+                        if (speakOn) "🔊 Sound on" else "🔇 Muted", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (speakOn) Muted else Amber,
+                        modifier = Modifier.padding(end = 8.dp).clip(CircleShape).border(1.dp, if (speakOn) Outline else Amber, CircleShape)
+                            .clickable { toggleMute() }.padding(horizontal = 11.dp, vertical = 5.dp)
+                    )
+                    Text(
                         "＋ New chat", fontSize = 12.5.sp, color = if (phase == Phase.IDLE) Primary else Muted,
                         modifier = Modifier.clip(CircleShape).border(1.dp, NextBorder, CircleShape)
                             .clickable(enabled = phase == Phase.IDLE) { newChat() }.padding(horizontal = 11.dp, vertical = 5.dp)
@@ -786,6 +795,13 @@ fun JarvisScreen(
                             fontFamily = FontFamily.Monospace, color = if (m.via != null && !nano) Amber else Primary
                         )
                         Text(remember(m.text) { chatMarkdown(m.text) }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
+                        // Tower notes: any reply can be kept as a note; it waits on Check and save like a ramble does.
+                        Text(
+                            "📝 Save as note", fontSize = 12.sp, color = Primary,
+                            modifier = Modifier.padding(top = 8.dp).clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
+                                .clickable { onFound(SortResult(emptyList(), emptyList(), m.text, noteTitle = Sorting.titleFrom(m.text))) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
                         if (nano) {
                             Text("on phone · free", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
                             Text(

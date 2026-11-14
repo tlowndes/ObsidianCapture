@@ -43,6 +43,8 @@ object PhoneBrain {
 
     const val ADD_TASK = "add_task"
     const val HAND_OFF = "hand_off"
+    const val SAVE_NOTE = "save_note"
+    const val ADD_TO_NOTE = "add_to_note"
 
     /** Box workers a job can be handed to (ids as the server knows them). */
     val BOX_WORKERS = listOf("research", "coding", "obsidian", "oddjobs")
@@ -57,6 +59,9 @@ object PhoneBrain {
 
     data class Handoff(val worker: String, val request: String)
 
+    /** A note Tom asked for: [into] names an existing note to add [text] to; otherwise it is a new note called [title]. */
+    data class NoteDraft(val title: String?, val text: String, val into: String? = null, val heading: String? = null)
+
     data class Answer(
         val text: String,
         val tasks: List<SortedTask>,
@@ -64,7 +69,32 @@ object PhoneBrain {
         val inputTokens: Long,
         val outputTokens: Long,
         val model: String,
+        val notes: List<NoteDraft> = emptyList(),
     )
+
+    /** One [SAVE_NOTE] call's input, or null when there's no text. */
+    fun parseSaveNote(input: JSONObject): NoteDraft? {
+        val text = input.optString("markdown").trim().ifEmpty { return null }
+        return NoteDraft(input.optString("title").trim().ifEmpty { null }, text)
+    }
+
+    /** One [ADD_TO_NOTE] call's input, or null when the note or the text is missing. */
+    fun parseAddToNote(input: JSONObject): NoteDraft? {
+        val text = input.optString("text").trim().ifEmpty { return null }
+        val into = input.optString("note").trim().ifEmpty { return null }
+        return NoteDraft(null, text, into, input.optString("heading").trim().ifEmpty { null })
+    }
+
+    /** The Check and save card for an answer: its tasks, and its first note (a new one, or an addition to an existing one). */
+    fun sortedOf(tasks: List<SortedTask>, notes: List<NoteDraft>): SortResult? {
+        val n = notes.firstOrNull()
+        val r = when {
+            n == null -> SortResult(tasks, emptyList(), null)
+            n.into != null -> SortResult(tasks, emptyList(), n.text, addTo = NoteTarget(n.into, null, n.heading))
+            else -> SortResult(tasks, emptyList(), n.text, noteTitle = n.title?.let(Sorting::safeTitle) ?: Sorting.titleFrom(n.text))
+        }
+        return r.takeIf { !it.isEmpty }
+    }
 
     /** Claude declined to answer (a safety refusal). */
     class Refused : Exception("Claude couldn't help with that one.")
@@ -76,6 +106,9 @@ object PhoneBrain {
         Keep replies short: one to three sentences unless he asks for more. Replies may be read aloud, so no tables,
         no headings and no long lists. Today is ${today.format(DAY)}.
 
+        Use $SAVE_NOTE when he says to note something down ("note this", "make a note", "jot down"): put the note on the
+        card and don't answer it as a question. Use $ADD_TO_NOTE when he wants something added to a note he names
+        ("add this to my Garage note"): give the note's name as he said it. Both go on the Check and save card like tasks.
         Use $ADD_TASK for anything Tom wants to do or be reminded of. It goes on a Check and save card that he confirms,
         so say it's ready to save rather than saved. Give a due date (YYYY-MM-DD) only when he says when.
         ${if (tags.isEmpty()) "" else "Tags he uses: ${tags.joinToString(" ")}. Pick one only when it clearly fits."}
@@ -178,6 +211,35 @@ object PhoneBrain {
                     .putAdditionalProperty("additionalProperties", JsonValue.from(false))
                     .build()
             ).build(),
+        Tool.builder().name(SAVE_NOTE).strict(true)
+            .description("Put a new note on Tom's Check and save card. It goes in his inbox once he confirms.")
+            .inputSchema(
+                Tool.InputSchema.builder()
+                    .properties(
+                        Tool.InputSchema.Properties.builder()
+                            .putAdditionalProperty("title", prop("type" to "string", "description" to "A short title, a few words"))
+                            .putAdditionalProperty("markdown", prop("type" to "string", "description" to "The note, tidy, in his words. No top-level # heading"))
+                            .build()
+                    )
+                    .required(listOf("title", "markdown"))
+                    .putAdditionalProperty("additionalProperties", JsonValue.from(false))
+                    .build()
+            ).build(),
+        Tool.builder().name(ADD_TO_NOTE).strict(true)
+            .description("Add text to a note that already exists in Tom's vault. The app finds the note and he confirms it first.")
+            .inputSchema(
+                Tool.InputSchema.builder()
+                    .properties(
+                        Tool.InputSchema.Properties.builder()
+                            .putAdditionalProperty("note", prop("type" to "string", "description" to "The note's name as Tom said it, e.g. Garage"))
+                            .putAdditionalProperty("text", prop("type" to "string", "description" to "What to add, short, one line where possible"))
+                            .putAdditionalProperty("heading", prop("type" to "string", "description" to "Section to put it under, e.g. Log, or empty"))
+                            .build()
+                    )
+                    .required(listOf("note", "text", "heading"))
+                    .putAdditionalProperty("additionalProperties", JsonValue.from(false))
+                    .build()
+            ).build(),
     )
 
     private fun base(model: String, system: String): MessageCreateParams.Builder = MessageCreateParams.builder()
@@ -208,6 +270,7 @@ object PhoneBrain {
         }
         val tasks = ArrayList<SortedTask>()
         val handoffs = ArrayList<Handoff>()
+        val notes = ArrayList<NoteDraft>()
         val text = StringBuilder()
         var inTok = 0L
         var outTok = 0L
@@ -228,13 +291,17 @@ object PhoneBrain {
                 val stop = msg.stopReason().orElse(null)
                 if (stop == StopReason.REFUSAL) throw Refused()
                 val uses = msg.content().mapNotNull { it.toolUse().orElse(null) }
-                if (stop != StopReason.TOOL_USE || uses.isEmpty()) return Answer(text.toString().trim(), tasks, handoffs, inTok, outTok, model)
+                if (stop != StopReason.TOOL_USE || uses.isEmpty()) return Answer(text.toString().trim(), tasks, handoffs, inTok, outTok, model, notes)
                 if (text.isNotEmpty() && !text.endsWith(" ") && !text.endsWith("\n")) text.append(" ")
                 val results = uses.map { u ->
                     val input = runCatching { JSONObject(u._input().convert(Map::class.java) as Map<*, *>) }.getOrDefault(JSONObject())
                     val (ok, reply) = when (u.name()) {
                         ADD_TASK -> parseTask(input)?.let { tasks.add(it); true to "Added to the Check and save card." }
                             ?: (false to "No task text.")
+                        SAVE_NOTE -> parseSaveNote(input)?.let { notes.add(it); true to "The note is on the Check and save card." }
+                            ?: (false to "No note text.")
+                        ADD_TO_NOTE -> parseAddToNote(input)?.let { notes.add(it); true to "It's on the Check and save card for ${it.into}." }
+                            ?: (false to "Needs a note name and some text.")
                         HAND_OFF -> parseHandoff(input)?.let { handoffs.add(it); true to "Passed to ${workerLabel(it.worker)}." }
                             ?: (false to "Unknown worker or empty request.")
                         else -> false to "No such tool."
@@ -248,7 +315,7 @@ object PhoneBrain {
         } finally {
             c.close()
         }
-        return Answer(text.toString().trim(), tasks, handoffs, inTok, outTok, model)
+        return Answer(text.toString().trim(), tasks, handoffs, inTok, outTok, model, notes)
     }
 
     /** What a printed summary slip shows. */
@@ -363,7 +430,9 @@ If he wants something kept, answer only this JSON:
 {"ramble": true, "reply": "one short sentence saying what you found",
  "tasks": [{"text": "short imperative", "tag": "#home, #work, #jobs, #learning, #bill or null", "due": "YYYY-MM-DD or null"}],
  "ideas": ["short titles"],
- "note": null, or one or two plain sentences, or {"title": "a short title", "markdown": "a tidy note"}}
+ "note": null, or one or two plain sentences, or {"title": "a short title", "markdown": "a tidy note"},
+ "addTo": null, or {"note": "name of an existing note he asked to add this to, as he said it", "heading": "Log, or null"}}
+Set addTo only when he names a note to add to ("add this to my Garage note"). Then "note" is just what to add.
 For a note: a one or two sentence summary, then ## headings with short bullets. Keep his points and wording.
 Do not invent anything. No top-level # heading. Leave tasks out of the note when they are already in tasks.
 Never say you have saved anything. He confirms it first."""

@@ -137,7 +137,7 @@ object PhoneOutbox {
         }
         val answer = PhoneBrain.chat(key, PhoneBrain.model(prefs.brainClever), listOf(PhoneBrain.Turn(true, text)), today, listOf("#work", "#personal"), prefs.assistantName) {}
         prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(answer.model, answer.inputTokens, answer.outputTokens))
-        val sorted = answer.tasks.takeIf { it.isNotEmpty() }?.let { SortResult(it, emptyList(), null) }
+        val sorted = PhoneBrain.sortedOf(answer.tasks, answer.notes)
         return Triple(answer.text.ifBlank { "Done." }, sorted, answer.handoffs)
     }
 

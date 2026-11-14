@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,7 +100,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
     if (checking && f != null) {
         BackHandler { checking = false }
         CheckAndSave(
-            f,
+            f, vault,
             onBack = { checking = false },
             onDiscard = { setFound(null); checking = false },
             onSave = { r ->
@@ -110,7 +111,10 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
                     withContext(Dispatchers.IO) { runCatching { Sorting.save(r, VaultWriter(ctx, uri), IdeaStore(ctx, uri, prefs)) } }
                         .onSuccess {
                             withContext(Dispatchers.IO) { Outbox(java.io.File(ctx.filesDir, "outbox.json")).succeed(Outbox.id(Outbox.SAVE_SORT, Sorting.toJson(r))) }
-                            setFound(null); checking = false; snack.showSnackbar(if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved")
+                            setFound(null); checking = false
+                            snack.showSnackbar(
+                                if (r.addTo != null) "Added to ${r.addTo.title}" else if (r.noteTitle != null) "Saved · note in ${VaultWriter.INBOX}" else "Saved"
+                            )
                         }
                         .onFailure {
                             PhoneOutbox.keepSort(ctx, r)
@@ -146,7 +150,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
 }
 
 @Composable
-private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -> Unit, onSave: (SortResult) -> Unit) {
+private fun CheckAndSave(result: SortResult, vault: Uri?, onBack: () -> Unit, onDiscard: () -> Unit, onSave: (SortResult) -> Unit) {
     var r by remember(result) { mutableStateOf(result) }
     var editing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -155,12 +159,23 @@ private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -
             Text("Check and save", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         val title = r.noteTitle
+        // The title a note had before it was switched to "Add to a note", for switching back.
+        var lastTitle by remember { mutableStateOf(result.noteTitle) }
+        LaunchedEffect(title) { if (title != null) lastTitle = title }
         r.note?.let { note ->
-            if (title != null) {
-                GroupLabel("Note")
+            GroupLabel("Note")
+            SaveToSwitch(
+                adding = r.addTo != null,
+                onNew = { if (r.addTo != null) r = r.copy(addTo = null, noteTitle = lastTitle) },
+                onAdd = { if (r.addTo == null) r = r.copy(addTo = NoteTarget(""), noteTitle = null) },
+            )
+            val target = r.addTo
+            if (target != null) {
+                AddToCard(r, target, note, vault, onChange = { r = it }, onRemove = { r = r.copy(note = null, addTo = null) })
+            } else if (title != null) {
                 NoteCard(title, note, onEdit = { editing = true }, onRemove = { r = r.copy(note = null, noteTitle = null) })
+                NoteTagChips(r.noteTags) { r = r.copy(noteTags = it) }
             } else {
-                GroupLabel("Note")
                 ListCard(Modifier.padding(top = 6.dp)) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(note, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
@@ -200,11 +215,152 @@ private fun CheckAndSave(result: SortResult, onBack: () -> Unit, onDiscard: () -
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Discard", color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape).clickable(onClick = onDiscard).padding(vertical = 13.dp))
+            // An addition waits until a real note is picked.
+            val ready = !r.isEmpty && (r.addTo == null || r.addTo?.path != null)
             Text("Save", color = OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).clip(CircleShape).background(if (r.isEmpty) Primary.copy(alpha = 0.4f) else Primary)
-                    .clickable(enabled = !r.isEmpty) { onSave(r) }.padding(vertical = 13.dp))
+                modifier = Modifier.weight(1f).clip(CircleShape).background(if (ready) Primary else Primary.copy(alpha = 0.4f))
+                    .clickable(enabled = ready) { onSave(r) }.padding(vertical = 13.dp))
         }
     }
+}
+
+/** Tower notes: New note / Add to a note. */
+@Composable
+private fun SaveToSwitch(adding: Boolean, onNew: () -> Unit, onAdd: () -> Unit) {
+    Row(
+        Modifier.padding(top = 6.dp).fillMaxWidth().clip(CircleShape).background(Surface1).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        listOf("📄 New note" to !adding, "➕ Add to a note" to adding).forEachIndexed { i, (label, on) ->
+            Text(
+                label, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, color = if (on) TextMain else Muted,
+                modifier = Modifier.weight(1f).clip(CircleShape).background(if (on) Surface2 else Color.Transparent)
+                    .border(1.dp, if (on) Primary else Color.Transparent, CircleShape)
+                    .clickable { if (i == 0) onNew() else onAdd() }.padding(vertical = 9.dp)
+            )
+        }
+    }
+}
+
+/** Work / Personal on a new note, written as `tags:` in its properties. */
+@Composable
+private fun NoteTagChips(tags: List<String>, onChange: (List<String>) -> Unit) {
+    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Tags", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(end = 4.dp))
+        listOf("work", "personal").forEach { t ->
+            val on = t in tags
+            Text(
+                t.replaceFirstChar { it.uppercase() }, fontSize = 13.sp, color = if (on) Primary else Muted,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
+                    .border(1.dp, if (on) Primary else Outline, RoundedCornerShape(12.dp))
+                    .clickable { onChange(if (on) tags - t else tags + t) }.padding(horizontal = 11.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
+
+/** Add to a note: which note, which heading, and the line that will be added. Nothing is written until Save. */
+@Composable
+private fun AddToCard(r: SortResult, target: NoteTarget, note: String, vault: Uri?, onChange: (SortResult) -> Unit, onRemove: () -> Unit) {
+    val ctx = LocalContext.current
+    var all by remember { mutableStateOf<List<NoteInfo>>(emptyList()) }
+    var picking by remember { mutableStateOf(false) }
+    var heads by remember { mutableStateOf<List<String>?>(null) }
+    var defaulted by remember(target.path) { mutableStateOf(false) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        all = withContext(Dispatchers.IO) { runCatching { NoteIndex.paths(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+    }
+    // The name as said becomes a real note as soon as the list is in; when nothing fits, Save stays off until one is picked.
+    LaunchedEffect(all, target.path, target.title) {
+        if (target.path == null && all.isNotEmpty())
+            NoteAppend.find(all, target.title)?.let { onChange(r.copy(addTo = target.copy(title = it.title, path = it.path))) }
+    }
+    LaunchedEffect(target.path) {
+        heads = null
+        val uri = vault ?: return@LaunchedEffect
+        val p = target.path ?: return@LaunchedEffect
+        val hs = withContext(Dispatchers.IO) { runCatching { NoteAppend.headings(NoteText.lines(VaultIo.read(appVault(ctx, uri), p))) }.getOrDefault(emptyList()) }
+        heads = hs
+        // A project note's Log is where a dated line belongs; anything else defaults to the end.
+        if (!defaulted && target.heading == null) {
+            defaulted = true
+            hs.firstOrNull { it.trimStart('#').trim().equals("log", ignoreCase = true) }
+                ?.let { onChange(r.copy(addTo = target.copy(heading = it.trimStart('#').trim()))) }
+        }
+    }
+    Column(
+        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)
+            .border(1.dp, Outline, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (target.path != null) target.title else if (target.title.isBlank()) "Pick a note" else "No note called “${target.title}”",
+                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (target.path != null) TextMain else Amber, modifier = Modifier.weight(1f))
+            Text("Change", fontSize = 12.5.sp, color = Primary, modifier = Modifier.clickable { picking = true }.padding(start = 10.dp))
+            Text("✕", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onRemove).padding(start = 12.dp))
+        }
+        target.path?.let { Text(it, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 2.dp)) }
+        val hs = heads
+        if (target.path != null && hs != null) {
+            Text("UNDER", fontSize = 10.5.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                hs.forEach { h ->
+                    val name = h.trimStart('#').trim()
+                    val on = target.heading.equals(name, ignoreCase = true)
+                    HeadChip(h, on) { onChange(r.copy(addTo = target.copy(heading = name))) }
+                }
+                HeadChip("End of note", target.heading == null) { onChange(r.copy(addTo = target.copy(heading = null))) }
+            }
+        }
+        Text("PREVIEW", fontSize = 10.5.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Bg).padding(12.dp)) {
+            target.heading?.let { Text("## $it", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+            NoteAppend.entry(note, LocalDate.now()).forEach { Text(it, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Green) }
+        }
+    }
+    if (picking) PickNoteDialog(all, onDismiss = { picking = false }) { n ->
+        picking = false
+        onChange(r.copy(addTo = NoteTarget(n.title, n.path, null)))
+    }
+}
+
+@Composable
+private fun HeadChip(label: String, on: Boolean, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 13.sp, maxLines = 1, color = if (on) Primary else Muted,
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
+            .border(1.dp, if (on) Primary else Outline, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 11.dp, vertical = 6.dp)
+    )
+}
+
+/** Search the vault's notes by name; with nothing typed, the ones changed most recently. */
+@Composable
+private fun PickNoteDialog(all: List<NoteInfo>, onDismiss: () -> Unit, onPick: (NoteInfo) -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val shown = remember(all, q) {
+        if (q.isBlank()) VaultBrowse.recent(all, 8)
+        else VaultSearch.search(all, q, mode = VaultSearch.Mode.TITLES, limit = 30).map { it.note }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface1,
+        title = { Text("Pick a note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(q, { q = it }, singleLine = true, label = { Text("Search") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    if (shown.isEmpty()) Text("No notes found", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp))
+                    shown.forEach { n ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(n) }.padding(vertical = 8.dp)) {
+                            Text(n.title, fontSize = 14.sp)
+                            Text(n.folder, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Muted) } }
+    )
 }
 
 /** A tidied note from a ramble: title, the start of the note, where it will be saved, and Edit. */

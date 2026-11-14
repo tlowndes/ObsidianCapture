@@ -296,6 +296,26 @@ class VaultWriter(
     /** Removes the note at [path]. Used to undo a capture note when the rest of the save fails. */
     fun deleteNote(path: String) { vault.delete(path); VaultScan.touched(path) }
 
+    /**
+     * Adds a dated line for [text] to the note at [path], under [heading] (null: the end). The note is read again
+     * just before the write, so a sync that landed meanwhile isn't written over. Returns the lines added, or null
+     * when they were already there. Throws when the note has moved or been deleted.
+     */
+    fun appendToNote(path: String, heading: String?, text: String, today: java.time.LocalDate = java.time.LocalDate.now()): List<String>? {
+        if (vault.entry(path)?.isDir != false) error("Note moved in Obsidian, pick it again")
+        var added: List<String>? = null
+        VaultIo.edit(vault, path) { lines -> added = NoteAppend.insert(lines, heading, text, today) }
+        VaultScan.touched(path)
+        return added
+    }
+
+    /** Undo for [appendToNote]: takes the added lines out again if they are still there. */
+    fun removeFromNote(path: String, added: List<String>) {
+        if (vault.entry(path)?.isDir != false) return
+        VaultIo.edit(vault, path) { lines -> NoteAppend.remove(lines, added) }
+        VaultScan.touched(path)
+    }
+
     private fun inboxNamed(name: String): List<Vault.Entry> {
         val re = Regex("^${Regex.escape(name)}( \\(\\d+\\))?\\.md$")
         return vault.list(INBOX).filter { !it.isDir && re.matches(it.name) }

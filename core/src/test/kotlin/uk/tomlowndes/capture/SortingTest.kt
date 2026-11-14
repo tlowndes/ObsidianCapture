@@ -61,7 +61,7 @@ class SortingTest {
         Sorting.save(r, w, ideas, LocalDate.of(2026, 11, 7))
         val f = File(tmp.root, "01 - Inbox/Portfolio rethink.md")
         assertEquals(
-            "---\ncreated: 2026-11-07\nsource: jarvis\n---\n\nShort summary.\n\n## Case studies\n- Too long\n\n> [!quote]- Transcript\n> right so\n> the case studies\n",
+            "---\ncreated: 2026-11-07\nsource: tower\n---\n\nShort summary.\n\n## Case studies\n- Too long\n\n> [!quote]- Transcript\n> right so\n> the case studies\n",
             f.readText()
         )
         assertFalse(File(tmp.root, "01 - Inbox/Portfolio rethink (1).md").exists())

@@ -69,9 +69,15 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
-        val all = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTasks() }.getOrDefault(emptyList()) }
-        tasks = all
-        if (picked.isEmpty()) picked.addAll(all.filter { it.due == today && !Deck.isBill(it) }.take(DayPlan.PICK_MAX).map { it.raw })
+        fun seed(all: List<TaskItem>) {
+            tasks = all
+            if (picked.isEmpty()) picked.addAll(all.filter { it.due == today && !Deck.isBill(it) }.take(DayPlan.PICK_MAX).map { it.raw })
+        }
+        // The last lists read show at once; the vault read below then refreshes them.
+        TaskSnapshot.load(ctx)?.let { seed(it.open) }
+        val lists = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }.getOrNull()
+        if (lists != null) { TaskSnapshot.save(ctx, lists); if (tasks != lists.open) tasks = lists.open; if (picked.isEmpty()) seed(lists.open) }
+        else if (tasks == null) tasks = emptyList()
     }
 
     fun write(f: VaultWriter.() -> Unit, after: () -> Unit = {}) {
