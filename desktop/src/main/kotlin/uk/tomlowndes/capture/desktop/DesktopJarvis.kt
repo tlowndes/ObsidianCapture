@@ -1,5 +1,8 @@
 package uk.tomlowndes.capture.desktop
 
+import uk.tomlowndes.capture.PhoneBrain
+import java.time.LocalDate
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,7 +25,12 @@ import kotlin.math.sqrt
  * this PC in %LOCALAPPDATA%\Vault Capture\jarvis\<worker>\<chat id>.json.
  */
 object DesktopJarvis {
-    fun ready(p: DesktopPrefs) = Jarvis.isDemo(p.jarvisAddress) || (p.jarvisAddress.isNotBlank() && p.jarvisToken != null)
+    fun ready(p: DesktopPrefs) = usesClaude(p) || serverReady(p)
+
+    fun serverReady(p: DesktopPrefs) = Jarvis.isDemo(p.jarvisAddress) || (p.jarvisAddress.isNotBlank() && p.jarvisToken != null)
+
+    /** Claude from this PC is on and has a key (windows-settings-gaps-v1). */
+    fun usesClaude(p: DesktopPrefs) = p.pcBrain && p.claudeKey != null
 
     private fun dir(p: DesktopPrefs, worker: String) = File(p.cacheDir, "jarvis/$worker").apply { mkdirs() }
 
@@ -41,10 +49,41 @@ object DesktopJarvis {
 
     fun title(c: Jarvis.Chat) = c.messages.firstOrNull { it.mine }?.text?.take(40) ?: "New chat"
 
-    /** Sends typed text. Call off the UI thread. */
-    fun ask(p: DesktopPrefs, worker: String, text: String, chat: String): Jarvis.Reply =
-        if (Jarvis.isDemo(p.jarvisAddress)) Jarvis.demoText(worker, text)
+    /**
+     * Sends typed text. Call off the UI thread. With Claude from this PC on, it's answered here like the phone does:
+     * research looks things up, rambles are sorted, everything else is chat with [history]. Jobs Claude hands to a
+     * box worker go to the server when one is set up.
+     */
+    fun ask(p: DesktopPrefs, worker: String, text: String, chat: String, history: List<PhoneBrain.Turn> = emptyList()): Jarvis.Reply =
+        if (usesClaude(p)) askClaude(p, worker, text, chat, history)
+        else if (Jarvis.isDemo(p.jarvisAddress)) Jarvis.demoText(worker, text)
         else Jarvis.sendText(p.jarvisAddress, p.jarvisToken ?: error("Add the Jarvis token in Settings"), text, worker, chat = chat, speak = false)
+
+    private fun askClaude(p: DesktopPrefs, worker: String, text: String, chat: String, history: List<PhoneBrain.Turn>): Jarvis.Reply {
+        val key = p.claudeKey ?: error("Add the Claude key in Settings")
+        val today = LocalDate.now()
+        val who = p.assistantName
+        val direct = when {
+            worker == "research" -> PhoneBrain.research(key, text, today, who)
+            PhoneBrain.worthSorting(text) -> PhoneBrain.sortOrAnswer(key, text, today, who)
+            else -> null
+        }
+        if (direct != null) {
+            p.brainSpend = p.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
+            return Jarvis.Reply(text, direct.reply, null, sorted = direct.sorted)
+        }
+        val turns = PhoneBrain.history(history + PhoneBrain.Turn(true, text))
+        val a = PhoneBrain.chat(key, PhoneBrain.model(p.brainClever), turns, today, listOf("#work", "#personal"), who) {}
+        p.brainSpend = p.brainSpend.add(PhoneBrain.costUsd(a.model, a.inputTokens, a.outputTokens))
+        var reply = a.text.ifBlank { "Done." }
+        for (h in a.handoffs) {
+            reply += if (serverReady(p) && !Jarvis.isDemo(p.jarvisAddress)) {
+                runCatching { Jarvis.sendText(p.jarvisAddress, p.jarvisToken!!, h.request, h.worker, chat = chat, speak = false) }
+                    .fold({ "\n\nPassed to ${PhoneBrain.workerLabel(h.worker)}." }, { "\n\nCouldn't pass it to ${PhoneBrain.workerLabel(h.worker)}: the server didn't answer." })
+            } else "\n\n${PhoneBrain.workerLabel(h.worker)} needs the server, which isn't set up on this PC."
+        }
+        return Jarvis.Reply(text, reply, null, sorted = PhoneBrain.sortedOf(a.tasks, a.notes))
+    }
 
     /** Sends a recording. Call off the UI thread. */
     fun askVoice(p: DesktopPrefs, worker: String, wav: File, seconds: Double, chat: String): Jarvis.Reply =

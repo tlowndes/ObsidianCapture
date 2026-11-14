@@ -47,7 +47,7 @@ import uk.tomlowndes.capture.ReminderSettings
 /** Settings pages down the left (windows-settings-v1), like the phone's tidied Settings. */
 enum class SettingsPage(val label: String) {
     GENERAL("General"), VAULT("Vault & folders"), DECK("Deck & weather"), CALENDARS("Calendars"),
-    REMINDERS("Reminders"), JARVIS("Assistant"), PRINTER("Printer"), UPDATES("Updates")
+    REMINDERS("Reminders"), JARVIS("Assistant"), PRINTER("Printer"), PIHOLEGOTCHI("Piholegotchi"), UPDATES("Updates")
 }
 
 @Composable
@@ -76,6 +76,7 @@ fun SettingsPane(state: AppState) {
                     SettingsPage.REMINDERS -> RemindersPage(state)
                     SettingsPage.JARVIS -> JarvisSettingsPage(state)
                     SettingsPage.PRINTER -> PrinterSettingsPage(state)
+                    SettingsPage.PIHOLEGOTCHI -> PiholegotchiPage(state)
                     SettingsPage.UPDATES -> UpdatesPage(state)
                 }
             }
@@ -104,6 +105,10 @@ private fun GeneralPage(state: AppState) {
     Setting("Repeat recurring tasks", "Ticking a 🔁 task adds its next one, like the Tasks plugin") {
         Toggle(recurring) { recurring = it; p.recurring = it }
     }
+    var inline by remember { mutableStateOf(p.subtasksInline) }
+    Setting("Subtasks open", "Where a task's steps show when you click its steps") {
+        Pill(listOf("Under task", "Side panel"), if (inline) 0 else 1, Modifier.width(240.dp)) { inline = it == 0; p.subtasksInline = inline }
+    }
 }
 
 @Composable
@@ -112,6 +117,7 @@ private fun VaultPage(state: AppState) {
     var ideas by remember { mutableStateOf(p.ideasDir) }
     var images by remember { mutableStateOf(p.imagesDir) }
     Setting("Vault folder", p.vault?.absolutePath ?: "Not picked yet") { Chip("Change…", small = true) { pickVault(state) } }
+    BackgroundSyncSettings(state)
     Text("FOLDERS", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
     FolderSetting("Projects", ideas, "03 - Projects") { ideas = it; p.ideasDir = it }
     FolderSetting("Images", images, "99 - Meta/Assets") { images = it; p.imagesDir = it }
@@ -385,6 +391,8 @@ private fun JarvisSettingsPage(state: AppState) {
     Setting("Name", "Shown in the app. Blank goes back to Tower.") {
         Field(name, { name = it.take(uk.tomlowndes.capture.AssistantName.MAX + 8); p.assistantName = it }, Modifier.width(220.dp), uk.tomlowndes.capture.AssistantName.DEFAULT)
     }
+    ClaudeSettings(state)
+    Text("SERVER (WHEN CLAUDE IS OFF)", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
     var address by remember { mutableStateOf(p.jarvisAddress) }
     var hasToken by remember { mutableStateOf(p.jarvisToken != null) }
     var token by remember { mutableStateOf("") }
@@ -459,5 +467,118 @@ private fun PrinterSettingsPage(state: AppState) {
     }
     Setting("Bluetooth", "Pair the printer here first if it isn't listed") {
         Chip("Open Bluetooth settings", small = true) { state.browse("ms-settings:bluetooth") }
+    }
+}
+
+/** Settings › Vault & folders › Background sync (windows-nav-sync-v1). */
+@Composable
+private fun BackgroundSyncSettings(state: AppState) {
+    val p = state.prefs
+    var on by remember { mutableStateOf(p.bgSync) }
+    val st = HeadlessSync.status
+    Text("BACKGROUND SYNC", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Sub("Keeps the vault synced with Obsidian Sync without opening Obsidian.")
+    Setting("Sync in the background", "Runs Obsidian Headless hidden while Flight Deck is running") {
+        Toggle(on) { on = it; p.bgSync = it; HeadlessSync.applyNow(state) }
+    }
+    if (!on) return
+    val (text, colour) = when (st) {
+        HeadlessSync.Status.RUNNING -> (HeadlessSync.sidebarLine()?.first ?: "● Syncing…") + " · watching for changes" to TaskGreen
+        HeadlessSync.Status.PAUSED -> "● Paused · Obsidian is open" to Amber
+        HeadlessSync.Status.NOT_SET_UP -> "● Not set up" to Amber
+        HeadlessSync.Status.NO_NODE -> "● Needs Node 22 or later" + (HeadlessSync.nodeVersion?.let { " (found $it)" } ?: "") to Amber
+        HeadlessSync.Status.STOPPED -> "● Sync stopped" + (HeadlessSync.lastLine?.let { " · $it" } ?: "") to Warn
+        else -> "● Checking…" to Muted
+    }
+    Column {
+        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 20.dp)) {
+                Text("Status", fontSize = 14.5.sp, color = TextMain)
+                Text(text, fontSize = 12.sp, color = colour, modifier = Modifier.padding(top = 2.dp), maxLines = 2)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (st == HeadlessSync.Status.STOPPED || st == HeadlessSync.Status.RUNNING)
+                    Chip("Show log", small = true, color = Muted) { runCatching { java.awt.Desktop.getDesktop().open(HeadlessSync.logFile) } }
+                if (st == HeadlessSync.Status.RUNNING || st == HeadlessSync.Status.STOPPED)
+                    Chip("Sync now", small = true) { HeadlessSync.syncNow(state) }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Outline))
+    }
+    Setting("When Obsidian is open", "Pauses, so two copies never sync the same vault. Starts again when you close Obsidian.") {}
+    if (st == HeadlessSync.Status.NO_NODE) {
+        Setting("Setup", "Obsidian Headless needs Node.js 22 or later. Install it, then come back here.") {
+            Chip("Install Node", small = true) { state.browse("https://nodejs.org/en/download") }
+        }
+    } else {
+        Setting("Setup", if (st == HeadlessSync.Status.NOT_SET_UP) "One time: sign in to Obsidian and pick the remote vault for this folder" else "Signed in and linked to a remote vault") {
+            Chip(if (st == HeadlessSync.Status.NOT_SET_UP) "Set up…" else "Set up again…", small = true) {
+                val v = p.vault ?: return@Chip state.say("Pick a vault first")
+                runCatching { HeadlessSync.openSetup(v) }.onFailure { state.say("Couldn't open setup: ${it.message}") }
+            }
+        }
+    }
+}
+
+/** Settings › Assistant › Claude from this PC (windows-settings-gaps-v1), like the phone's Claude from the phone. */
+@Composable
+private fun ClaudeSettings(state: AppState) {
+    val p = state.prefs
+    var hasKey by remember { mutableStateOf(p.claudeKey != null) }
+    var on by remember { mutableStateOf(p.pcBrain && hasKey) }
+    var key by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf(false) }
+    var clever by remember { mutableStateOf(p.brainClever) }
+    Text("CLAUDE FROM THIS PC", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Setting("Use Claude", if (!hasKey) "Off until you add a key and turn this on. It costs money."
+        else "Chat, sorting, research, steps and summaries. Off until you turn it on. It costs money.") {
+        Toggle(on) { want -> if (want && !hasKey) { editing = true } else { on = want; p.pcBrain = want } }
+    }
+    Setting("Claude key", if (hasKey && !editing) (p.claudeKey?.let { mask(it) } ?: "") + " · encrypted for your Windows account, never in the vault"
+        else "From console.anthropic.com › API keys") {
+        if (hasKey && !editing) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Change", small = true) { editing = true }
+            Chip("Remove", small = true, color = Warn) { p.claudeKey = null; p.pcBrain = false; hasKey = false; on = false }
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Field(key, { key = it }, Modifier.width(240.dp), "sk-ant-…")
+            PrimaryButton("Save", enabled = key.isNotBlank()) {
+                p.claudeKey = key; key = ""; hasKey = true; editing = false; on = true; p.pcBrain = true
+            }
+        }
+    }
+    Setting("Model", if (clever) "Clever is for everyday chat. Sorting, research, steps and summaries stay on Fast."
+        else "Fast is the usual model. A quiet month stays very cheap.") {
+        Pill(listOf("Fast", "Clever"), if (clever) 1 else 0, Modifier.width(200.dp)) { clever = it == 1; p.brainClever = clever }
+    }
+    Setting("This month", "Worked out on this PC from what Claude reports") {
+        Text(p.brainSpend.label(), fontSize = 13.sp, color = Muted, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+    }
+}
+
+private fun mask(k: String) = k.trim().let { if (it.length <= 10) "••••" else it.take(7) + "…" + it.takeLast(4) }
+
+/** Settings › Piholegotchi (windows-settings-gaps-v1): the same as the phone's page. */
+@Composable
+private fun PiholegotchiPage(state: AppState) {
+    val p = state.prefs
+    val scope = rememberCoroutineScope()
+    var addr by remember { mutableStateOf(p.piholegotchiAddress) }
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    Sub("Shows your next step, tasks due, focus, habits and job follow-ups on the Piholegotchi screen, and a Focus " +
+        "session while it runs. Sent over your home Wi-Fi when Deck refreshes. Leave blank to turn it off.", Modifier.padding(top = 4.dp))
+    Setting("Address", "piholegotchi.local, or the IP address the Pi shows on its screen") {
+        Field(addr, { addr = it; p.piholegotchiAddress = it; result = null }, Modifier.width(260.dp), "piholegotchi.local")
+    }
+    Setting("Test connection", result ?: if (testing) "Checking…" else "Checks the Pi answers, then sends today's Deck") {
+        Chip(if (testing) "Testing…" else "Test", small = true, color = result?.let { if (it.startsWith("Connected")) TaskGreen else Warn }) {
+            if (testing || addr.isBlank()) return@Chip
+            testing = true; result = null
+            scope.launch {
+                val r = state.io { DesktopPi.test(addr) } ?: "Can't reach it"
+                if (r == "Connected") { state.io { DesktopPi.sendDeck(state) }; result = "Connected · sent today's Deck" } else result = r
+                testing = false
+            }
+        }
     }
 }

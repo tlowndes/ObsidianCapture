@@ -92,7 +92,8 @@ class JarvisSession(val state: AppState) {
         busy = false
         r.onFailure { e ->
             val who = state.prefs.assistantName
-            val msg = when ((e as? Jarvis.HttpError)?.code) { 401, 403 -> "$who refused the token. Check Settings."; else -> "Can't reach $who. Is Tailscale on?" }
+            val msg = if (DesktopJarvis.usesClaude(state.prefs) && e !is Jarvis.HttpError) uk.tomlowndes.capture.PhoneBrain.failure(who, e, viaServer = false)
+                else when ((e as? Jarvis.HttpError)?.code) { 401, 403 -> "$who refused the token. Check Settings."; else -> "Can't reach $who. Is Tailscale on?" }
             add(Jarvis.ChatMsg(false, msg, System.currentTimeMillis(), via = "error"))
         }.onSuccess { reply ->
             mine(reply)?.let(::add)
@@ -107,9 +108,10 @@ class JarvisSession(val state: AppState) {
     suspend fun send(text: String) {
         val t = text.trim()
         if (t.isEmpty() || busy) return
+        val history = chat.messages.filter { it.via != "error" }.map { uk.tomlowndes.capture.PhoneBrain.Turn(it.mine, it.text) }
         add(Jarvis.ChatMsg(true, t, System.currentTimeMillis()))
         val w = worker; val id = chat.id
-        answer({ DesktopJarvis.ask(state.prefs, w, t, id) }) { null }
+        answer({ DesktopJarvis.ask(state.prefs, w, t, id, history) }) { null }
     }
 
     fun startTalking(): Boolean {

@@ -166,6 +166,8 @@ fun DeckPane(state: AppState) {
                 journalDone = runCatching { Journal.written(v, LocalDate.now()) }.getOrDefault(false),
             )
         } ?: return@launch
+        // Piholegotchi gets the same Deck when it refreshes (windows-settings-gaps-v1).
+        if (state.prefs.piholegotchiAddress.isNotBlank()) state.io { DesktopPi.sendDeck(state) }
     }
     LaunchedEffect(state.vault, state.changes) { reload() }
     LaunchedEffect(state.changes) {
