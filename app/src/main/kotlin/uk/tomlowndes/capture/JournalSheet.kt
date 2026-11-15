@@ -93,16 +93,23 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
+        // The prompts first (two small notes), so the sheet is usable at once; the facts line follows.
         withContext(Dispatchers.IO) {
             runCatching {
                 val v = appVault(ctx, uri)
                 val p = Journal.loadPrompts(v)
-                val start = Journal.start(v, today, p)
-                Triple(p, start, Journal.facts(v, today, events))
+                p to Journal.start(v, today, p)
             }.getOrNull()
-        }?.let { (p, start, f) ->
-            prompts = p; answers = start.answers; note = start.note; noteOpen = start.note.isNotBlank(); facts = f
+        }?.let { (p, start) ->
+            prompts = p; answers = start.answers; note = start.note; noteOpen = start.note.isNotBlank()
         }
+        // Today's done count from the task scan's ticked lists (cached per note), not a fresh walk of the vault.
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val lists = VaultWriter(ctx, uri).listTaskLists().also { TaskSnapshot.save(ctx, it) }
+                Journal.facts(appVault(ctx, uri), today, events, WeeklyReview.doneFrom(lists.done, today))
+            }.getOrNull()
+        }?.let { facts = it }
     }
 
     val list = prompts

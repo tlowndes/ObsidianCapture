@@ -209,8 +209,9 @@ object Journal {
     }
 
     /** Tasks ticked and focus minutes for [day], plus [events] from the calendar the caller already has. */
-    fun facts(v: Vault, day: LocalDate, events: Int?): JournalFacts = JournalFacts(
-        tasks = runCatching { WeeklyReview.done(v, day).count { it.done == day } }.getOrNull(),
+    /** [done] is the week's done tasks if the caller already has them; otherwise the vault is read for them. */
+    fun facts(v: Vault, day: LocalDate, events: Int?, done: List<DoneTask>? = null): JournalFacts = JournalFacts(
+        tasks = runCatching { (done ?: WeeklyReview.done(v, day)).count { it.done == day } }.getOrNull(),
         focusMin = runCatching { FlightNotes.loadToday(v, day).sumOf { it.minutes } }.getOrNull(),
         events = events,
     )
