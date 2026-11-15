@@ -135,7 +135,7 @@ Flight Deck can show your day on [Piholegotchi](https://github.com/tlowndes/piho
 
 ## Windows
 
-Compose Desktop, installed per user from an MSI (still named Vault Capture, so it upgrades the installed copy). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
+Compose Desktop, installed per user from an MSI named Flight Deck (called Vault Capture up to 1.34; the same upgrade code means it replaces the old install, and Start with Windows is moved across on first start). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
 
 The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Settings, plus a Capture button (Ctrl+N). Ctrl+R re-reads the vault.
 
@@ -176,7 +176,7 @@ Debug builds are signed with the committed `app/debug.keystore` (store and key p
 
 The unit tests cover the note formats the app reads and writes (tasks and recurrence, project notes, Read It Later, habits, jobs, sorting, the calendar, weather and the weekly review), so a change that would mangle a note fails here first.
 
-GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for pull requests, pushes to main, and version tags. Both files are uploaded as workflow artefacts and kept for 7 days (a failed test report is kept for 3 days). The APK is named `VaultCapture-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Vault Capture v1.7`, with the APK and the MSI attached (`VaultCapture-v1.7.apk` and `VaultCapture-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach. Clean up artifacts (`.github/workflows/cleanup-artifacts.yml`) deletes older artefacts every week, and can be run by hand.
+GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for pull requests, pushes to main, and version tags. Both files are uploaded as workflow artefacts and kept for 7 days (a failed test report is kept for 3 days). The APK is named `FlightDeck-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Flight Deck v1.7`, with the APK and the MSI attached (`FlightDeck-v1.7.apk` and `FlightDeck-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach. Clean up artifacts (`.github/workflows/cleanup-artifacts.yml`) deletes older artefacts every week, and can be run by hand.
 
 ## Repo layout
 

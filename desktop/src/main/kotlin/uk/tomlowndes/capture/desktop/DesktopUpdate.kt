@@ -122,7 +122,7 @@ object DesktopUpdate {
     }
 
     /**
-     * Where updates are downloaded. Must be outside the install folder (LOCALAPPDATA\Vault Capture),
+     * Where updates are downloaded. Must be outside the install folder (LOCALAPPDATA\Flight Deck),
      * because the MSI removes the old version first, and an MSI running from inside that folder
      * fails with error 1316, leaving no app installed.
      */
@@ -143,7 +143,7 @@ object DesktopUpdate {
             buildString {
                 val log = File(msi.parentFile, "install-update.log").absolutePath
                 appendLine("@echo off")
-                appendLine("echo Updating Vault Capture...")
+                appendLine("echo Updating Flight Deck...")
                 appendLine("ping -n 3 127.0.0.1 >nul")
                 appendLine("msiexec /i \"${msi.absolutePath}\" /passive /norestart /l*v \"$log\"")
                 // If the quiet install fails, open the normal installer so the app isn't left missing.

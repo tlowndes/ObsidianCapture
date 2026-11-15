@@ -366,12 +366,27 @@ private fun FolderSetting(title: String, value: String, placeholder: String, onC
 /** The per-user Run key, so the app starts (hidden, in the tray) when you sign in. */
 object Autostart {
     private const val KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-    private const val NAME = "Vault Capture"
+    private const val NAME = "Flight Deck"
+    /** The entry's name up to 1.34, when the app was called Vault Capture. */
+    private const val OLD_NAME = "Vault Capture"
 
     /** The installed launcher (set by the packaged app); null when run from Gradle. */
     private val exe: String? get() = System.getProperty("jpackage.app-path")
 
     fun enabled(): Boolean = runCatching { Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, KEY, NAME) }.getOrDefault(false)
+
+    /**
+     * After the rename, the old entry points at the removed Vault Capture exe. Swap it for one
+     * that points at this exe, so Start with Windows keeps working. Run once at start.
+     */
+    fun migrate() {
+        val path = exe ?: return
+        runCatching {
+            if (!Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, KEY, OLD_NAME)) return
+            Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, KEY, OLD_NAME)
+            Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, KEY, NAME, "\"$path\" --hidden")
+        }
+    }
 
     fun set(on: Boolean) {
         if (on) {

@@ -256,5 +256,7 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     fun setDraft(key: String, text: String) = put("draft_${key.hashCode()}", text.ifEmpty { null })
 
     /** Folder for the vault-wide task scan cache. */
+    // Stays "Vault Capture" after the rename to Flight Deck, so the cache, Quick Task backups
+    // and Jarvis chats saved by older versions are still found.
     val cacheDir: File get() = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "Vault Capture")
 }
