@@ -73,7 +73,7 @@ fun TriageScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack:
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
         // The last lists read show at once; the vault read below then refreshes the queue only if nothing has been moved yet.
-        TaskSnapshot.load(ctx)?.let { all = it.open; queue = Triage.candidates(all, today) }
+        withContext(Dispatchers.IO) { TaskSnapshot.load(ctx) }?.let { all = it.open; queue = Triage.candidates(all, today) }
         val lists = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }.getOrNull()
         if (lists != null) {
             TaskSnapshot.save(ctx, lists)
