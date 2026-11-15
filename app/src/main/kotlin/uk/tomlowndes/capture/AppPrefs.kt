@@ -255,6 +255,21 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
+    /** Sleep and steps (body-people-errands-v1): read from Health Connect, step goal, and easy day after a short night. */
+    var healthOn: Boolean
+        get() = p.getBoolean("health_on", false)
+        set(v) { p.edit().putBoolean("health_on", v).apply() }
+    var stepGoal: Int
+        get() = p.getInt("step_goal", 7000)
+        set(v) { p.edit().putInt("step_goal", v).apply() }
+    var easyAfterShort: Boolean
+        get() = p.getBoolean("easy_after_short", true)
+        set(v) { p.edit().putBoolean("easy_after_short", v).apply() }
+    /** What helps you: the month whose Deck card was closed with ✕. */
+    var helpsClosed: String?
+        get() = p.getString("helps_closed", null)
+        set(v) { p.edit().putString("helps_closed", v).apply() }
+
     var phoneBrain: Boolean
         get() = p.getBoolean("phone_brain", false)
         set(v) { p.edit().putBoolean("phone_brain", v).apply() }

@@ -75,11 +75,11 @@ internal fun deskAsk(state: AppState, user: String, system: String, clever: Bool
 internal fun copyToClipboard(text: String) = runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
 
 @Composable
-private fun Working(text: String) = Text(text, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 10.dp))
+internal fun Working(text: String) = Text(text, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 10.dp))
 
 /** A wide dialog for the Claude helpers. */
 @Composable
-private fun WideDialog(heading: String, sub: String?, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+internal fun WideDialog(heading: String, sub: String?, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         CaptureTheme {
             val shape = RoundedCornerShape(18.dp)

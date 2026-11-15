@@ -108,6 +108,15 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = p.get("talk_snoozed", null)
         set(v) { put("talk_snoozed", v) }
 
+    /** What helps you: the month (yyyy-mm) whose card was closed. */
+    var helpsClosed: String?
+        get() = p.get("helps_closed", null)
+        set(v) { put("helps_closed", v) }
+
+    var stepGoal: Int
+        get() = p.getInt("step_goal", 7000)
+        set(v) { p.putInt("step_goal", v); p.flush() }
+
     var laterToday: Set<String>
         get() = if (str("later_day", "") == java.time.LocalDate.now().toString()) str("later", "").split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
         set(v) { put("later_day", java.time.LocalDate.now().toString()); put("later", v.joinToString("\n")) }

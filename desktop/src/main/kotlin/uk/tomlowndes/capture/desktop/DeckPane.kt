@@ -57,8 +57,10 @@ import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
 import uk.tomlowndes.capture.DayPlan
@@ -149,6 +151,18 @@ fun DeckPane(state: AppState) {
     var passageIdx by remember { mutableStateOf(0) }
     var talking by remember { mutableStateOf<TaskItem?>(null) }
     var snoozed by remember { mutableStateOf(state.prefs.talkSnoozed) }
+    // Stage 3: What helps you (first week of the month) and Learn.
+    var helps by remember { mutableStateOf<uk.tomlowndes.capture.MonthPatterns?>(null) }
+    var helpsOpen by remember { mutableStateOf(false) }
+    var learnOpen by remember { mutableStateOf(false) }
+    var cardsDue by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(state.vault, learnOpen) {
+        if (learnOpen) return@LaunchedEffect
+        cardsDue = withContext(Dispatchers.IO) { dueCardCount(state) }
+        val day = LocalDate.now()
+        if (helps == null && uk.tomlowndes.capture.Patterns.showCard(day) && state.prefs.helpsClosed != uk.tomlowndes.capture.Patterns.lastMonth(day).toString())
+            helps = withContext(Dispatchers.IO) { runCatching { loadOrMakePatterns(state, day) }.getOrNull() }
+    }
     val drag = remember { DeckDrag() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
@@ -326,6 +340,8 @@ fun DeckPane(state: AppState) {
     }
 
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
+    if (helpsOpen) helps?.let { p -> HelpsDialog(state, p) { helpsOpen = false } }
+    if (learnOpen) LearnDialog(state) { learnOpen = false }
     talking?.let { t ->
         TalkDialog(state, t) {
             talking = null
@@ -389,6 +405,9 @@ fun DeckPane(state: AppState) {
                 snoozed = uk.tomlowndes.capture.TalkThrough.snooze(snoozed, t, today); state.prefs.talkSnoozed = snoozed
             }
         }
+        helps?.let { p ->
+            HelpsCardDesk(p, onAll = { helpsOpen = true }) { helps = null; state.prefs.helpsClosed = p.month.toString() }
+        }
         NowBar(nowItems, nowIndex) { nowIndex++ }
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
@@ -397,6 +416,12 @@ fun DeckPane(state: AppState) {
             DeckPill(data.habits?.progress(today)?.let { (done, total) -> "Habits $done/$total" } ?: "Habits", Purple) {
                 state.openInObsidian(Habits.PATH)
             }
+            // Sleep and steps come from the phone (Health Connect) through the Habits note.
+            data.habits?.let { h ->
+                uk.tomlowndes.capture.Body.sleepLine(h, today)?.let { DeckPill(it, if (uk.tomlowndes.capture.Body.shortNight(h, today)) Amber else Purple) { state.openInObsidian(Habits.PATH) } }
+                uk.tomlowndes.capture.Body.stepsLine(h, today, state.prefs.stepGoal)?.let { DeckPill(it, TaskGreen) { state.openInObsidian(Habits.PATH) } }
+            }
+            cardsDue?.let { n -> DeckPill(if (n > 0) "🧠 Learn $n" else "🧠 Learn ✓", Primary) { learnOpen = true } }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
             val pickUp = { runCatching { keys.requestFocus() }; Unit }
