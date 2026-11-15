@@ -330,7 +330,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                 runCatching { Jobs.list(v) }.getOrDefault(emptyList()),
                 lists?.done.orEmpty(),
                 runCatching { NoteIndex.paths(v).filter { PrintDocs.looksLikeList(it.path) }.sortedByDescending { it.modified }.take(6).map { it.path } }.getOrDefault(emptyList()),
-                Highlights.slipQuote(v, today),
+                uk.tomlowndes.capture.Highlights.slipQuote(v, today),
             )
         }
     }
