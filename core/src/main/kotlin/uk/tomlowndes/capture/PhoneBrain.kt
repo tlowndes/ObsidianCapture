@@ -490,11 +490,25 @@ using the same task and note shape as a ramble sort. Otherwise do not add JSON."
     }
 
     /** One plain answer, for Break it down, a print summary, or the day's brief. Blocking. */
-    fun complete(key: String, user: String, system: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+    fun complete(key: String, user: String, system: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST, maxTokens: Long = 2000L): Direct {
         val params = MessageCreateParams.builder()
-            .model(model).maxTokens(2000L).system(system)
+            .model(model).maxTokens(maxTokens).system(system)
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
             .addUserMessage(user)
+            .build()
+        val c = client(key, seconds)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val text = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("").trim()
+        return Direct(text, null, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /** A short back-and-forth with no tools (Talk me through it): [turns] start with Tom's. Blocking. */
+    fun converse(key: String, system: String, turns: List<Turn>, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+        val params = MessageCreateParams.builder()
+            .model(model).maxTokens(1200L).system(system)
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .apply { history(turns, 20).forEach { if (it.mine) addUserMessage(it.text) else addAssistantMessage(it.text) } }
             .build()
         val c = client(key, seconds)
         val msg = try { c.messages().create(params) } finally { c.close() }

@@ -3,7 +3,7 @@ package uk.tomlowndes.capture
 import java.time.LocalDate
 
 /** One job application note. [next] is its follow-up date. */
-data class Job(val path: String, val company: String, val role: String, val status: String, val next: LocalDate?, val applied: LocalDate?) {
+data class Job(val path: String, val company: String, val role: String, val status: String, val next: LocalDate?, val applied: LocalDate?, val fit: Int? = null) {
     val closed get() = status.lowercase() in Jobs.CLOSED
 }
 
@@ -28,7 +28,7 @@ object Jobs {
             get("company").orEmpty(),
             get("role") ?: VaultTasks.noteName(path),
             get("status") ?: "Shortlisted",
-            date("follow_up"), date("applied")
+            date("follow_up"), date("applied"), get("fit")?.toIntOrNull()
         )
     }
 

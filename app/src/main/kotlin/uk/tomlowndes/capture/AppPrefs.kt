@@ -148,6 +148,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         set(v) { p.edit().putBoolean("weather_strip", v).apply() }
 
     /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
+    /** Talk me through it: tasks hidden with "Not today", as TalkThrough keys with their until dates. */
+    var talkSnoozed: String?
+        get() = p.getString("talk_snoozed", null)
+        set(v) { p.edit().putString("talk_snoozed", v).apply() }
+
     var laterToday: Set<String>
         get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("later", null).orEmpty() else emptySet()

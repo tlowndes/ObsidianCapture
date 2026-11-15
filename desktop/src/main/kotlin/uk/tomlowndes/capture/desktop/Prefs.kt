@@ -103,6 +103,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     }
 
     /** Next-step tasks put off with Later, by their line. Only today's count; tomorrow they come back. */
+    /** Talk me through it: tasks hidden with "Not today" (TalkThrough keys and until dates). */
+    var talkSnoozed: String?
+        get() = p.get("talk_snoozed", null)
+        set(v) { put("talk_snoozed", v) }
+
     var laterToday: Set<String>
         get() = if (str("later_day", "") == java.time.LocalDate.now().toString()) str("later", "").split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
         set(v) { put("later_day", java.time.LocalDate.now().toString()); put("later", v.joinToString("\n")) }

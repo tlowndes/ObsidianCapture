@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND && sharedImage(intent)) {
             // An image goes to Snap anything (snap-anything-v1).
+        } else if (intent?.action == Intent.ACTION_SEND && sharedJob(intent)) {
+            // A job ad goes to the Job co-pilot (job-copilot-v1).
         } else if (intent?.action == Intent.ACTION_SEND) {
             if (!toCapture(intent)) { handleShare(intent); return }
         } else readOpenRequest(intent)
@@ -92,7 +94,17 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == Intent.ACTION_SEND && sharedImage(intent)) return
+        if (intent.action == Intent.ACTION_SEND && sharedJob(intent)) return
         if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /** A shared job ad (LinkedIn, Indeed…) opens Jobs with the Save job sheet, when Claude is on. */
+    private fun sharedJob(i: Intent): Boolean {
+        val url = ShareIntent.urlOf(i.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+        if (url.isBlank() || !JobCopilot.looksLikeJob(url) || claudeKey(this, prefs) == null) return false
+        JobInbox.pending = url
+        openRequest = Tab.VAULT to "jobs"
+        return true
     }
 
     /** A shared image opens Snap anything with it. Returns false when the share isn't an image. */
@@ -166,6 +178,7 @@ class MainActivity : ComponentActivity() {
 private fun subFor(slot: String?) = when (slot) {
     "focus" -> Sub.FOCUS
     "snap" -> Sub.SNAP
+    "jobs" -> Sub.JOBS
     "weekly" -> Sub.WEEKLY
     else -> null
 }
@@ -264,7 +277,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
-                sub == Sub.JOBS -> JobsScreen(vault, snack) { sub = null }
+                sub == Sub.JOBS -> JobsScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.SCAN -> ScanScreen(vault, prefs, snack) { sub = null }
