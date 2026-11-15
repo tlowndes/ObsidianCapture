@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS, HOME, INBOX }
+enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS, HOME, INBOX, PEOPLE }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
