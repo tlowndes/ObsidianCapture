@@ -208,6 +208,49 @@ fun DeckScreen(
     }
     val nowDt = java.time.LocalDateTime.now()
 
+    // Stage 1 (home-life-v1): chores that decay, and one passage from your reading.
+    var chores by remember { mutableStateOf<List<Chore>>(emptyList()) }
+    var passages by remember { mutableStateOf<List<Passage>>(emptyList()) }
+    var passageIdx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        chores = withContext(Dispatchers.IO) { runCatching { Chores.load(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+    }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        passages = withContext(Dispatchers.IO) { runCatching { Highlights.forDay(appVault(ctx, uri), LocalDate.now()) }.getOrDefault(emptyList()) }
+        passageIdx = 0
+    }
+    fun choreDone(c: Chore) {
+        val uri = vault ?: return
+        val day = LocalDate.now()
+        chores = chores.map { if (it.name == c.name) it.copy(done = day) else it }
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { Chores.markDone(appVault(ctx, uri), c, day) } }
+            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            r.onSuccess { before ->
+                if (snack.showSnackbar("${c.label} done", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    withContext(Dispatchers.IO) { runCatching { Chores.put(appVault(ctx, uri), c.name, before) } }
+                    chores = chores.map { if (it.name == c.name) before else it }
+                }
+            }
+        }
+    }
+    fun passageSeen(p: Passage, keep: Boolean) {
+        val uri = vault ?: return
+        passageIdx++
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val v = appVault(ctx, uri)
+                    if (keep) Highlights.keep(v, p, LocalDate.now())
+                    HighlightsSeen.add(v, listOf(Highlights.key(p)))
+                }
+            }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
+            if (keep) snack.showSnackbar("Kept in Highlights")
+        }
+    }
+
     fun setMood(n: Int) = changeHabits { Mood.set(it, n) }
 
     val low = energy == Energy.LOW
@@ -326,6 +369,16 @@ fun DeckScreen(
                         )
                     }
                 }
+                if (HomeCard.CHORES !in hidden) Chores.due(chores, today).firstOrNull()?.let { c ->
+                    rows.add {
+                        val fill = c.fill(today)
+                        QuietRow(
+                            null, c.label, c.ageLabel(today).substringBefore(" ·"), rightColour = choreColour(fill),
+                            onClick = { onOpenSub(Sub.CHORES) },
+                            lead = { TickBox(done = false, onClick = { choreDone(c) }) }
+                        )
+                    }
+                }
                 if (rows.isEmpty()) return
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
@@ -344,9 +397,22 @@ fun DeckScreen(
                 val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
                 val showProject = HomeCard.PROJECTS !in hidden && data.project != null
                 val showJournal = HomeCard.HIGHLIGHTS !in hidden
-                if (showRoutines || showProject || showJournal) {
+                val showHome = HomeCard.CHORES !in hidden && chores.isNotEmpty()
+                val passage = passages.getOrNull(passageIdx).takeIf { HomeCard.READING !in hidden }
+                if (passage != null) {
+                    SectionLabel("From your reading")
+                    HighlightsCard(passage, passageIdx, passages.size,
+                        onOpen = { onOpenArticle(passage.ref) },
+                        onKeep = { passageSeen(passage, keep = true) },
+                        onNext = { passageSeen(passage, keep = false) })
+                }
+                if (showRoutines || showProject || showJournal || showHome) {
                     SectionLabel("More")
                     TileRow {
+                        if (showHome) {
+                            val due = Chores.due(chores, today).size
+                            Tile("🏠", "Home", if (due > 0) "$due need doing" else "all fresh", dot = due > 0) { onOpenSub(Sub.CHORES) }
+                        }
                         if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                             data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                         }

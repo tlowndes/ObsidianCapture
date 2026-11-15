@@ -128,6 +128,7 @@ internal fun agoLabel(millis: Long, now: Long = System.currentTimeMillis()): Str
 fun VaultScreen(
     vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, unread: Int, jobsOpen: Int,
     onOpenRead: () -> Unit, onOpenProjects: () -> Unit, onOpenJobs: () -> Unit, onOpenTasks: (String?) -> Unit, onEditing: (Boolean) -> Unit,
+    onOpenRecipes: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     var notes by remember { mutableStateOf(if (VaultCache.tree == vault) VaultCache.notes else emptyList()) }
@@ -196,7 +197,7 @@ fun VaultScreen(
             notes, tags, unread, jobsOpen, showHidden,
             onSearch = { searchIn = null; startTag = null; searching = true },
             onTag = { searchIn = null; startTag = it; searching = true },
-            onRead = onOpenRead, onProjects = onOpenProjects, onJobs = onOpenJobs, onFolder = { folder = it }, onNote = { open.add(it) },
+            onRead = onOpenRead, onProjects = onOpenProjects, onJobs = onOpenJobs, onRecipes = onOpenRecipes, onFolder = { folder = it }, onNote = { open.add(it) },
             onToggleHidden = { showHidden = !showHidden; prefs.vaultShowHidden = showHidden },
             kept = kept, onKeep = { p -> kept = kept + p; prefs.paraKept = kept }, onArchive = ::archive,
         )
@@ -210,6 +211,7 @@ private fun VaultHome(
     notes: List<NoteInfo>, tags: List<Pair<String, Int>>, unread: Int, jobsOpen: Int, showHidden: Boolean,
     onSearch: () -> Unit, onTag: (String) -> Unit, onRead: () -> Unit, onProjects: () -> Unit, onJobs: () -> Unit, onFolder: (String) -> Unit, onNote: (String) -> Unit,
     onToggleHidden: () -> Unit,
+    onRecipes: () -> Unit = {},
     kept: Set<String> = emptySet(), onKeep: (String) -> Unit = {}, onArchive: (String, String) -> Unit = { _, _ -> },
 ) {
     val view = remember(notes, showHidden) { VaultBrowse.folder(notes, "", showHidden = showHidden) }
@@ -237,6 +239,12 @@ private fun VaultHome(
                 Tile("📖", "Read later", if (unread > 0) "$unread unread" else "all read", onClick = onRead)
                 Tile("💡", "Projects", if (quiet.isNotEmpty()) "${quiet.size} quiet" else "open", dot = quiet.isNotEmpty(), onClick = onProjects)
                 Tile("💼", "Jobs", if (jobsOpen > 0) "$jobsOpen open" else "none open", onClick = onJobs)
+            }
+            Box(Modifier.height(8.dp))
+            TileRow {
+                Tile("🍳", "Recipes", "saved + cook", onClick = onRecipes)
+                Box(Modifier.weight(1f))
+                Box(Modifier.weight(1f))
             }
         }
         // PARA (paper-hybrid-v1): four doors over the vault's own folders, as one 2×2 card.

@@ -104,8 +104,8 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
  * Cards the desktop Deck shows, and which column each starts in (windows-catchup-v1). Plan today and Mood live in the
  * Now line; Stuck? is a button on Next step. Dragging a card across (deck-drag-v1) keeps its column in [Prefs.deckLeft].
  */
-private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.TOP_TASKS, HomeCard.HABITS)
-private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.JOBS)
+private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.CHORES, HomeCard.TOP_TASKS, HomeCard.HABITS)
+private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.READING, HomeCard.JOBS)
 
 private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -119,6 +119,8 @@ private data class DeckData(
     val events: List<CalEvent> = emptyList(),
     val dayDone: DayDone = DayDone(),
     val journalDone: Boolean = false,
+    val chores: List<uk.tomlowndes.capture.Chore> = emptyList(),
+    val passages: List<uk.tomlowndes.capture.Passage> = emptyList(),
 )
 
 private fun greeting(now: LocalTime = LocalTime.now()) = when {
@@ -144,6 +146,7 @@ fun DeckPane(state: AppState) {
     var leftSet by remember {
         mutableStateOf(state.prefs.deckLeft?.mapNotNull { n -> HomeCard.values().firstOrNull { it.name == n } }?.toSet() ?: LEFT)
     }
+    var passageIdx by remember { mutableStateOf(0) }
     val drag = remember { DeckDrag() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
@@ -164,6 +167,8 @@ fun DeckPane(state: AppState) {
                 jobs = runCatching { Jobs.list(v).count { !it.closed } }.getOrDefault(0),
                 events = runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
                 journalDone = runCatching { Journal.written(v, LocalDate.now()) }.getOrDefault(false),
+                chores = runCatching { uk.tomlowndes.capture.Chores.load(v) }.getOrDefault(emptyList()),
+                passages = runCatching { uk.tomlowndes.capture.Highlights.forDay(v, LocalDate.now()) }.getOrDefault(emptyList()),
             )
         } ?: return@launch
         // Piholegotchi gets the same Deck when it refreshes (windows-settings-gaps-v1).
@@ -178,6 +183,19 @@ fun DeckPane(state: AppState) {
         val c = state.io { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
         reload()
         state.offerUndo("Task completed") { state.io { state.writer()!!.restoreTask(t, c) }; reload() }
+    }
+
+    /** From your reading: Keep copies it to Highlights; either way it won't come back on any device. */
+    fun passageSeen(p: uk.tomlowndes.capture.Passage, keep: Boolean) {
+        val v = state.vault ?: return
+        passageIdx++
+        scope.launch {
+            state.io("Couldn't save it") {
+                if (keep) uk.tomlowndes.capture.Highlights.keep(v, p, LocalDate.now())
+                uk.tomlowndes.capture.HighlightsSeen.add(v, listOf(uk.tomlowndes.capture.Highlights.key(p)))
+            } ?: return@launch
+            if (keep) state.say("Kept in Highlights")
+        }
     }
 
     fun changeHabits(f: (HabitDay) -> HabitDay) {
@@ -252,6 +270,12 @@ fun DeckPane(state: AppState) {
             HomeCard.PROJECTS -> data.project?.let { p -> ProjectCard(p) { state.openProjects(p.title) } }
             HomeCard.READ_LATER -> RowCard("Read it later", "${data.unread} ›") { state.tab = Tab.READ }
             HomeCard.JOBS -> if (data.jobs > 0) RowCard("💼 Jobs", "${data.jobs} open ›") { state.tab = Tab.JOBS }
+            HomeCard.CHORES -> uk.tomlowndes.capture.Chores.due(data.chores, today).takeIf { it.isNotEmpty() }?.let { due ->
+                ChoresCard(due.take(3), today, due.size, onDone = { c -> choreDone(state, c) { reload() } }) { state.tab = Tab.HOME }
+            }
+            HomeCard.READING -> data.passages.getOrNull(passageIdx)?.let { p ->
+                ReadingCard(p, onOpen = { state.openArticle(p.ref) }, onKeep = { passageSeen(p, true) }, onNext = { passageSeen(p, false) })
+            }
             else -> Unit
         }
     }
@@ -266,6 +290,8 @@ fun DeckPane(state: AppState) {
         HomeCard.WEATHER -> weather != null || state.prefs.weatherLatLon == null
         HomeCard.PROJECTS -> data.project != null
         HomeCard.JOBS -> data.jobs > 0
+        HomeCard.CHORES -> uk.tomlowndes.capture.Chores.due(data.chores, today).isNotEmpty()
+        HomeCard.READING -> passageIdx < data.passages.size
         else -> false
     }
     val shown = visible.filter { (it in LEFT || it in RIGHT) && shows(it) }
@@ -800,6 +826,46 @@ private fun RowCard(title: String, trailing: String, onClick: () -> Unit) {
         ) {
             Text(title, fontSize = 14.sp, color = TextMain)
             Text(trailing, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
+        }
+    }
+}
+
+
+/** Home chores that need doing (home-life-v1): the fullest few, click the box to mark done today. */
+@Composable
+private fun ChoresCard(due: List<uk.tomlowndes.capture.Chore>, today: LocalDate, total: Int, onDone: (uk.tomlowndes.capture.Chore) -> Unit, onOpen: () -> Unit) {
+    DeckCard {
+        CardHead("🏠 Home", "$total need doing ›", onOpen)
+        Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            due.forEach { c ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(18.dp).clip(RoundedCornerShape(5.dp)).border(2.dp, Primary, RoundedCornerShape(5.dp)).hand().clickable { onDone(c) })
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(c.label, fontSize = 13.5.sp, color = TextMain, modifier = Modifier.weight(1f))
+                            Text(c.ageLabel(today), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = choreColour(c.fill(today)))
+                        }
+                        ChoreBar(c.fill(today), Modifier.padding(top = 5.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** From your reading (home-life-v1): one passage from an article you've read, with Open, Keep and Next. */
+@Composable
+private fun ReadingCard(p: uk.tomlowndes.capture.Passage, onOpen: () -> Unit, onKeep: () -> Unit, onNext: () -> Unit) {
+    DeckCard {
+        CardHead("From your reading")
+        Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 12.dp)) {
+            Text("“${uk.tomlowndes.capture.Highlights.short(p.text, 280)}”", fontSize = 14.sp, lineHeight = 21.sp, color = TextMain, fontStyle = FontStyle.Italic)
+            Text("— ${p.title}", fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextAction("Open", onClick = onOpen)
+                TextAction("♡ Keep", onClick = onKeep)
+                TextAction("Next", Muted, onClick = onNext)
+            }
         }
     }
 }

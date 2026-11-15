@@ -88,6 +88,7 @@ object SlipSettings {
             tomorrowEvents = "tomorrowEvents" in on, brief = "brief" in on,
             // Saved as "off" so slips set up before it existed get it switched on.
             dontForget = "noDontForget" !in on,
+            quote = "noQuote" !in on,
         )
     }
 
@@ -96,7 +97,7 @@ object SlipSettings {
             "weather".takeIf { o.weather }, "calendar".takeIf { o.calendar }, "month".takeIf { o.month },
             "todo".takeIf { o.todo }, "tomorrow".takeIf { o.tomorrow }, "blank".takeIf { o.blank },
             "sudoku".takeIf { o.sudoku }, "tomorrowEvents".takeIf { o.tomorrowEvents }, "brief".takeIf { o.brief },
-            "noDontForget".takeIf { !o.dontForget },
+            "noDontForget".takeIf { !o.dontForget }, "noQuote".takeIf { !o.quote },
         ).joinToString(",")
     }
 }
@@ -240,6 +241,7 @@ fun PrinterChooser(state: AppState, onDone: () -> Unit) {
 private data class SlipSources(
     val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?, val jobs: List<Job> = emptyList(),
     val done: List<TickedTask> = emptyList(), val lists: List<String> = emptyList(),
+    val quote: Pair<String, String>? = null,
 )
 
 /** Which printout the window is making (printables-v1). */
@@ -328,6 +330,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                 runCatching { Jobs.list(v) }.getOrDefault(emptyList()),
                 lists?.done.orEmpty(),
                 runCatching { NoteIndex.paths(v).filter { PrintDocs.looksLikeList(it.path) }.sortedByDescending { it.modified }.take(6).map { it.path } }.getOrDefault(emptyList()),
+                Highlights.slipQuote(v, today),
             )
         }
     }
@@ -362,7 +365,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         img = withContext(Dispatchers.Default) {
             runCatching {
                 val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today, src.jobs)
-                    .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
+                    .copy(brief = brief?.takeIf { opts.brief && briefFor == day }, quote = src.quote?.takeIf { opts.quote })
                 DesktopSlip.draw(content, SLIP_OWNER)
             }.getOrNull()
         }
@@ -485,6 +488,7 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
                     SlipSwitch("Calendar", if (isToday) "Today's events, and tomorrow's underneath" else "$dayName's events, and the next day's underneath", opts.calendar) { set(opts.copy(calendar = it)) }
                     SlipSwitch("Month grid", if (isToday) "This month with today marked" else "That month with $dayName marked", opts.month) { set(opts.copy(month = it)) }
                     SlipSwitch("Don't forget", "Bills due soon and job follow-ups", opts.dontForget) { set(opts.copy(dontForget = it)) }
+                    SlipSwitch("From your reading", if (sources?.quote == null) "Nothing read yet to quote" else "One passage from an article you've read", opts.quote) { set(opts.copy(quote = it)) }
                     SlipSwitch("To-dos", if (isToday) "Overdue and due today, then tomorrow" else "Due $dayName, plus anything still late", opts.todo) { set(opts.copy(todo = it)) }
                     SlipSwitch("Blank lines", "Three empty boxes to write in", opts.blank) { set(opts.copy(blank = it)) }
                     SlipSwitch("Sudoku", if (isToday) "A new puzzle each day" else "$dayName's puzzle", opts.sudoku) { set(opts.copy(sudoku = it)) }

@@ -9,7 +9,9 @@ enum class HomeCard(val label: String) {
     NEXT_STEP("Next step"), WEATHER("Weather & travel"), TODAY("Today"), BILLS("Bills"), PROJECTS("Projects"),
     TOP_TASKS("Top tasks"), HABITS("Habits"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs"),
     // Added in v1.16 (build queue). Plan today and Mood show near the top at their time of day while switched on.
-    PLAN("Plan today · Shut down"), MOOD("Mood at night"), ROUTINES("Routines"), HIGHLIGHTS("Journal check-in")
+    PLAN("Plan today · Shut down"), MOOD("Mood at night"), ROUTINES("Routines"), HIGHLIGHTS("Journal check-in"),
+    // Added in Stage 1 (home-life-v1): chores that decay, and one passage from your reading.
+    CHORES("Home chores"), READING("From your reading")
 }
 
 /** Cards that pop up at the top at their time of day rather than sitting in the order. */
@@ -74,9 +76,9 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
  */
 enum class DeckSection(val cards: List<HomeCard>) {
     WEATHER(listOf(HomeCard.WEATHER)),
-    AGENDA(listOf(HomeCard.TODAY, HomeCard.BILLS)),
+    AGENDA(listOf(HomeCard.TODAY, HomeCard.BILLS, HomeCard.CHORES)),
     TOP_TASKS(listOf(HomeCard.TOP_TASKS)),
-    MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS));
+    MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS, HomeCard.READING));
 
     fun at(order: List<HomeCard>): Int {
         val places = cards.map { order.indexOf(it) }.filter { it >= 0 }
