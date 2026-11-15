@@ -106,8 +106,8 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
  * Cards the desktop Deck shows, and which column each starts in (windows-catchup-v1). Plan today and Mood live in the
  * Now line; Stuck? is a button on Next step. Dragging a card across (deck-drag-v1) keeps its column in [Prefs.deckLeft].
  */
-private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.CHORES, HomeCard.TOP_TASKS, HomeCard.HABITS)
-private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.READING, HomeCard.JOBS)
+private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.CHORES, HomeCard.TOP_TASKS, HomeCard.HABITS, HomeCard.SPEND)
+private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.READING, HomeCard.JOBS, HomeCard.INBOX)
 
 private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -156,6 +156,16 @@ fun DeckPane(state: AppState) {
     var helpsOpen by remember { mutableStateOf(false) }
     var learnOpen by remember { mutableStateOf(false) }
     var cardsDue by remember { mutableStateOf<Int?>(null) }
+    // Stage 4: the email digest from the box, and spend from receipts.
+    var inbox by remember { mutableStateOf<DeskInbox?>(null) }
+    var mailOpen by remember { mutableStateOf<uk.tomlowndes.capture.Mail?>(null) }
+    var spend by remember { mutableStateOf<Pair<uk.tomlowndes.capture.MonthSpend, uk.tomlowndes.capture.MonthSpend>?>(null) }
+    var stageFour by remember { mutableStateOf(0) }
+    LaunchedEffect(state.vault, state.changes, stageFour) {
+        inbox = withContext(Dispatchers.IO) { runCatching { loadDeskInbox(state) }.getOrNull() }
+        state.inboxOpen = inbox?.open(LocalDate.now())?.size ?: 0
+        spend = withContext(Dispatchers.IO) { runCatching { loadDeskSpend(state, LocalDate.now()) }.getOrNull() }
+    }
     LaunchedEffect(state.vault, learnOpen) {
         if (learnOpen) return@LaunchedEffect
         cardsDue = withContext(Dispatchers.IO) { dueCardCount(state) }
@@ -292,6 +302,8 @@ fun DeckPane(state: AppState) {
             HomeCard.READING -> data.passages.getOrNull(passageIdx)?.let { p ->
                 ReadingCard(p, onOpen = { state.openArticle(p.ref) }, onKeep = { passageSeen(p, true) }, onNext = { passageSeen(p, false) })
             }
+            HomeCard.INBOX -> inbox?.let { InboxDeckCard(state, it) { m -> mailOpen = m } }
+            HomeCard.SPEND -> spend?.let { (now, last) -> SpendDeckCard(state, now, last) { stageFour++ } }
             else -> Unit
         }
     }
@@ -308,6 +320,8 @@ fun DeckPane(state: AppState) {
         HomeCard.JOBS -> data.jobs > 0
         HomeCard.CHORES -> uk.tomlowndes.capture.Chores.due(data.chores, today).isNotEmpty()
         HomeCard.READING -> passageIdx < data.passages.size
+        HomeCard.INBOX -> inbox?.digest != null
+        HomeCard.SPEND -> spend?.first?.receipts?.isNotEmpty() == true
         else -> false
     }
     val shown = visible.filter { (it in LEFT || it in RIGHT) && shows(it) }
@@ -342,6 +356,7 @@ fun DeckPane(state: AppState) {
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
     if (helpsOpen) helps?.let { p -> HelpsDialog(state, p) { helpsOpen = false } }
     if (learnOpen) LearnDialog(state) { learnOpen = false }
+    mailOpen?.let { m -> MailDialog(state, m) { mailOpen = null; stageFour++ } }
     talking?.let { t ->
         TalkDialog(state, t) {
             talking = null

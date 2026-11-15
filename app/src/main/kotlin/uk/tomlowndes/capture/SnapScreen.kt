@@ -153,6 +153,7 @@ fun SnapScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScanPag
                 runCatching {
                     val w = VaultWriter(ctx, uri)
                     val n = Snap.save(w, r, steps, parent)
+                    if (r.receipt != null) runCatching { Snap.saveReceipt(appVault(ctx, uri), r) }
                     val bytes = jpeg
                     if (keepPhoto && bytes != null) {
                         val v = appVault(ctx, uri)

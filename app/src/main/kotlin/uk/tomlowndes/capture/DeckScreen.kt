@@ -273,6 +273,16 @@ fun DeckScreen(
         helps = withContext(Dispatchers.IO) { runCatching { loadOrMakePatterns(ctx, prefs, uri, day) }.getOrNull() }
     }
     var cardsDue by remember { mutableStateOf<Int?>(null) }
+    // Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest from the box, and spend from receipts.
+    var inbox by remember { mutableStateOf<InboxData?>(null) }
+    var mailOpen by remember { mutableStateOf<Mail?>(null) }
+    var spend by remember { mutableStateOf<Pair<MonthSpend, MonthSpend>?>(null) }
+    var recat by remember { mutableStateOf<Receipt?>(null) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        inbox = withContext(Dispatchers.IO) { runCatching { loadInbox(ctx, uri) }.getOrNull() }
+        spend = withContext(Dispatchers.IO) { runCatching { loadSpend(ctx, uri, LocalDate.now()) }.getOrNull() }
+    }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         cardsDue = withContext(Dispatchers.IO) {
@@ -418,6 +428,8 @@ fun DeckScreen(
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
+            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { m -> mailOpen = m }, onAll = { onOpenSub(Sub.INBOX) }) }
+            DeckSection.SPEND -> if (HomeCard.SPEND !in hidden) spend?.let { (now, last) -> SpendCard(now, last) { recat = it } }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
                 DeckCard {
@@ -538,6 +550,17 @@ fun DeckScreen(
     drag.section?.let { s -> LiftedSection(drag, origin) { Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { Section(s) } } }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
+    mailOpen?.let { m -> MailSheet(m, vault, snack) { mailOpen = null; refresh++ } }
+    recat?.let { r ->
+        CategorySheet(r) { c ->
+            recat = null
+            val uri = vault
+            if (c != null && c != r.category && uri != null) scope.launch {
+                withContext(Dispatchers.IO) { runCatching { Spend.recategorise(appVault(ctx, uri), r, c) } }
+                refresh++
+            }
+        }
+    }
     if (helpsOpen) helps?.let { p -> HelpsSheet(p) { helpsOpen = false } }
     talking?.let { t ->
         TalkSheet(t, vault, prefs, snack, onFocus = onStartFocus) {

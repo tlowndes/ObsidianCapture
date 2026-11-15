@@ -26,7 +26,7 @@ data class SnapItem(
 )
 
 /** What Claude made of a photo: a heading ("Looks like a bill"), what it saw, and the suggestions. */
-data class SnapResult(val title: String, val what: String, val items: List<SnapItem>, val steps: Boolean = false) {
+data class SnapResult(val title: String, val what: String, val items: List<SnapItem>, val steps: Boolean = false, val receipt: Receipt? = null) {
     val kept get() = items.filter { it.keep }
 }
 
@@ -43,11 +43,11 @@ object Snap {
     fun system(today: LocalDate, mode: SnapMode, tags: List<String>): String = """
         You read photos and screenshots for Tom's to-do app and suggest what to save. Today is ${today.format(DAY)}.
         Reply with JSON only, no prose and no code fences:
-        {"title": string, "what": string, "items": [{"kind": "task"|"bill"|"note", "text": string, "due": "YYYY-MM-DD" or null, "time": "HH:MM" or null, "amount": "12.34" or null, "repeat": "monthly"|"yearly"|"weekly"|"once", "keep": boolean}], "steps": boolean}
+        {"title": string, "what": string, "items": [{"kind": "task"|"bill"|"note", "text": string, "due": "YYYY-MM-DD" or null, "time": "HH:MM" or null, "amount": "12.34" or null, "repeat": "monthly"|"yearly"|"weekly"|"once", "keep": boolean}], "steps": boolean, "receipt": {"shop": string, "amount": "12.34", "date": "YYYY-MM-DD"} or null}
         - title: a few words like "Looks like a bill", "5 tasks found", "Looks like a booking".
         - what: what the photo is, e.g. "Council Tax letter", "Handwritten list".
         - A letter or invoice with money to pay: one "bill" (text is the payee, e.g. "Council Tax"; due the pay-by date), plus a "task" to pay it due the day before (keep true), and any other useful follow-up as a task with keep false.
-        - A receipt: one "note" summarising shop, total and date (keep true).
+        - A receipt: one "note" summarising shop, total and date (keep true), and fill "receipt" with the shop, total paid and date (otherwise receipt is null).
         - A list, whiteboard or notes: one "task" per line. Crossed-out lines get keep false. Set "steps" true when they clearly belong to one job.
         - A booking, appointment or chat with a date: a "task" with due and time.
         - Anything else worth keeping: one "note".
@@ -73,6 +73,12 @@ object Snap {
         return SnapResult(
             o.optString("title").trim().ifEmpty { if (items.isEmpty()) "Nothing to save" else "Found ${items.size}" },
             o.optString("what").trim(), items, o.optBoolean("steps", false),
+            o.optJSONObject("receipt")?.let { r ->
+                val amount = str(r, "amount")?.replace("£", "")?.replace(",", "")?.let { runCatching { BigDecimal(it) }.getOrNull() }
+                val shop = str(r, "shop")
+                if (amount == null || shop == null) null
+                else Spend.receipt(str(r, "date")?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() } ?: LocalDate.now(), shop, amount, SpendSource.SNAP)
+            },
         )
     }
 
@@ -103,6 +109,9 @@ object Snap {
      * Saves the kept items: bills and tasks to Quick Task (a timed one gets its time), notes to the inbox note under a
      * "📷 Snap" line. With [steps], the tasks become steps under one task named [parent]. Returns how many were saved.
      */
+    /** A snapped receipt goes into this month's spend (Spend from receipts). True when added. */
+    fun saveReceipt(v: Vault, r: SnapResult): Boolean = r.receipt?.let { Spend.add(v, it) } ?: false
+
     fun save(w: VaultWriter, r: SnapResult, steps: Boolean, parent: String, today: LocalDate = LocalDate.now()): Int {
         val kept = r.kept
         var n = 0

@@ -232,6 +232,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             { QuietRow("🗓", "Weekly review", "›", onClick = onOpenWeekly) },
         ))
         HealthSettings(prefs, vault)
+        InboxSettings(vault)
 
         SectionLabel("Tasks")
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
