@@ -13,13 +13,14 @@ object Briefing {
 
     fun system(name: String = AssistantName.DEFAULT) = """You are ${AssistantName.clean(name)}, reading Tom his morning briefing out loud.
 Write 5–8 short lines, one idea per line, each one or two spoken sentences. About 250 words in all.
-Order: weather (what to wear or take), first event and when to leave, the next step, anything due or late, bills, one encouraging line to finish.
+Always open with the weather: the high and low, the rain story and what to wear or take. If there is no weather line, skip it.
+Then: first event and when to leave, the next step, anything due or late, bills, one encouraging line to finish.
 Plain spoken UK English: no emoji, no markdown, no lists, say times like "nine forty". Reply with the lines only, one per line."""
 
     /** The facts Claude writes from: the slip's content, plus the Next step and anything else worth a line. */
     fun prompt(s: SlipContent, next: String?, extra: List<String> = emptyList()): String = buildString {
         append("Today is ${s.date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }} ${Slip.shortDate(s.date)}.\n")
-        s.weather?.let { append("Weather: ${it.headline}\n") }
+        s.weather?.let { append("${weatherFacts(it)}\n") }
         (s.allDay + s.events).forEach { e -> append("Event: ${listOfNotNull(e.start, e.title, e.place).joinToString(" ")}\n") }
         next?.let { append("Next step: $it\n") }
         s.overdue.forEach { append("Late: ${it.text}\n") }
@@ -28,19 +29,44 @@ Plain spoken UK English: no emoji, no markdown, no lists, say times like "nine f
         extra.forEach { append("$it\n") }
     }
 
+    /** The whole forecast for Claude, not just the headline: "Weather: 15° high, 7° low. Wet morning… Tip: … Morning 9° 60% rain…". */
+    fun weatherFacts(w: WeatherSummary): String = buildString {
+        append("Weather: ${w.high}° high, ${w.low}° low. ${w.headline}.")
+        if (w.detail.isNotBlank()) append(" ${w.detail.trim().removeSuffix(".")}.")
+        w.tip?.takeIf { it.isNotBlank() }?.let { append(" Tip: ${it.trim()}") }
+        if (w.parts.isNotEmpty()) append(" " + w.parts.joinToString(", ") { "${it.name.lowercase()} ${it.temp}° ${it.rain}% rain" } + ".")
+    }
+
     fun lines(reply: String): List<String> = reply.replace("\r", "").split("\n")
         .map { it.trim().removePrefix("-").removePrefix("•").trim() }.filter { it.isNotEmpty() }.take(12)
 
-    /** Today's saved script, or null when there isn't one for [day]. */
-    fun cached(v: Vault, day: LocalDate): List<String>? {
+    /**
+     * Today's saved script, or null when there isn't one for [day]. With [needWeather], a script written before the
+     * forecast had loaded counts as missing, so the next play writes it again with the weather in.
+     */
+    fun cached(v: Vault, day: LocalDate, needWeather: Boolean = false): List<String>? {
         val t = v.read(PATH) ?: return null
         val ls = t.split("\n")
         if (Md.fmGet(ls, "date")?.trim() != day.toString()) return null
+        if (needWeather && Md.fmGet(ls, "weather")?.trim() == "false") return null
         return Md.fmBody(ls).map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
     }
 
-    fun save(v: Vault, day: LocalDate, lines: List<String>) {
-        val body = "---\ndate: $day\n---\n\n" + lines.joinToString("\n\n") + "\n"
+    /** True once today's briefing has been played to the end (on the phone or the PC), so the Deck hides it till tomorrow. */
+    fun heard(v: Vault, day: LocalDate): Boolean {
+        val ls = v.read(PATH)?.split("\n") ?: return false
+        return Md.fmGet(ls, "date")?.trim() == day.toString() && Md.fmGet(ls, "heard")?.trim() == "true"
+    }
+
+    fun markHeard(v: Vault, day: LocalDate) {
+        val ls = v.read(PATH)?.split("\n")?.toMutableList() ?: return
+        if (Md.fmGet(ls, "date")?.trim() != day.toString()) return
+        Md.fmSet(ls, "heard", "true")
+        VaultIo.write(v, PATH, ls.joinToString("\n"))
+    }
+
+    fun save(v: Vault, day: LocalDate, lines: List<String>, weather: Boolean = true) {
+        val body = "---\ndate: $day\nweather: $weather\n---\n\n" + lines.joinToString("\n\n") + "\n"
         if (v.entry(PATH) == null) { v.mkdirs(FlightNotes.DIR); VaultIo.write(v, v.create(FlightNotes.DIR, "Briefing", "md"), body) }
         else VaultIo.write(v, PATH, body)
     }

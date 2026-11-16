@@ -403,7 +403,7 @@ fun DeckPane(state: AppState) {
                     color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
             }
-            if (hasClaude(state)) BriefingButton(state) {
+            if (hasClaude(state)) BriefingButton(state, hasWeather = weather != null) {
                 uk.tomlowndes.capture.Briefing.prompt(
                     uk.tomlowndes.capture.Slip.build(today, data.tasks, data.events, weather, uk.tomlowndes.capture.SlipOptions(), today),
                     next?.let { TaskViews.plainText(it) },

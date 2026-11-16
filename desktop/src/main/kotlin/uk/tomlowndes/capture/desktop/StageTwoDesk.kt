@@ -335,7 +335,8 @@ internal object BriefingVoice {
     private var job: Job? = null
     private var proc: Process? = null
 
-    fun play(state: AppState, lines: List<String>, from: Int = 0) {
+    /** [onEnd] runs when the last line has been read (not when stopped). */
+    fun play(state: AppState, lines: List<String>, from: Int = 0, onEnd: () -> Unit = {}) {
         stop()
         job = state.scope.launch {
             for (i in from until lines.size) {
@@ -352,32 +353,46 @@ internal object BriefingVoice {
                 if (line != i) return@launch
             }
             line = -1
+            onEnd()
         }
     }
 
     fun stop() { line = -1; job?.cancel(); job = null; proc?.destroy(); proc = null }
 }
 
-/** ▶ Briefing on the Deck header: today's script (shared with the phone), read by the Windows voice. */
+/**
+ * ▶ Briefing on the Deck header: today's script (shared with the phone), read by the Windows voice. Hidden till
+ * tomorrow once it has been played to the end here or on the phone. [hasWeather]: rewrite a script made without it.
+ */
 @Composable
-internal fun BriefingButton(state: AppState, facts: () -> String) {
+internal fun BriefingButton(state: AppState, hasWeather: Boolean, facts: () -> String) {
     val scope = rememberCoroutineScope()
     var lines by remember { mutableStateOf<List<String>?>(null) }
     var busy by remember { mutableStateOf(false) }
     var open by remember { mutableStateOf(false) }
+    var heard by remember { mutableStateOf(false) }
     val today = LocalDate.now()
-    LaunchedEffect(state.vault, state.changes) { state.vault?.let { v -> lines = state.io { Briefing.cached(v, today) } } }
+    LaunchedEffect(state.vault, state.changes, hasWeather) {
+        state.vault?.let { v -> heard = state.io { Briefing.heard(v, today) } == true; lines = state.io { Briefing.cached(v, today, needWeather = hasWeather) } }
+    }
+    fun ended() {
+        val v = state.vault ?: return
+        open = false; heard = true
+        scope.launch { state.io { Briefing.markHeard(v, today) } }
+    }
+    fun play(ls: List<String>, from: Int = 0) = BriefingVoice.play(state, ls, from) { ended() }
     fun start() {
-        lines?.let { BriefingVoice.play(state, it); open = true; return }
+        lines?.let { play(it); open = true; return }
         val v = state.vault ?: return
         busy = true
         scope.launch {
-            val ls = state.io("Couldn't write the briefing") { Briefing.lines(deskAsk(state, facts(), Briefing.system(state.prefs.assistantName))).also { Briefing.save(v, today, it) } }
+            val ls = state.io("Couldn't write the briefing") { Briefing.lines(deskAsk(state, facts(), Briefing.system(state.prefs.assistantName))).also { Briefing.save(v, today, it, weather = hasWeather) } }
             busy = false
-            if (ls != null) { lines = ls; BriefingVoice.play(state, ls); open = true }
+            if (ls != null) { lines = ls; play(ls); open = true }
         }
     }
     val playing = BriefingVoice.line >= 0
+    if (heard && !playing) return
     Box {
         Text(if (busy) "…" else if (playing) "❚❚ Briefing" else "▶ Briefing", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary,
             modifier = Modifier.padding(top = 4.dp).clip(CircleShape).border(1.dp, Primary.copy(alpha = .5f), CircleShape).hand()
@@ -386,7 +401,7 @@ internal fun BriefingButton(state: AppState, facts: () -> String) {
             lines?.forEachIndexed { i, l ->
                 androidx.compose.material3.DropdownMenuItem(
                     { Text((if (i == BriefingVoice.line) "▸ " else "○ ") + l, fontSize = 13.sp, color = if (i == BriefingVoice.line) Primary else TextMain, modifier = Modifier.widthIn(max = 460.dp)) },
-                    { BriefingVoice.play(state, lines!!, i) }
+                    { play(lines!!, i) }
                 )
             }
             Box(Modifier.height(4.dp))

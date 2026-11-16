@@ -528,8 +528,8 @@ fun DeckScreen(
                 snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed
             }
         }
-        // Morning audio briefing (growth-v1): from 6am until noon.
-        if (claudeKey(ctx, prefs) != null && LocalTime.now().hour in Briefing.READY_HOUR until 12) BriefingCard(vault, prefs) {
+        // Morning audio briefing (growth-v1): from 6am until noon, hidden once heard.
+        if (claudeKey(ctx, prefs) != null && LocalTime.now().hour in Briefing.READY_HOUR until 12) BriefingCard(vault, prefs, hasWeather = weather != null) {
             val events = CalendarSync.cached(ctx).flatMap { it.events }
             Briefing.prompt(Slip.build(today, data.tasks, events, weather, SlipOptions(), today, data.jobs), next?.let { TaskViews.plainText(it) },
                 listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }))
