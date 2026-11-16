@@ -62,8 +62,8 @@ jobs:
       - name: Build debug APK
         run: |
           ./gradlew --console=plain assembleDebug
-          name="VaultCapture-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
-          if [[ -n "$RELEASE_TAG" ]]; then name="VaultCapture-$RELEASE_TAG.apk"; fi
+          name="FlightDeck-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
+          if [[ -n "$RELEASE_TAG" ]]; then name="FlightDeck-$RELEASE_TAG.apk"; fi
           cp app/build/outputs/apk/debug/app-debug.apk "$name"
           echo "APK=$name" >> "$GITHUB_ENV"
 
@@ -86,7 +86,7 @@ jobs:
           else
             # A tag that isn't a version (e.g. a test build) goes up as a pre-release, so v* stays Latest.
             if [[ "$RELEASE_TAG" == v* ]]; then
-              gh release create "$RELEASE_TAG" "$APK" --title "Vault Capture $RELEASE_TAG" --generate-notes
+              gh release create "$RELEASE_TAG" "$APK" --title "Flight Deck $RELEASE_TAG" --generate-notes
             else
               gh release create "$RELEASE_TAG" "$APK" --title "Test build $RELEASE_TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
                 --notes "Test build from ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Not a release; safe to delete."
@@ -112,8 +112,8 @@ jobs:
         shell: bash
         run: |
           ./gradlew --console=plain :desktop:packageMsi
-          name="VaultCapture-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.msi"
-          if [[ -n "$RELEASE_TAG" ]]; then name="VaultCapture-$RELEASE_TAG.msi"; fi
+          name="FlightDeck-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.msi"
+          if [[ -n "$RELEASE_TAG" ]]; then name="FlightDeck-$RELEASE_TAG.msi"; fi
           cp desktop/build/compose/binaries/main/msi/*.msi "$name"
           echo "MSI=$name" >> "$GITHUB_ENV"
 
