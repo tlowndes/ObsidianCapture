@@ -278,7 +278,11 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var errands by remember { mutableStateOf<List<Errand>?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var nudges by remember { mutableStateOf(ErrandNudges.on(ctx) && ErrandNudges.canRun(ctx)) }
-    var adding by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<PlaceDraft?>(null) }
+    var follow by remember { mutableStateOf(false) }
+    var near by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
@@ -299,14 +303,39 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         else if (Build.VERSION.SDK_INT >= 29 && !ErrandNudges.canRun(ctx)) background.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         else { nudges = true; ErrandNudges.set(ctx, true) }
     }
-    fun addHere(tag: String) {
+    val hasFine = { ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED }
+    val known = { (places.map { it.tag } + errands.orEmpty().map { it.tag }).distinct() }
+    // Somewhere to start the map before we know where you are: your first place, else the middle of the UK.
+    fun blank() = (places.firstOrNull()?.let { it.lat to it.lon } ?: (54.0 to -2.0)).let { (la, lo) -> PlaceDraft(null, "", "", la, lo) }
+    fun openMap() { searching = false; adding = false; follow = hasFine(); editing = blank() }
+    val here = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) openMap() else scope.launch { snack.showSnackbar("\"Here\" needs precise location") }
+    }
+    fun save(oldTag: String?, p: Place) {
         val uri = vault ?: return
         scope.launch {
-            val at = ErrandNudges.fix(ctx) ?: run { snack.showSnackbar("Couldn't get your location"); return@launch }
-            val label = tag.removePrefix("@").replaceFirstChar { it.uppercase() }
-            withContext(Dispatchers.IO) { runCatching { Errands.upsert(appVault(ctx, uri), Place(Errands.cleanTag(tag), label, at.first, at.second)) } }
-            refresh++; snack.showSnackbar("Saved ${Errands.cleanTag(tag)} here")
+            val r = withContext(Dispatchers.IO) { runCatching { Errands.replace(appVault(ctx, uri), oldTag, p) } }
+            r.onSuccess { editing = null; refresh++; snack.showSnackbar("Saved ${p.tag} · ${p.label}") }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
         }
+    }
+    if (searching) {
+        LaunchedEffect(Unit) { if (hasFine()) near = ErrandNudges.fix(ctx) }
+        PlaceSearchScreen(near, onPick = { h ->
+            searching = false; follow = false
+            editing = PlaceDraft(null, h.name, PlaceSearch.tagFor(h.name, known()), h.lat, h.lon)
+        }, onMap = { openMap() }, onBack = { searching = false })
+        return
+    }
+    editing?.let { d -> androidx.compose.runtime.key(d) {
+        PlaceEditorScreen(d, places, uses = { t -> errands?.firstOrNull { it.tag == t }?.tasks?.size ?: 0 },
+            onSave = { save(d.original?.tag, it) },
+            onRemove = d.original?.let { o -> {
+                val uri = vault
+                if (uri != null) scope.launch { withContext(Dispatchers.IO) { runCatching { Errands.remove(appVault(ctx, uri), o.tag) } }; editing = null; refresh++; snack.showSnackbar("Removed ${o.tag}") }
+            } },
+            onCancel = { editing = null }, locate = { if (hasFine()) ErrandNudges.fix(ctx) else null }, follow = follow)
+        }
+        return
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         BackTitle("Errands", errands?.let { "${it.sumOf { e -> e.items.size }} to do at ${it.size} places" }, onBack)
@@ -331,20 +360,16 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         GroupLabel("Places")
         ListCard(Modifier.padding(top = 6.dp)) {
             Column {
-                if (places.isEmpty()) Text("No places yet. Stand in the shop and add it with \"here\".", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(14.dp))
+                if (places.isEmpty()) Text("No places yet. Search for a shop, pick it on the map, or add where you are.", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(14.dp))
                 places.forEachIndexed { i, p ->
                     if (i > 0) HorizontalDivider(color = Outline)
-                    QuietRow("📍", "${p.tag} · ${p.label}", "${p.radius} m · remove", onClick = {
-                        val uri = vault ?: return@QuietRow
-                        scope.launch { withContext(Dispatchers.IO) { runCatching { Errands.remove(appVault(ctx, uri), p.tag) } }; refresh++ }
+                    QuietRow("📍", "${p.tag} · ${p.label}", "${p.radius} m · edit", onClick = {
+                        follow = false; editing = PlaceDraft(p, p.label, p.tag, p.lat, p.lon, p.radius)
                     })
                 }
             }
         }
-        Text("＋ Add place here", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable {
-            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) fine.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-            else adding = ""
-        }.padding(vertical = 14.dp))
+        Text("＋ Add place", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable { adding = true }.padding(vertical = 14.dp))
         DeckCard {
             Box(Modifier.padding(horizontal = 14.dp)) {
                 SettingRow("Nudge me when I arrive", "Once per visit · no location history kept") {
@@ -359,7 +384,12 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         }
         Text("Shopping list items go under ${ErrandNudges.shopTag(ctx)}. Windows shows this list but doesn't nudge.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(vertical = 14.dp))
     }
-    adding?.let { AskText("Name this place (its @tag)", "@tesco") { s -> adding = null; s?.let { addHere(it) } } }
+    if (adding) AddPlaceSheet(
+        onSearch = { adding = false; searching = true },
+        onMap = { openMap() },
+        onHere = { adding = false; if (hasFine()) openMap() else here.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+        onDismiss = { adding = false },
+    )
 }
 
 // ---- Meal plan the week (meals-spend-v1) ----

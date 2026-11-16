@@ -35,9 +35,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.Errand
 import uk.tomlowndes.capture.Errands
+import uk.tomlowndes.capture.Place
+import uk.tomlowndes.capture.PlaceHit
+import uk.tomlowndes.capture.PlaceSearch
 import uk.tomlowndes.capture.MealDay
 import uk.tomlowndes.capture.MealPlan
 import uk.tomlowndes.capture.People
@@ -145,7 +149,7 @@ internal fun ErrandsList(state: AppState) {
     }
     val es = errands ?: return
     H1("Errands", 22)
-    Sub("Add @tesco or @b&q to any task. Places and nudges are set up on the phone.", Modifier.padding(bottom = 10.dp))
+    Sub("Add @tesco or @b&q to any task. Nudges are set up on the phone.", Modifier.padding(bottom = 10.dp))
     if (es.isEmpty()) Text("Nothing tagged with a place yet.", fontSize = 13.sp, color = Muted)
     Column(Modifier.widthIn(max = 720.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         es.forEach { e ->
@@ -158,6 +162,88 @@ internal fun ErrandsList(state: AppState) {
                 Text(Errands.summary(e, 8), fontSize = 12.5.sp, color = Muted)
             }
         }
+    }
+    PlacesDesk(state, es)
+}
+
+private fun placeGet(url: String): String {
+    val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    c.connectTimeout = 8_000; c.readTimeout = 10_000
+    c.setRequestProperty("User-Agent", "FlightDeck/2.0 (personal Obsidian app)") // OpenStreetMap asks every app to say who it is
+    try { return c.inputStream.bufferedReader().readText() } finally { c.disconnect() }
+}
+
+/** Places on Windows (errand-places-v1): search only, no map. Results sort from your weather town. */
+@Composable
+private fun PlacesDesk(state: AppState, es: List<Errand>) {
+    val scope = rememberCoroutineScope()
+    var places by remember { mutableStateOf<List<Place>>(emptyList()) }
+    var q by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<PlaceHit>?>(emptyList()) }
+    var pick by remember { mutableStateOf<PlaceHit?>(null) }
+    var tag by remember { mutableStateOf("") }
+    var radius by remember { mutableStateOf(1) }
+    val near = state.prefs.weatherLatLon
+    LaunchedEffect(state.vault, state.changes) { val v = state.vault ?: return@LaunchedEffect; places = state.io("Couldn't read places") { Errands.places(v) }.orEmpty() }
+    LaunchedEffect(q) {
+        if (q.trim().length < PlaceSearch.MIN_CHARS) { hits = emptyList(); return@LaunchedEffect }
+        delay(400)
+        hits = state.io("Couldn't search") {
+            val raw = runCatching { PlaceSearch.parsePhoton(placeGet(PlaceSearch.photonUrl(q, near))) }.getOrNull()
+                ?: PlaceSearch.parseNominatim(placeGet(PlaceSearch.nominatimUrl(q)))
+            PlaceSearch.sorted(raw, near)
+        }
+    }
+    H1("Places", 17)
+    Column(Modifier.widthIn(max = 720.dp).padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        places.forEach { p ->
+            Box16(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📍 ${p.tag} · ${p.label}", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("${p.radius} m", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted)
+                    TextAction("Remove", Warn) {
+                        val v = state.vault ?: return@TextAction
+                        scope.launch { state.io("Couldn't remove") { Errands.remove(v, p.tag) }; state.changed() }
+                    }
+                }
+            }
+        }
+        Field(q, { q = it; pick = null }, Modifier.fillMaxWidth(), placeholder = "🔍 Add a place: shop name, street or postcode")
+        val p = pick
+        if (p != null) {
+            Box16(Modifier.fillMaxWidth()) {
+                Text(p.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                if (p.address.isNotEmpty()) Text(p.address, fontSize = 12.sp, color = Muted)
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Field(tag, { tag = it }, Modifier.width(160.dp), placeholder = "@tag")
+                    Pill(PlaceSearch.RADII.map { "$it m" }, radius, Modifier.width(300.dp)) { radius = it }
+                    val clean = Errands.cleanTag(tag)
+                    PrimaryButton("Save place", enabled = clean.length > 1 && clean[1].isLetter()) {
+                        val v = state.vault ?: return@PrimaryButton
+                        scope.launch {
+                            state.io("Couldn't save") { Errands.upsert(v, Place(clean, p.name, p.lat, p.lon, PlaceSearch.RADII[radius])) } ?: return@launch
+                            state.say("Saved $clean · ${p.name}"); pick = null; q = ""; state.changed()
+                        }
+                    }
+                }
+                val n = es.firstOrNull { it.tag == Errands.cleanTag(tag) }?.tasks?.size ?: 0
+                if (n > 0) Text("$n task${if (n == 1) "" else "s"} use this", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
+            }
+        } else hits.let { list ->
+            if (list == null) Text("Couldn't search just now.", fontSize = 13.sp, color = Muted)
+            else list.forEach { h ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                    pick = h; radius = 1; tag = PlaceSearch.tagFor(h.name, (places.map { it.tag } + es.map { it.tag }).distinct())
+                }.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(h.name, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (h.address.isNotEmpty()) Text(h.address, fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    h.metres?.let { Text(PlaceSearch.distance(it), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted) }
+                }
+            }
+        }
+        Text(PlaceSearch.ATTRIBUTION + ". Pick on a map on the phone.", fontSize = 11.sp, color = Muted, modifier = Modifier.padding(bottom = 12.dp))
     }
 }
 

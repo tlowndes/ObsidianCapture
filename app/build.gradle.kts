@@ -48,6 +48,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.2.0")
     // Sleep and steps from Health Connect (body-people-errands-v1).
     implementation("androidx.health.connect:connect-client:1.1.0")
+    // Map for picking errand places (errand-places-v1): OpenStreetMap tiles, no API key.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
