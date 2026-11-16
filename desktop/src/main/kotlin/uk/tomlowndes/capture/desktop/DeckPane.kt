@@ -414,6 +414,7 @@ fun DeckPane(state: AppState) {
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }
         UpdateBanner(state)
+        CapBannerDesk(state)
         // Talk me through it (wellbeing-v1): a task that has waited 3+ days.
         if (hasClaude(state)) uk.tomlowndes.capture.TalkThrough.stuck(data.tasks, today, uk.tomlowndes.capture.TalkThrough.readSnoozed(snoozed))?.let { t ->
             StuckNudgeDesk(t, uk.tomlowndes.capture.TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) {

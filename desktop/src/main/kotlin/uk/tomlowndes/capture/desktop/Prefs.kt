@@ -46,6 +46,16 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var brainSpend: uk.tomlowndes.capture.PhoneBrain.Spend
         get() = uk.tomlowndes.capture.PhoneBrain.Spend(str("brain_month", ""), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
         set(v) { p.put("brain_month", v.month); p.putLong("brain_micro_usd", v.microUsd); p.putInt("brain_answers", v.answers); p.flush() }
+    /** This month's Claude spend by feature (ClaudeCap ledger). */
+    var spendByFeature: String
+        get() = str("spend_by_feature", "")
+        set(v) { p.put("spend_by_feature", v); p.flush() }
+    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
+    fun spend(feature: String, usd: Double) {
+        brainSpend = brainSpend.add(usd)
+        spendByFeature = uk.tomlowndes.capture.ClaudeCap.added(spendByFeature, feature, usd)
+        uk.tomlowndes.capture.ClaudeCap.ownUsd = uk.tomlowndes.capture.ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
+    }
 
     /** Steps open under their task (true) or in a side panel (false). */
     var subtasksInline: Boolean

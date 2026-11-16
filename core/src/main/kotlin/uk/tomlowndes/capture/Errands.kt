@@ -53,7 +53,7 @@ object Errands {
         val tagsAll = (byTag.keys + (if (shopping.isNotEmpty()) listOf(shopTag) else emptyList())).distinct()
         return tagsAll.map { tag ->
             val ts = byTag[tag].orEmpty()
-            val items = ts.map { TaskViews.plainText(it).replace(TAG, "").replace(Regex("\\s+"), " ").trim() } + (if (tag == shopTag) shopping else emptyList())
+            val items = ts.map { TaskViews.plainText(it).replace(TAG, "").replace(Regex("\\s+"), " ").trim() } + (if (tag == shopTag) shopping.map { SharedList.item(it).let { i -> if (i.partner) "${i.text} · partner" else i.text } } else emptyList())
             Errand(places.firstOrNull { it.tag == tag }, tag, items, ts)
         }.sortedWith(compareBy<Errand> { it.place == null }.thenByDescending { it.items.size })
     }

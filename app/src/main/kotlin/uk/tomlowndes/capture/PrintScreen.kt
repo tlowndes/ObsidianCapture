@@ -212,7 +212,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 val reply = when {
                     jarvisDemo -> null
                     api -> PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.").also {
-                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
+                        prefs.spend("Printing", PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
                     }.reply
                     else -> Jarvis.sendText(jarvisAddress, jarvisToken, prompt, "jarvis").reply
                 }

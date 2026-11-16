@@ -120,7 +120,7 @@ fun SnapScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScanPag
                     jpeg = bytes
                     val tags = listOf("#work", "#personal")
                     val d = PhoneBrain.vision(k, Snap.system(LocalDate.now(), mode, tags), Base64.encodeToString(bytes, Base64.NO_WRAP), "image/jpeg", Snap.PROMPT)
-                    prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                    prefs.spend("Snap", PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
                     Snap.parse(d.reply) ?: error("Couldn't make sense of that one")
                 }
             }

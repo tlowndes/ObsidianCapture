@@ -510,6 +510,7 @@ fun DeckScreen(
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
         UpdateBanner()
+        CapBanner(prefs, vault, refresh)
         ServerCopyChip(onClick = onOpenSettings)
         NowLine(nowItems, nowIdx) { nowIdx++ }
 

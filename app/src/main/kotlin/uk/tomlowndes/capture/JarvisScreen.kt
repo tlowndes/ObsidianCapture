@@ -400,7 +400,7 @@ fun JarvisScreen(
             result.onSuccess { a ->
                 pendingText = null
                 storeSucceed(w.id, t, chatId, spoken)
-                prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(a.model, a.inTok, a.outTok))
+                prefs.spend("Jarvis", PhoneBrain.costUsd(a.model, a.inTok, a.outTok))
                 answered(Jarvis.Reply(t, a.text, null, sorted = a.sorted), null, w, t, spoken)
             }.onFailure { e ->
                 pendingText = t

@@ -187,6 +187,7 @@ object PhoneBrain {
     // ---- Calls ------------------------------------------------------------------------------------------------
 
     private fun client(key: String, seconds: Long): AnthropicClient {
+        ClaudeCap.check()
         val d = Duration.ofSeconds(seconds)
         val timeout = Timeout.builder().connect(Duration.ofSeconds(10)).read(d).write(Duration.ofSeconds(30)).request(d).build()
         // No automatic retry: a retry is the phone queue's job, later, and only once at a time.

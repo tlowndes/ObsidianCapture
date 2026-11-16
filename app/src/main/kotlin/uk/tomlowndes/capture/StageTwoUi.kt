@@ -65,7 +65,7 @@ internal fun ask(ctx: Context, prefs: AppPrefs, user: String, system: String, cl
     val key = claudeKey(ctx, prefs) ?: error("Turn on Claude from the phone in Settings")
     val model = PhoneBrain.model(clever)
     val d = PhoneBrain.complete(key, user, system, model = model, maxTokens = maxTokens, seconds = if (clever) 120 else PhoneBrain.CHAT_TIMEOUT_S)
-    prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(model, d.inTok, d.outTok))
+    prefs.spend("Helpers", PhoneBrain.costUsd(model, d.inTok, d.outTok))
     return d.reply
 }
 
@@ -135,7 +135,7 @@ internal fun TalkSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Snackba
             // The opener is ours, so Claude sees it as context in the first user turn.
             val sent = listOf(PhoneBrain.Turn(true, "(You asked: ${TalkThrough.opener(name)})")) + turns.drop(1)
             val r = withContext(Dispatchers.IO) {
-                runCatching { PhoneBrain.converse(key, TalkThrough.system(name, days, who), sent).also { prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok)) } }
+                runCatching { PhoneBrain.converse(key, TalkThrough.system(name, days, who), sent).also { prefs.spend("Helpers", PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok)) } }
             }
             busy = false
             r.onSuccess { d -> turns.add(PhoneBrain.Turn(false, TalkThrough.visible(d.reply))); TalkThrough.steps(d.reply)?.let { steps = it } }

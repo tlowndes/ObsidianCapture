@@ -302,6 +302,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var brainSpend: PhoneBrain.Spend
         get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
         set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
+    /** This month's Claude spend by feature (ClaudeCap ledger). */
+    var spendByFeature: String
+        get() = p.getString("spend_by_feature", "").orEmpty()
+        set(v) { p.edit().putString("spend_by_feature", v).apply() }
+    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
+    fun spend(feature: String, usd: Double) {
+        brainSpend = brainSpend.add(usd)
+        spendByFeature = ClaudeCap.added(spendByFeature, feature, usd)
+        ClaudeCap.ownUsd = ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
+    }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
