@@ -148,6 +148,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         set(v) { p.edit().putBoolean("weather_strip", v).apply() }
 
     /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
+    /** Talk me through it: tasks hidden with "Not today", as TalkThrough keys with their until dates. */
+    var talkSnoozed: String?
+        get() = p.getString("talk_snoozed", null)
+        set(v) { p.edit().putString("talk_snoozed", v).apply() }
+
     var laterToday: Set<String>
         get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("later", null).orEmpty() else emptySet()
@@ -250,6 +255,26 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
+    /** Sleep and steps (body-people-errands-v1): read from Health Connect, step goal, and easy day after a short night. */
+    var healthOn: Boolean
+        get() = p.getBoolean("health_on", false)
+        set(v) { p.edit().putBoolean("health_on", v).apply() }
+    var stepGoal: Int
+        get() = p.getInt("step_goal", 7000)
+        set(v) { p.edit().putInt("step_goal", v).apply() }
+    var easyAfterShort: Boolean
+        get() = p.getBoolean("easy_after_short", true)
+        set(v) { p.edit().putBoolean("easy_after_short", v).apply() }
+    /** What helps you: the month whose Deck card was closed with ✕. */
+    var helpsClosed: String?
+        get() = p.getString("helps_closed", null)
+        set(v) { p.edit().putString("helps_closed", v).apply() }
+
+    /** People: the day the birthday gift tasks were last checked. */
+    var giftsCheckedOn: String?
+        get() = p.getString("gifts_checked_on", null)
+        set(v) { p.edit().putString("gifts_checked_on", v).apply() }
+
     var phoneBrain: Boolean
         get() = p.getBoolean("phone_brain", false)
         set(v) { p.edit().putBoolean("phone_brain", v).apply() }
@@ -277,6 +302,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var brainSpend: PhoneBrain.Spend
         get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
         set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
+    /** This month's Claude spend by feature (ClaudeCap ledger). */
+    var spendByFeature: String
+        get() = p.getString("spend_by_feature", "").orEmpty()
+        set(v) { p.edit().putString("spend_by_feature", v).apply() }
+    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
+    fun spend(feature: String, usd: Double) {
+        brainSpend = brainSpend.add(usd)
+        spendByFeature = ClaudeCap.added(spendByFeature, feature, usd)
+        ClaudeCap.ownUsd = ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
+    }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }

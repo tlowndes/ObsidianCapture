@@ -69,12 +69,12 @@ object DesktopJarvis {
             else -> null
         }
         if (direct != null) {
-            p.brainSpend = p.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
+            p.spend("Jarvis", PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
             return Jarvis.Reply(text, direct.reply, null, sorted = direct.sorted)
         }
         val turns = PhoneBrain.history(history + PhoneBrain.Turn(true, text))
         val a = PhoneBrain.chat(key, PhoneBrain.model(p.brainClever), turns, today, listOf("#work", "#personal"), who) {}
-        p.brainSpend = p.brainSpend.add(PhoneBrain.costUsd(a.model, a.inputTokens, a.outputTokens))
+        p.spend("Jarvis", PhoneBrain.costUsd(a.model, a.inputTokens, a.outputTokens))
         var reply = a.text.ifBlank { "Done." }
         for (h in a.handoffs) {
             reply += if (serverReady(p) && !Jarvis.isDemo(p.jarvisAddress)) {

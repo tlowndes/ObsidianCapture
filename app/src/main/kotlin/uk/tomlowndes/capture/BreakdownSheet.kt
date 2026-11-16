@@ -78,7 +78,7 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
                     val prompt = Breakdown.prompt(name, level)
                     val reply = if (api) {
                         val d = PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.")
-                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                        prefs.spend("Breakdown", PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
                         d.reply
                     } else Jarvis.sendText(address, token, prompt, "jarvis").reply
                     Breakdown.parse(reply)

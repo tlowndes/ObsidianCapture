@@ -36,6 +36,10 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.foundation.focusable
+import uk.tomlowndes.capture.SnapResult
+import java.awt.image.BufferedImage
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -124,6 +128,11 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     var chosenTags by remember { mutableStateOf<List<String>>(emptyList()) }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
     var known by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    // Snap anything (snap-anything-v1): an image pasted with Ctrl+V is read by Claude and shown as ticks.
+    var snapImg by remember { mutableStateOf<BufferedImage?>(null) }
+    var snap by remember { mutableStateOf<SnapResult?>(null) }
+    var snapFailed by remember { mutableStateOf<String?>(null) }
+    val snapFocus = remember { FocusRequester() }
     val today = LocalDate.now()
     val text = value.text.trim()
     val typedTags = if (link) emptyList() else Tags.inText(value.text)
@@ -136,7 +145,31 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     val (body, typed) = DateWords.split(text, today)
     // A repeating task needs a first date for the series to count from.
     val due = picked ?: typed ?: if (repeat != null) today else null
-    LaunchedEffect(side, link, jarvisMode) { resize(side != null && !link && !jarvisMode, !link && !jarvisMode) }
+    LaunchedEffect(side, link, jarvisMode, snapImg) {
+        if (snapImg != null) resize(false, true) else resize(side != null && !link && !jarvisMode, !link && !jarvisMode)
+    }
+
+    fun startSnap(img: BufferedImage) {
+        snapImg = img; snap = null; snapFailed = null
+        scope.launch {
+            delay(30); runCatching { snapFocus.requestFocus() }
+            withContext(Dispatchers.IO) { runCatching { readSnap(state, img) } }
+                .onSuccess { if (snapImg === img) snap = it }
+                .onFailure { if (snapImg === img) snapFailed = it.message ?: "Couldn't read the image" }
+        }
+    }
+
+    fun saveSnapNow() {
+        val r = snap ?: return
+        if (r.kept.isEmpty() || busy) return
+        busy = true
+        scope.launch {
+            val n = state.io("Couldn't save it") { saveSnap(state, r) }
+            close()
+            if (n != null) state.notify("Saved from the image", if (n == 1) "1 item saved" else "$n items saved")
+            state.changed()
+        }
+    }
 
     LaunchedEffect(state.vault) {
         val v = state.vault ?: return@LaunchedEffect
@@ -188,6 +221,10 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 val vault = state.vault!!
                 val got = preview?.takeIf { previewFor == text }
                 close()
+                // A recipe page (schema.org) goes to Recipes instead of Read later (home-life-v1).
+                state.io { saveRecipe(state, text, claude = false) }?.let { title ->
+                    state.notify("Saved recipe to Recipes", title); state.changed(); return@launch
+                }
                 val tags = chosenTags
                 val full = state.io("Couldn't save the link") { ReadLater.save(vault, text, null, got, tags) }
                 if (full != null) state.notify("Saved to Read later", (if (full) (got?.title ?: text) else "Saved the link only (couldn't fetch the page)") +
@@ -203,9 +240,19 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
     }
 
     val shape = RoundedCornerShape(18.dp)
-    Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxSize().padding(16.dp).onPreviewKeyEvent { e ->
+            if (e.type != KeyEventType.KeyDown || jarvisMode) return@onPreviewKeyEvent false
+            when {
+                e.isCtrlPressed && e.key == Key.V -> clipboardImage()?.let { startSnap(it); true } ?: false
+                snapImg != null && e.key == Key.Enter -> { saveSnapNow(); true }
+                else -> false
+            }
+        },
+        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top
+    ) {
         Column(
-            Modifier.width(628.dp).clip(shape).background(Popup).border(1.dp, Outline, shape).padding(18.dp)
+            Modifier.width(628.dp).clip(shape).background(Popup).border(1.dp, Outline, shape).focusRequester(snapFocus).focusable().padding(18.dp)
         ) {
             if (state.vault == null) {
                 Text("Pick your vault in Flight Deck first.", color = Muted)
@@ -215,6 +262,12 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
                 jarvisMode = it == 2; link = it == 1; if (!jarvisMode) focus.requestFocus()
             }
             if (jarvisMode) { QuickJarvis(state); return@Column }
+            if (snapImg != null) {
+                SnapPanel(state, snap, snapFailed, onChange = { snap = it }, onSave = ::saveSnapNow) {
+                    snapImg = null; snap = null; scope.launch { delay(50); focus.requestFocus() }
+                }
+                return@Column
+            }
             val fieldShape = RoundedCornerShape(14.dp)
             Row(
                 Modifier.fillMaxWidth().clip(fieldShape).background(Surface1).border(1.5.dp, Primary, fieldShape)
@@ -288,7 +341,7 @@ private fun QuickCapture(state: AppState, close: () -> Unit, resize: (side: Bool
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (link) "Saves the page as a full article note" else "Saves to ⚡ Quick Task · Tab switches to Link · Alt W / Alt P tag it",
+                    if (link) "Saves the page as a full article note (a recipe goes to Recipes)" else "Saves to ⚡ Quick Task · Tab switches to Link · Ctrl V pastes an image",
                     fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {

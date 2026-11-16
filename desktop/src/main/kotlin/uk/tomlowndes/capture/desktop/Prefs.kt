@@ -46,6 +46,16 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var brainSpend: uk.tomlowndes.capture.PhoneBrain.Spend
         get() = uk.tomlowndes.capture.PhoneBrain.Spend(str("brain_month", ""), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
         set(v) { p.put("brain_month", v.month); p.putLong("brain_micro_usd", v.microUsd); p.putInt("brain_answers", v.answers); p.flush() }
+    /** This month's Claude spend by feature (ClaudeCap ledger). */
+    var spendByFeature: String
+        get() = str("spend_by_feature", "")
+        set(v) { p.put("spend_by_feature", v); p.flush() }
+    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
+    fun spend(feature: String, usd: Double) {
+        brainSpend = brainSpend.add(usd)
+        spendByFeature = uk.tomlowndes.capture.ClaudeCap.added(spendByFeature, feature, usd)
+        uk.tomlowndes.capture.ClaudeCap.ownUsd = uk.tomlowndes.capture.ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
+    }
 
     /** Steps open under their task (true) or in a side panel (false). */
     var subtasksInline: Boolean
@@ -103,6 +113,20 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     }
 
     /** Next-step tasks put off with Later, by their line. Only today's count; tomorrow they come back. */
+    /** Talk me through it: tasks hidden with "Not today" (TalkThrough keys and until dates). */
+    var talkSnoozed: String?
+        get() = p.get("talk_snoozed", null)
+        set(v) { put("talk_snoozed", v) }
+
+    /** What helps you: the month (yyyy-mm) whose card was closed. */
+    var helpsClosed: String?
+        get() = p.get("helps_closed", null)
+        set(v) { put("helps_closed", v) }
+
+    var stepGoal: Int
+        get() = p.getInt("step_goal", 7000)
+        set(v) { p.putInt("step_goal", v); p.flush() }
+
     var laterToday: Set<String>
         get() = if (str("later_day", "") == java.time.LocalDate.now().toString()) str("later", "").split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
         set(v) { put("later_day", java.time.LocalDate.now().toString()); put("later", v.joinToString("\n")) }

@@ -56,15 +56,21 @@ internal fun statusColour(status: String): Color = when (status.lowercase()) {
     else -> Purple
 }
 
+/** A job link shared in, waiting for the Jobs screen to open it in the Save job sheet. */
+internal object JobInbox { @Volatile var pending: String? = null }
+
 /** Jobs: open applications by next date, closed ones underneath, + Add job. Reads the Job Hunt notes. */
 @Composable
-fun JobsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
+fun JobsScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var jobs by remember { mutableStateOf<List<Job>?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Job?>(null) }
+    var saving by remember { mutableStateOf(JobInbox.pending.also { JobInbox.pending = null }) }
+    var pasting by remember { mutableStateOf(false) }
+    var lettering by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
@@ -87,8 +93,9 @@ fun JobsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         val (open, closed) = Jobs.sorted(all)
         Text(
             "${open.size} open" + (Jobs.nextDate(all)?.let { " · next ${shortDate(it)}" } ?: ""),
-            fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(bottom = 12.dp)
+            fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Muted
         )
+        Text("This week " + JobCopilot.weekLine(all, LocalDate.now()), fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 12.dp))
         if (open.isNotEmpty()) ListCard {
             open.forEachIndexed { i, j ->
                 if (i > 0) HorizontalDivider(color = Outline)
@@ -105,7 +112,23 @@ fun JobsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 }
             }
         }
-        Text("＋ Add job", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable { adding = true }.padding(vertical = 10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("＋ Add job", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable { adding = true }.padding(vertical = 10.dp))
+            if (claudeKey(ctx, prefs) != null) Text("＋ Paste a job link", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable { pasting = true }.padding(vertical = 10.dp))
+        }
+    }
+
+    saving?.let { url -> JobSaveSheet(url, vault, prefs, snack) { p -> saving = null; if (p != null) { refresh++; scope.launch { snack.showSnackbar("Saved to Jobs") } } } }
+    lettering?.let { j -> LetterSheet(j, vault, prefs) { lettering = null } }
+    if (pasting) {
+        var link by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { pasting = false }, containerColor = Surface1,
+            title = { Text("Paste a job link") },
+            text = { OutlinedTextField(link, { link = it }, singleLine = true, colors = fieldColors(), placeholder = { Text("https://…") }) },
+            confirmButton = { TextButton(enabled = link.trim().startsWith("http"), onClick = { pasting = false; saving = link.trim() }) { Text("Read it", color = Primary) } },
+            dismissButton = { TextButton(onClick = { pasting = false }) { Text("Cancel", color = Muted) } }
+        )
     }
 
     if (adding) {
@@ -149,7 +172,12 @@ fun JobsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 }
             },
             confirmButton = { TextButton(onClick = { picking = true }) { Text(j.next?.let { "Next ${shortDate(it)}" } ?: "Next date", color = Primary) } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Close", color = Muted) } }
+            dismissButton = {
+                Row {
+                    if (claudeKey(ctx, prefs) != null) TextButton(onClick = { editing = null; lettering = j }) { Text("✉ Letter", color = Primary) }
+                    TextButton(onClick = { editing = null }) { Text("Close", color = Muted) }
+                }
+            }
         )
     }
 }
@@ -165,6 +193,7 @@ private fun JobRow(j: Job, onClick: () -> Unit) {
             Text(listOf(j.company, j.role).filter { it.isNotBlank() }.joinToString(" · "), fontSize = 13.5.sp, color = if (j.closed) Muted else TextMain)
             Text(j.status, fontSize = 12.sp, color = Muted)
         }
+        j.fit?.let { Text("$it", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = fitColour(it)) }
         j.next?.takeIf { !j.closed }?.let { DuePill(it) }
     }
 }

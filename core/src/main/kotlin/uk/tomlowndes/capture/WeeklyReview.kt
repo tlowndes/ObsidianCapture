@@ -21,6 +21,7 @@ data class Review(
 object WeeklyReview {
     private val DONE_LINE = Regex("^\\s*- \\[[xX]\\] (.*)$")
     private val DONE_DATE = Regex("✅\\s*(\\d{4}-\\d{2}-\\d{2})")
+    private val TASK_TAG = Regex("(^|\\s)#task(/|\\s|$)")
 
     /** Ticked `#task` lines in [lines] with a ✅ date on or after [since]. */
     fun doneIn(lines: List<String>, path: String, since: LocalDate): List<DoneTask> = lines.mapNotNull { l ->
@@ -40,6 +41,18 @@ object WeeklyReview {
             .filter { it.path == VaultTasks.QUICK_TASK || !VaultTasks.skipped(it.path, templates) }
             .flatMap { n -> runCatching { doneIn(VaultIo.read(v, n.path).split("\n"), n.path, since) }.getOrDefault(emptyList()) }
             .sortedByDescending { it.done }
+    }
+
+    /**
+     * Done tasks from the last 7 days out of [ticked] (the ticked lists the task scan already keeps), so the review
+     * and the check-in don't walk the vault again. Same rules as [done]: `#task` lines with a ✅ date.
+     */
+    fun doneFrom(ticked: List<TickedTask>, today: LocalDate): List<DoneTask> {
+        val since = today.minusDays(6)
+        return ticked.mapNotNull { t ->
+            val d = t.done ?: return@mapNotNull null
+            if (d.isBefore(since) || !TASK_TAG.containsMatchIn(t.raw)) null else DoneTask(t.text, d, t.path)
+        }.sortedByDescending { it.done }
     }
 
     /** Next Monday (tomorrow on a Sunday): where Move puts a carried-over task. */

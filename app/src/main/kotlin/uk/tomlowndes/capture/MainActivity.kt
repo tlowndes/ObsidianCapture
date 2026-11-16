@@ -2,6 +2,7 @@ package uk.tomlowndes.capture
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -50,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -72,7 +73,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent?.action == Intent.ACTION_SEND) {
+        if (intent?.action == Intent.ACTION_SEND && sharedImage(intent)) {
+            // An image goes to Snap anything (snap-anything-v1).
+        } else if (intent?.action == Intent.ACTION_SEND && sharedJob(intent)) {
+            // A job ad goes to the Job co-pilot (job-copilot-v1).
+        } else if (intent?.action == Intent.ACTION_SEND) {
             if (!toCapture(intent)) { handleShare(intent); return }
         } else readOpenRequest(intent)
         enableEdgeToEdge(
@@ -88,7 +93,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == Intent.ACTION_SEND && sharedImage(intent)) return
+        if (intent.action == Intent.ACTION_SEND && sharedJob(intent)) return
         if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /** A shared job ad (LinkedIn, Indeed…) opens Jobs with the Save job sheet, when Claude is on. */
+    private fun sharedJob(i: Intent): Boolean {
+        val url = ShareIntent.urlOf(i.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+        if (url.isBlank() || !JobCopilot.looksLikeJob(url) || claudeKey(this, prefs) == null) return false
+        JobInbox.pending = url
+        openRequest = Tab.VAULT to "jobs"
+        return true
+    }
+
+    /** A shared image opens Snap anything with it. Returns false when the share isn't an image. */
+    private fun sharedImage(i: Intent): Boolean {
+        if (i.type?.startsWith("image/") != true) return false
+        @Suppress("DEPRECATION")
+        val uri = (if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) else i.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            ?: return false
+        SnapInbox.pending = uri
+        openRequest = Tab.CAPTURE to "snap"
+        return true
     }
 
     /**
@@ -107,6 +134,7 @@ class MainActivity : ComponentActivity() {
     private fun readOpenRequest(i: Intent?) {
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
+        if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -132,6 +160,9 @@ class MainActivity : ComponentActivity() {
             val msg = when {
                 vault == null -> "Open Flight Deck once and pick your vault first"
                 url.isBlank() -> "Nothing to save"
+                // A recipe page (schema.org Recipe) is saved to Recipes instead (home-life-v1).
+                withContext(Dispatchers.IO) { runCatching { Recipes.fetch(url).first?.let { r -> Recipes.save(appVault(applicationContext, vault), r); r.title } }.getOrNull() } != null ->
+                    "Saved recipe to Recipes"
                 else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
                     .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
                         {
@@ -147,6 +178,9 @@ class MainActivity : ComponentActivity() {
 
 private fun subFor(slot: String?) = when (slot) {
     "focus" -> Sub.FOCUS
+    "snap" -> Sub.SNAP
+    "jobs" -> Sub.JOBS
+    "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
     else -> null
 }
@@ -233,7 +267,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (sub == Sub.JOBS) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            if (!hideNav) NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -245,10 +279,18 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
-                sub == Sub.JOBS -> JobsScreen(vault, snack) { sub = null }
+                sub == Sub.JOBS -> JobsScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.SCAN -> ScanScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.SNAP -> SnapScreen(vault, prefs, snack, onScanPage = { sub = Sub.SCAN }) { sub = null }
+                sub == Sub.CHORES -> ChoresScreen(vault, snack) { sub = null }
+                sub == Sub.LEARN -> LearnScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.INBOX -> InboxScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.PEOPLE -> PeopleScreen(vault, snack) { sub = null }
+                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack) { sub = null }
+                sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
+                sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PLAN -> PlanScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
@@ -261,7 +303,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
@@ -270,7 +312,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
-                    onOpenJobs = { sub = Sub.JOBS },
+                    onOpenJobs = { sub = Sub.JOBS }, onOpenRecipes = { sub = Sub.RECIPES },
                     onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }
                 )
                 tab == Tab.PROJECTS -> Column(Modifier.fillMaxSize()) {

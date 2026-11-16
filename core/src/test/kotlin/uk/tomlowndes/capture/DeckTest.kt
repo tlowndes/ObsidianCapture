@@ -62,7 +62,7 @@ class DeckTest {
     }
 
     @Test fun `cards reorder and switch off`() {
-        val l = DeckLayout().moved(9, 0).toggled(HomeCard.WEATHER)
+        val l = DeckLayout().let { it.moved(it.order.indexOf(HomeCard.JOBS), 0) }.toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
         assertEquals(HomeCard.values().size - 1, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
@@ -141,9 +141,9 @@ class DeckTest {
 
     @Test fun `phone sections put the agenda after the weather and they move apart`() {
         val l = DeckLayout()
-        assertEquals(listOf(DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(l))
+        assertEquals(listOf(DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.INBOX, DeckSection.TOP_TASKS, DeckSection.SPEND, DeckSection.MORE), DeckSection.inOrder(l))
         val agendaFirst = DeckSection.moved(l, DeckSection.AGENDA, DeckSection.WEATHER)
-        assertEquals(listOf(DeckSection.AGENDA, DeckSection.WEATHER, DeckSection.TOP_TASKS, DeckSection.MORE), DeckSection.inOrder(agendaFirst))
+        assertEquals(listOf(DeckSection.AGENDA, DeckSection.WEATHER, DeckSection.INBOX, DeckSection.TOP_TASKS, DeckSection.SPEND, DeckSection.MORE), DeckSection.inOrder(agendaFirst))
         assertEquals(true, agendaFirst.order.indexOf(HomeCard.TODAY) < agendaFirst.order.indexOf(HomeCard.WEATHER))
         val weatherLast = DeckSection.moved(l, DeckSection.WEATHER, null)
         assertEquals(DeckSection.AGENDA, DeckSection.inOrder(weatherLast).first())
@@ -151,7 +151,7 @@ class DeckTest {
         assertEquals(HomeCard.values().toSet(), weatherLast.order.toSet())
         assertEquals(HomeCard.values().size, weatherLast.order.size)
         val more = DeckSection.moved(l, DeckSection.MORE, DeckSection.WEATHER)
-        assertEquals(listOf(DeckSection.MORE, DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.TOP_TASKS), DeckSection.inOrder(more))
+        assertEquals(listOf(DeckSection.MORE, DeckSection.WEATHER, DeckSection.AGENDA, DeckSection.INBOX, DeckSection.TOP_TASKS, DeckSection.SPEND), DeckSection.inOrder(more))
     }
 
     @Test fun `a saved order gains the calendar straight after the weather and drops nothing`() {

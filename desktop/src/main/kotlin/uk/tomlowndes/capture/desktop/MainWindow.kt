@@ -61,6 +61,9 @@ fun MainWindow(state: AppState) {
                 Tab.ROUTINES -> RoutinesPane(state)
                 Tab.JOBS -> JobsPane(state)
                 Tab.JARVIS -> JarvisPane(state)
+                Tab.HOME -> HomePane(state)
+                Tab.INBOX -> InboxPane(state)
+                Tab.PEOPLE -> PeoplePane(state)
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
                 Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
@@ -115,9 +118,12 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.DECK, "◎", "Deck")
         NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
         NavItem(state, Tab.UPCOMING, "🗓", "Upcoming")
+        NavItem(state, Tab.INBOX, "✉", "Inbox") { if (state.inboxOpen > 0) Count(state.inboxOpen) }
         NavItem(state, Tab.JARVIS, "🎙", state.prefs.assistantName)
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
+        NavItem(state, Tab.HOME, "🏠", "Home")
+        NavItem(state, Tab.PEOPLE, "👥", "People")
         state.routine?.let { r ->
             NavItem(state, Tab.ROUTINES, "⏱", r.routine.name) { Text("${r.step + 1}/${r.routine.steps.size}", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         }

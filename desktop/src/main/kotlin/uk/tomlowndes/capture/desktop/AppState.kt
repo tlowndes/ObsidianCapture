@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS }
+enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS, HOME, INBOX, PEOPLE }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -71,6 +71,8 @@ class AppState(val prefs: DesktopPrefs) {
     var overdue by mutableIntStateOf(0)
     var activeProjects by mutableIntStateOf(0)
     var unread by mutableIntStateOf(0)
+    /** Emails that need Tom, from the box digest (Stage 4). */
+    var inboxOpen by mutableIntStateOf(0)
     /** Tags for the sidebar under Tasks (Work, Personal, then the most used), and the one the Tasks pane is filtered by. */
     var tagCounts by mutableStateOf<List<Pair<String, Int>>>(emptyList())
     var taskTag by mutableStateOf<String?>(null)

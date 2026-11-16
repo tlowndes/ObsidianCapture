@@ -187,6 +187,7 @@ object PhoneBrain {
     // ---- Calls ------------------------------------------------------------------------------------------------
 
     private fun client(key: String, seconds: Long): AnthropicClient {
+        ClaudeCap.check()
         val d = Duration.ofSeconds(seconds)
         val timeout = Timeout.builder().connect(Duration.ofSeconds(10)).read(d).write(Duration.ofSeconds(30)).request(d).build()
         // No automatic retry: a retry is the phone queue's job, later, and only once at a time.
@@ -490,11 +491,44 @@ using the same task and note shape as a ramble sort. Otherwise do not add JSON."
     }
 
     /** One plain answer, for Break it down, a print summary, or the day's brief. Blocking. */
-    fun complete(key: String, user: String, system: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+    fun complete(key: String, user: String, system: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST, maxTokens: Long = 2000L): Direct {
+        val params = MessageCreateParams.builder()
+            .model(model).maxTokens(maxTokens).system(system)
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .addUserMessage(user)
+            .build()
+        val c = client(key, seconds)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val text = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("").trim()
+        return Direct(text, null, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /** A short back-and-forth with no tools (Talk me through it): [turns] start with Tom's. Blocking. */
+    fun converse(key: String, system: String, turns: List<Turn>, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+        val params = MessageCreateParams.builder()
+            .model(model).maxTokens(1200L).system(system)
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .apply { history(turns, 20).forEach { if (it.mine) addUserMessage(it.text) else addAssistantMessage(it.text) } }
+            .build()
+        val c = client(key, seconds)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val text = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("").trim()
+        return Direct(text, null, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /**
+     * One answer about an image (snap-anything-v1): [base64] is the photo, [mediaType] "image/jpeg" or "image/png".
+     * Blocking.
+     */
+    fun vision(key: String, system: String, base64: String, mediaType: String, prompt: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+        val image = com.anthropic.models.messages.Base64ImageSource.builder().data(base64)
+            .mediaType(com.anthropic.models.messages.Base64ImageSource.MediaType.of(mediaType)).build()
         val params = MessageCreateParams.builder()
             .model(model).maxTokens(2000L).system(system)
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
-            .addUserMessage(user)
+            .addUserMessageOfContentBlockParams(listOf(ContentBlockParam.ofImage(image), ContentBlockParam.ofText(prompt)))
             .build()
         val c = client(key, seconds)
         val msg = try { c.messages().create(params) } finally { c.close() }

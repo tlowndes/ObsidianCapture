@@ -60,6 +60,7 @@ object SlipRender {
             if (s.dontForget.isNotEmpty()) add { p.dontForget(s.dontForget) }
             if (s.show.todo) add { p.todo(s) }
             if (s.sudoku != null) add { p.sudoku(s.sudoku!!) }
+            if (s.quote != null) add { p.quote(s.quote!!) }
         }
         sections.forEachIndexed { i, f -> if (i > 0) p.dashed(); f() }
         p.footer(owner, now)
@@ -218,6 +219,15 @@ object SlipRender {
             heading("In brief")
             gap(4f)
             text(t, paint(BODY), spacing = 1.15f)
+        }
+
+        /** From your reading (home-life-v1): one passage in italic and where it's from. */
+        fun quote(q: Pair<String, String>) {
+            heading("From your reading")
+            gap(4f)
+            text("\u201C${q.first}\u201D", paint(BODY, Typeface.create(Typeface.SERIF, Typeface.ITALIC)), spacing = 1.15f)
+            gap(4f)
+            text("\u2014 ${q.second}", paint(SMALL))
         }
 
         fun summary(d: Summary.Doc) {

@@ -9,14 +9,24 @@ enum class HomeCard(val label: String) {
     NEXT_STEP("Next step"), WEATHER("Weather & travel"), TODAY("Today"), BILLS("Bills"), PROJECTS("Projects"),
     TOP_TASKS("Top tasks"), HABITS("Habits"), STUCK("Stuck? Pick one."), READ_LATER("Read it later"), JOBS("Jobs"),
     // Added in v1.16 (build queue). Plan today and Mood show near the top at their time of day while switched on.
-    PLAN("Plan today · Shut down"), MOOD("Mood at night"), ROUTINES("Routines"), HIGHLIGHTS("Journal check-in")
+    PLAN("Plan today · Shut down"), MOOD("Mood at night"), ROUTINES("Routines"), HIGHLIGHTS("Journal check-in"),
+    // Added in Stage 1 (home-life-v1): chores that decay, and one passage from your reading.
+    CHORES("Home chores"), READING("From your reading"),
+    // Added in Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest and spend from receipts.
+    INBOX("Inbox"), SPEND("Spent this month")
 }
 
 /** Cards that pop up at the top at their time of day rather than sitting in the order. */
 val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD)
 
 /** Card order and which cards are switched off, from Settings › Cards on home. */
-data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), val hidden: Set<HomeCard> = emptySet()) {
+/** Newer cards that belong somewhere other than the end: the Inbox under Today, Spend after Top tasks. */
+private val FOLLOWS = mapOf(HomeCard.INBOX to HomeCard.TODAY, HomeCard.SPEND to HomeCard.TOP_TASKS)
+
+/** Every card in its default place. */
+fun defaultCardOrder(): List<HomeCard> = DeckLayout(emptyList()).normalised().order
+
+data class DeckLayout(val order: List<HomeCard> = defaultCardOrder(), val hidden: Set<HomeCard> = emptySet()) {
     /** Cards to show, in order. On a low-energy day Stuck? moves to the top. */
     fun visible(lowEnergy: Boolean): List<HomeCard> {
         val on = order.filter { it !in hidden }
@@ -58,7 +68,7 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
         val list = order.distinct().toMutableList()
         val all = HomeCard.values()
         all.filter { it !in list }.forEach { card ->
-            val before = all.take(card.ordinal).lastOrNull { it in list }
+            val before = FOLLOWS[card]?.takeIf { it in list } ?: all.take(card.ordinal).lastOrNull { it in list }
             if (before == null) list.add(card) else list.add(list.indexOf(before) + 1, card)
         }
         return copy(order = list)
@@ -74,9 +84,11 @@ data class DeckLayout(val order: List<HomeCard> = HomeCard.values().toList(), va
  */
 enum class DeckSection(val cards: List<HomeCard>) {
     WEATHER(listOf(HomeCard.WEATHER)),
-    AGENDA(listOf(HomeCard.TODAY, HomeCard.BILLS)),
+    AGENDA(listOf(HomeCard.TODAY, HomeCard.BILLS, HomeCard.CHORES)),
+    INBOX(listOf(HomeCard.INBOX)),
     TOP_TASKS(listOf(HomeCard.TOP_TASKS)),
-    MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS));
+    SPEND(listOf(HomeCard.SPEND)),
+    MORE(listOf(HomeCard.ROUTINES, HomeCard.PROJECTS, HomeCard.HIGHLIGHTS, HomeCard.READING));
 
     fun at(order: List<HomeCard>): Int {
         val places = cards.map { order.indexOf(it) }.filter { it >= 0 }
