@@ -20,6 +20,8 @@ data class SlipOptions(
     val brief: Boolean = true,
     /** "Don't forget": bills due soon and job follow-ups that are due, above the to-dos (slip-extras-v1). */
     val dontForget: Boolean = true,
+    /** "From your reading": one saved passage at the bottom (home-life-v1). */
+    val quote: Boolean = true,
 )
 
 /** One "Don't forget" line: what it is, and the small note on the right ("£142 · today", "follow-up"). */
@@ -49,6 +51,8 @@ data class SlipContent(
     val ahead: Boolean = false,
     /** Bills and job follow-ups due, when [SlipOptions.dontForget] is on. Empty leaves the section off. */
     val dontForget: List<SlipReminder> = emptyList(),
+    /** One passage from your reading and where it's from, filled in by the app when [SlipOptions.quote] is on. */
+    val quote: Pair<String, String>? = null,
 ) {
     /** Label for the slip's own day: "TODAY", or "FRIDAY" when printed ahead. */
     val dayWord: String get() = if (ahead) Slip.weekday(date) else "TODAY"

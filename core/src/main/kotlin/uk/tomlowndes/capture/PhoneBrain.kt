@@ -504,6 +504,25 @@ using the same task and note shape as a ramble sort. Otherwise do not add JSON."
     }
 
     /**
+     * One answer about an image (snap-anything-v1): [base64] is the photo, [mediaType] "image/jpeg" or "image/png".
+     * Blocking.
+     */
+    fun vision(key: String, system: String, base64: String, mediaType: String, prompt: String, seconds: Long = CHAT_TIMEOUT_S, model: String = FAST): Direct {
+        val image = com.anthropic.models.messages.Base64ImageSource.builder().data(base64)
+            .mediaType(com.anthropic.models.messages.Base64ImageSource.MediaType.of(mediaType)).build()
+        val params = MessageCreateParams.builder()
+            .model(model).maxTokens(2000L).system(system)
+            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            .addUserMessageOfContentBlockParams(listOf(ContentBlockParam.ofImage(image), ContentBlockParam.ofText(prompt)))
+            .build()
+        val c = client(key, seconds)
+        val msg = try { c.messages().create(params) } finally { c.close() }
+        if (msg.stopReason().orElse(null) == StopReason.REFUSAL) throw Refused()
+        val text = msg.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("").trim()
+        return Direct(text, null, msg.usage().inputTokens(), msg.usage().outputTokens())
+    }
+
+    /**
      * What to show when a call fails. [viaServer] is the Oracle box: only then is Tailscale the thing to check.
      */
     fun failure(name: String, e: Throwable, viaServer: Boolean, seconds: Long = CHAT_TIMEOUT_S): String {

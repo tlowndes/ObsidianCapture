@@ -53,6 +53,28 @@ object Highlights {
         return out
     }
 
+    /** How many read articles are opened for passages (newest first), so the Deck stays quick. */
+    const val ARTICLES = 40
+
+    /** Passages from read (and archived) Read later articles, newest first. Blocking. */
+    fun gather(v: Vault, max: Int = ARTICLES): List<Passage> {
+        val store = ReadStore(v)
+        return runCatching { store.list() }.getOrDefault(emptyList()).filter { it.read || it.ref.archived }.take(max).flatMap { a ->
+            runCatching { store.load(a.ref) }.getOrNull()?.let { doc -> passages(doc).map { Passage(it, doc.title, doc.ref) } }.orEmpty()
+        }
+    }
+
+    /** Today's passages for the Deck and the Daily Slip, skipping ones kept or skipped on any device. Blocking. */
+    fun forDay(v: Vault, day: LocalDate): List<Passage> = pick(gather(v), day, HighlightsSeen.load(v))
+
+    /** The Daily Slip's "From your reading": today's first passage, shortened, and where it's from. Blocking. */
+    fun slipQuote(v: Vault, day: LocalDate): Pair<String, String>? =
+        runCatching { forDay(v, day).firstOrNull() }.getOrNull()?.let { short(it.text) to it.title }
+
+    /** The slip's short form: the passage trimmed to [max] characters at a word. */
+    fun short(text: String, max: Int = 160): String =
+        if (text.length <= max) text else text.take(max).substringBeforeLast(' ').trimEnd(',', ';', ':') + "…"
+
     fun keepLines(p: Passage, today: LocalDate) = listOf("> ${p.text}", "— [[${p.ref.file.removeSuffix(".md")}|${p.title}]] · $today", "")
 
     fun keep(v: Vault, p: Passage, today: LocalDate) {
