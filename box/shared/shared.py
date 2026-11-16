@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HOME = Path(os.environ.get("SHARED_HOME", Path.home() / "shared"))
-SHOPPING = "01 - Inbox/Shopping list.md"
+SHOPPING = "99 - Meta/Shopping list.md"
 CHORES = "99 - Meta/Chores.md"
 STATE = "99 - Meta/Shared list.md"
 MARK = "👥"
