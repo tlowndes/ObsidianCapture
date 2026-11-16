@@ -625,7 +625,7 @@ fun TasksScreen(
 
     editing?.let { t ->
         EditTaskSheet(
-            t, tagData,
+            t, tagData, vault,
             onSave = { text, due, rule, minutes, priority -> editing = null; save(t, text, due, rule, minutes, priority) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null },

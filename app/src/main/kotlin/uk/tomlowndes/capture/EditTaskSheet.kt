@@ -41,6 +41,7 @@ import java.time.LocalDate
 internal fun EditTaskSheet(
     t: TaskItem,
     tags: TagData,
+    vault: android.net.Uri?,
     onSave: (text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
@@ -92,6 +93,7 @@ internal fun EditTaskSheet(
             }
             RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
             TagRow(tags, Tags.inText(text)) { tag -> text = Tags.toggle(text, tag) }
+            PlaceRow(vault, text, { text = it })
             if (onBreakDown != null) Text(
                 "🌶 Break it down", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).background(PrimaryTint)
