@@ -44,6 +44,8 @@ object Errands {
     }
 
     fun upsert(v: Vault, p: Place) = savePlaces(v, places(v).filter { it.tag != p.tag } + p)
+    /** Saves [p], dropping the place it was edited from when its tag changed. */
+    fun replace(v: Vault, oldTag: String?, p: Place) = savePlaces(v, places(v).filter { it.tag != p.tag && it.tag != oldTag } + p)
     fun remove(v: Vault, tag: String) = savePlaces(v, places(v).filter { it.tag != tag })
 
     /** Errands grouped by @tag, places you've set up first, biggest first. */
