@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -113,7 +114,10 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
     }
 
     val list = prompts
-    Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState())) {
+    // The prompts scroll; the 🎤 / Save row stays pinned under them so Save is always on screen, even on a short
+    // phone, with the sheet half open, or with the keyboard up (imePadding: the app draws edge to edge).
+    Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).imePadding()) {
+    Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
         val title = "📓 " + today.format(DateTimeFormatter.ofPattern("EEEE", Locale.UK)) + " check-in"
         val asked = list?.count { it.kind != JournalKind.LINE } ?: 0
         val done = list?.filter { it.kind != JournalKind.LINE }?.let { JournalEntry(answers).answered(it) } ?: 0
@@ -159,6 +163,8 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
             note, { note = it }, colors = fieldColors(), placeholder = { Text("Anything else about today", color = Muted) },
             shape = RoundedCornerShape(12.dp), minLines = 3, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
         )
+    }
+    if (list != null) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(if (listening) "■ Stop" else "🎤", fontSize = 13.sp, color = if (listening) Warn else TextMain,
                 modifier = Modifier.clip(CircleShape).background(if (listening) OverdueTint else Color.Transparent)
@@ -183,6 +189,7 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
         }
         if (listening) Text(heardNow.ifBlank { "Listening…" }, fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
         Text("Saves to ${Journal.path(today)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 10.dp))
+    }
     }
 }
 

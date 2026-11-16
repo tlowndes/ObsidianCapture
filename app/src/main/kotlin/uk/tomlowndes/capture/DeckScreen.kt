@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -589,7 +590,7 @@ fun DeckScreen(
         DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
     }
     if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
-    if (journalOpen) DeckSheet({ journalOpen = false }) {
+    if (journalOpen) DeckSheet({ journalOpen = false }, full = true) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
         val events = cal.filter { it.id in on }.flatMap { it.events }.count { it.on(LocalDate.now()) }
         JournalSheet(vault, events, snack) { journalDone = true; journalOpen = false; refresh++ }
@@ -599,8 +600,10 @@ fun DeckScreen(
 /** A bottom sheet holding one of the Deck's cards. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeckSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Bg) {
+private fun DeckSheet(onDismiss: () -> Unit, full: Boolean = false, content: @Composable () -> Unit) {
+    // [full] opens straight to full height, so a tall card (the journal) shows its Save button without a drag.
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = full)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = Bg) {
         Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { content() }
     }
 }
