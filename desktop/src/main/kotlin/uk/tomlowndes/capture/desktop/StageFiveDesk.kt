@@ -139,7 +139,7 @@ internal fun ErrandsList(state: AppState) {
     LaunchedEffect(state.vault, state.changes) {
         val v = state.vault ?: return@LaunchedEffect
         errands = state.io("Couldn't read errands") {
-            val shopping = v.read(Recipes.SHOPPING)?.let { Recipes.shoppingOpen(it) }.orEmpty()
+            val shopping = Recipes.shopping(v)?.let { Recipes.shoppingOpen(it) }.orEmpty()
             Errands.errands(state.writer()!!.listTasks(), shopping, Errands.places(v))
         }
     }

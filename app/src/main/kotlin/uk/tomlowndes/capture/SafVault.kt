@@ -191,10 +191,11 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
             "md" -> "text/markdown" to base
             "jpg", "jpeg" -> "image/jpeg" to base
             "json" -> "application/json" to "$base.json"
+            "" -> "application/octet-stream" to base
             else -> "application/octet-stream" to "$base.$ext"
         }
         val f = folder(dir).createFile(mime, name) ?: error("Cannot create $base.$ext")
-        val made = f.name.ifEmpty { "$base.$ext" }
+        val made = f.name.ifEmpty { if (ext.isEmpty()) base else "$base.$ext" }
         return if (dir.isEmpty()) made else "$dir/$made"
     }
 

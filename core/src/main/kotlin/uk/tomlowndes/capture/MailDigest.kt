@@ -32,7 +32,12 @@ data class Digest(val checked: LocalDateTime?, val read: Int, val skipped: Int, 
  * email (saved, dismissed, snoozed) goes in [STATE], and the box's settings in [SETTINGS].
  */
 object MailDigest {
-    const val PATH = "01 - Inbox/Email.md"
+    const val PATH = "99 - Meta/Email.md"
+    /** Where the box wrote the digest before 1.38; read while the box still writes there. */
+    const val OLD_PATH = "01 - Inbox/Email.md"
+    /** The other box script (jarvis-server/PROTON-INBOX-PROMPT.md) writes this JSON and watches [CHECK_NOW]. */
+    const val INBOX_JSON = "99 - Meta/Inbox/inbox.json"
+    const val CHECK_NOW = "99 - Meta/Inbox/check-now"
     const val STATE = "99 - Meta/Email state.md"
     const val SETTINGS = "99 - Meta/Email settings.md"
     /** The box checks every 30 minutes by default; after two missed checks the card says paused. */
@@ -50,7 +55,41 @@ object MailDigest {
         )
     }
 
-    fun load(v: Vault): Digest? = v.read(PATH)?.let { parse(it) }
+    /**
+     * The newest digest the box wrote: the note at [PATH] (or [OLD_PATH]), or [INBOX_JSON] from the other box script.
+     * Whichever was checked last wins, so the status is right whichever script runs on the box.
+     */
+    fun load(v: Vault): Digest? {
+        val md = (v.read(PATH) ?: v.read(OLD_PATH))?.let { parse(it) }
+        val js = v.read(INBOX_JSON)?.let { runCatching { parseJson(it) }.getOrNull() }
+        return listOfNotNull(md, js).maxByOrNull { it.checked ?: LocalDateTime.MIN }
+    }
+
+    /** Reads inbox.json: {"checked": "…Z", "counts": {…}, "items": [{id, from, subject, date, kind, summary, detail, task, bill, job, delivery}]}. */
+    fun parseJson(text: String): Digest {
+        val o = JSONObject(text)
+        fun time(s: String?) = s?.takeIf { it.isNotBlank() }?.let {
+            runCatching { java.time.OffsetDateTime.parse(it).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime() }.getOrNull()
+                ?: runCatching { LocalDateTime.parse(it.take(16)) }.getOrNull()
+        }
+        fun JSONObject.str(k: String) = opt(k)?.takeIf { it != JSONObject.NULL }?.toString()?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
+        fun JSONObject.day(k: String) = str(k)?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
+        val arr = o.optJSONArray("items")
+        val items = (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+            val m = arr!!.optJSONObject(i) ?: return@mapNotNull null
+            val kind = m.str("kind")?.lowercase()
+            if (kind == "skip") return@mapNotNull null
+            val task = m.optJSONObject("task"); val bill = m.optJSONObject("bill"); val job = m.optJSONObject("job"); val del = m.optJSONObject("delivery")
+            Mail(
+                m.str("id") ?: return@mapNotNull null, MailKind.of(kind), m.str("from").orEmpty(), m.str("subject").orEmpty(), time(m.str("date")),
+                m.str("detail") ?: m.str("summary").orEmpty(), m.str("summary").orEmpty(), task?.str("text"), task?.day("due") ?: del?.day("when"),
+                bill?.str("name"), bill?.str("amount")?.replace("£", "")?.let { runCatching { BigDecimal(it) }.getOrNull() }, bill?.day("due"),
+                job?.str("company"), job?.str("status")?.let { st -> Jobs.STATUSES.firstOrNull { it.equals(st, true) } },
+            )
+        }
+        val counts = o.optJSONObject("counts")
+        return Digest(time(o.str("checked")), (counts?.optInt("handled") ?: 0) + items.size, counts?.optInt("skipped") ?: 0, items.distinctBy { it.id })
+    }
 
     private fun mail(o: JSONObject): Mail? {
         fun s(k: String) = o.opt(k)?.takeIf { it != JSONObject.NULL }?.toString()?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
@@ -176,6 +215,16 @@ object MailDigest {
             (s.checkNow?.let { "check_now: ${it.toString().take(16)}\n" } ?: "") + "---\n\nSettings › Inbox in Flight Deck. The box reads this before each check.\n"
         if (v.entry(SETTINGS) == null) { v.mkdirs(SETTINGS.substringBeforeLast('/')); VaultIo.write(v, v.create(SETTINGS.substringBeforeLast('/'), SETTINGS.substringAfterLast('/').removeSuffix(".md"), "md"), body) }
         else VaultIo.write(v, SETTINGS, body)
+    }
+
+    /**
+     * Check now: saves [s] with check_now set (read by box/mailbox) and, when the other box script's folder is there,
+     * drops the [CHECK_NOW] file it watches. Before this, the second half was missing, so Check now did nothing on that box.
+     */
+    fun checkNow(v: Vault, s: BoxSettings, now: LocalDateTime = LocalDateTime.now()) {
+        saveSettings(v, s.copy(checkNow = now))
+        val dir = CHECK_NOW.substringBeforeLast('/')
+        if (v.entry(dir) != null && v.entry(CHECK_NOW) == null) VaultIo.write(v, v.create(dir, "check-now", ""), now.toString().take(16) + "\n")
     }
 
     /** Opens the Proton Mail app (or web) on the inbox; Bridge ids can't deep-link to one email. */

@@ -81,7 +81,7 @@ object HomeWidgets {
     internal fun loadShop(ctx: Context): WidgetShop {
         val uri = AppPrefs(ctx).vault ?: return WidgetShop(false, emptyList())
         val v = runCatching { appVault(ctx, uri) }.getOrNull() ?: return WidgetShop(true, emptyList())
-        return WidgetShop(true, runCatching { v.read(Recipes.SHOPPING)?.let { Recipes.shoppingOpen(it) } }.getOrNull().orEmpty())
+        return WidgetShop(true, runCatching { Recipes.shopping(v)?.let { Recipes.shoppingOpen(it) } }.getOrNull().orEmpty())
     }
 
     suspend fun refresh(ctx: Context) {

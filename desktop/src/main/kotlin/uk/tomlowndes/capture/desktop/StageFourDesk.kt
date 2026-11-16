@@ -218,7 +218,7 @@ fun InboxPane(state: AppState) {
             settings?.let { s ->
                 TextAction("Check now") {
                     val v = state.vault ?: return@TextAction
-                    scope.launch { state.io("Couldn't ask the box") { MailDigest.saveSettings(v, s.copy(checkNow = LocalDateTime.now())) }; state.say("Asked the box to check") }
+                    scope.launch { state.io("Couldn't ask the box") { MailDigest.checkNow(v, s) }; state.say("Asked the box to check") }
                 }
             }
         }
