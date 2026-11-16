@@ -272,7 +272,15 @@ internal fun InboxSettings(vault: Uri?) {
             } ?: "Not set up yet · see box/mailbox in the repo"
             Box(Modifier.padding(horizontal = 14.dp)) {
                 SettingRow("Proton through the box", status) {
-                    Text("Check now", color = Primary, fontSize = 13.sp, modifier = Modifier.clickable { put(cur.copy(checkNow = LocalDateTime.now())) })
+                    Text("Check now", color = Primary, fontSize = 13.sp, modifier = Modifier.clickable {
+                        val now = LocalDateTime.now()
+                        s = cur.copy(checkNow = now)
+                        val uri = vault ?: return@clickable
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) { runCatching { MailDigest.checkNow(appVault(ctx, uri), cur, now) }.isSuccess }
+                            android.widget.Toast.makeText(ctx, if (ok) "Asked the box to check" else "Couldn't ask the box", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    })
                 }
             }
             HorizontalDivider(color = Outline)

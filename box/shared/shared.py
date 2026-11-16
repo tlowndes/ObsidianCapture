@@ -4,7 +4,7 @@
 One small private page, served from the Oracle box, for someone who doesn't use Obsidian or the app.
 It can only read and write two notes in the vault, and nothing else:
 
-  01 - Inbox/Shopping list.md   "- [ ] item" lines. Items added here end in " 👥".
+  99 - Meta/Shopping list.md    "- [ ] item" lines. Items added here end in " 👥".
   99 - Meta/Chores.md           "- 🛁 Clean bathroom · every 7 · done 2026-11-03". Done here adds "· by <name>".
 
 It also writes 99 - Meta/Shared list.md so the app knows the page is on.
@@ -24,7 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HOME = Path(os.environ.get("SHARED_HOME", Path.home() / "shared"))
-SHOPPING = "01 - Inbox/Shopping list.md"
+SHOPPING = "99 - Meta/Shopping list.md"
+OLD_SHOPPING = "01 - Inbox/Shopping list.md"  # before 1.38; moved to SHOPPING on start if that isn't there yet
 CHORES = "99 - Meta/Chores.md"
 STATE = "99 - Meta/Shared list.md"
 MARK = "👥"
@@ -291,6 +292,10 @@ def main():
     port = int(os.environ.get("PORT", "8787"))
     host = os.environ.get("HOST", "127.0.0.1")
     with LOCK:
+        old, new = vault() / OLD_SHOPPING, vault() / SHOPPING
+        if old.exists() and not new.exists():
+            new.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(old, new)  # the note moved to 99 - Meta in 1.38
         mark_state()
     print(f"Shared list on http://{host}:{port}/<TOKEN>/", flush=True)
     ThreadingHTTPServer((host, port), Handler).serve_forever()

@@ -34,7 +34,10 @@ data class RecipeNote(
  */
 object Recipes {
     const val FOLDER = "Recipes"
-    const val SHOPPING = "${VaultWriter.INBOX}/Shopping list.md"
+    const val META = "99 - Meta"
+    const val SHOPPING = "$META/Shopping list.md"
+    /** Where the note lived before 1.38. [shopping] moves it to [SHOPPING] the first time it's read. */
+    const val OLD_SHOPPING = "${VaultWriter.INBOX}/Shopping list.md"
     private const val UA =
         "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
 
@@ -224,9 +227,18 @@ object Recipes {
         return lines.joinToString("\n") + "\n" to add.size
     }
 
+    /** Moves the old Inbox copy of the Shopping list into 99 - Meta, once, if there isn't one there yet. */
+    fun moveShopping(v: Vault) {
+        if (v.entry(SHOPPING) == null && v.entry(OLD_SHOPPING) != null) runCatching { v.mkdirs(META); v.move(OLD_SHOPPING, META) }
+    }
+
+    /** The Shopping list note's text (moving it from the Inbox first if needed), or null if there isn't one. */
+    fun shopping(v: Vault): String? { moveShopping(v); return v.read(SHOPPING) }
+
     /** Adds [items] to the Shopping list note (made if missing). Returns how many were new. */
     fun addToShopping(v: Vault, items: List<String>): Int {
-        if (v.entry(SHOPPING) == null) VaultIo.write(v, v.create(VaultWriter.INBOX, "Shopping list", "md"), "# Shopping list\n\n")
+        moveShopping(v)
+        if (v.entry(SHOPPING) == null) VaultIo.write(v, v.create(META, "Shopping list", "md"), "# Shopping list\n\n")
         var added = 0
         VaultIo.edit(v, SHOPPING) { lines ->
             val (out, n) = withShopping(lines.joinToString("\n"), items)

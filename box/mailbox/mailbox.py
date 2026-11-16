@@ -2,7 +2,7 @@
 """Proton inbox digest for Flight Deck (proton-inbox-v1). Runs on the Oracle box every 5 minutes from a systemd timer.
 
 Reads Starred and the Vault label through Proton Mail Bridge, READ-ONLY (IMAP EXAMINE and BODY.PEEK, no SMTP), asks
-Claude Fast what each new email needs, and writes "01 - Inbox/Email.md" in the vault. Obsidian Sync carries it to the
+Claude Fast what each new email needs, and writes "99 - Meta/Email.md" in the vault. Obsidian Sync carries it to the
 phone and PC. It checks only as often as Settings > Inbox says ("99 - Meta/Email settings.md"), or straight away after
 "Check now". Standard library only.
 
@@ -24,7 +24,8 @@ import urllib.request
 from pathlib import Path
 
 HOME = Path(os.environ.get("MAILBOX_HOME", Path.home() / "mailbox"))
-DIGEST = "01 - Inbox/Email.md"
+DIGEST = "99 - Meta/Email.md"
+OLD_DIGEST = "01 - Inbox/Email.md"  # where it lived before 1.38; removed after the first write here
 SETTINGS = "99 - Meta/Email settings.md"
 KEEP_DAYS = 30
 LOOK_BACK_DAYS = 14
@@ -198,6 +199,9 @@ def write_digest(vault, items, read, skipped, cost, now):
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("\n".join(out))
     os.replace(tmp, path)  # one write, so Sync never sees half a note
+    old = vault / OLD_DIGEST
+    if old.exists() and "type: email-digest" in old.read_text(encoding="utf-8", errors="replace")[:200]:
+        old.unlink()  # only our own old digest, never a note Tom wrote
 
 
 def main():

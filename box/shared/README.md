@@ -3,7 +3,7 @@
 `shared.py` serves one small page for someone who doesn't use Obsidian or Flight Deck. They add and tick shopping and
 mark chores done; Obsidian Sync carries it to Tom's phone and PC.
 
-- It can only read and write `01 - Inbox/Shopping list.md` and `99 - Meta/Chores.md`, plus
+- It can only read and write `99 - Meta/Shopping list.md` and `99 - Meta/Chores.md`, plus
   `99 - Meta/Shared list.md` (so the app shows the "👥 Shared" pill). Nothing else in the vault is read.
 - Items added on the page end in ` 👥`, and chores done there get `· by partner`, so the app can say who.
 - The page lives under a secret token: `https://<box>.<tailnet>.ts.net/<TOKEN>/`. Anything else is a 404.

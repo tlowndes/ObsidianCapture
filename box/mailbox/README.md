@@ -1,7 +1,7 @@
 # Proton inbox digest (Oracle box)
 
 `mailbox.py` reads **Starred** and the **Vault** label through Proton Mail Bridge, read-only, and writes
-`01 - Inbox/Email.md` in the vault for Flight Deck's Inbox card and page. Obsidian Sync carries it to the phone and PC.
+`99 - Meta/Email.md` in the vault for Flight Deck's Inbox card and page. Obsidian Sync carries it to the phone and PC.
 
 - Read-only: folders are opened with `EXAMINE` and mail is fetched with `BODY.PEEK`, so nothing is marked read,
   moved or deleted. There's no SMTP, so it can't send.

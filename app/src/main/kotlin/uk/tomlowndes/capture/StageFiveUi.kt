@@ -262,7 +262,7 @@ class ErrandWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         val (lat, lon) = ErrandNudges.fix(ctx) ?: return Result.success()
         val here = Errands.at(places, lat, lon, slack = 50.0)
         val tasks = runCatching { VaultWriter(ctx, uri).listTasks() }.getOrDefault(emptyList())
-        val shopping = runCatching { v.read(Recipes.SHOPPING)?.let { Recipes.shoppingOpen(it) } }.getOrNull().orEmpty()
+        val shopping = runCatching { Recipes.shopping(v)?.let { Recipes.shoppingOpen(it) } }.getOrNull().orEmpty()
         val (nudge, inside) = Errands.arrivals(here, ErrandNudges.inside(ctx), Errands.errands(tasks, shopping, places, ErrandNudges.shopTag(ctx)))
         nudge.forEach { ErrandNudges.notify(ctx, it) }
         ErrandNudges.setInside(ctx, inside)
@@ -285,7 +285,7 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             runCatching {
                 val v = appVault(ctx, uri)
                 places = Errands.places(v)
-                val shopping = v.read(Recipes.SHOPPING)?.let { Recipes.shoppingOpen(it) }.orEmpty()
+                val shopping = Recipes.shopping(v)?.let { Recipes.shoppingOpen(it) }.orEmpty()
                 errands = Errands.errands(VaultWriter(ctx, uri).listTasks(), shopping, places, ErrandNudges.shopTag(ctx))
             }
         }
@@ -465,7 +465,7 @@ internal fun loadHomeBits(ctx: Context, vault: Uri, prefs: AppPrefs, today: Loca
     val plan = runCatching { MealPlan.load(v, today) }.getOrNull()
     val errands = runCatching {
         val tasks = VaultWriter(ctx, vault).listTasks()
-        val shopping = v.read(Recipes.SHOPPING)?.let { Recipes.shoppingOpen(it) }.orEmpty()
+        val shopping = Recipes.shopping(v)?.let { Recipes.shoppingOpen(it) }.orEmpty()
         Errands.errands(tasks, shopping, Errands.places(v), ErrandNudges.shopTag(ctx)).sumOf { it.items.size }
     }.getOrDefault(0)
     return HomeBits(People.comingUp(people, today).filter { it.birthday == null || it.days <= People.GIFT_DAYS }, plan?.let { MealPlan.tonight(it, today) },
