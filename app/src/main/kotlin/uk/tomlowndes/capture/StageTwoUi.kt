@@ -390,10 +390,11 @@ internal fun CaseStudySheet(title: String, vault: Uri?, prefs: AppPrefs, snack: 
 
 /**
  * ▶ Your briefing: Claude writes today's script once (shared with the PC through the vault), the phone voice reads
- * it. Tap a line to jump to it.
+ * it. Tap a line to jump to it. Once it has been played to the end it hides till tomorrow (on the PC too).
+ * [hasWeather]: the forecast has loaded, so a script written without it is written again.
  */
 @Composable
-internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, facts: () -> String) {
+internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, hasWeather: Boolean, facts: () -> String) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
@@ -402,6 +403,7 @@ internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, facts: () -> String) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+    var heard by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
         var t: TextToSpeech? = null
         t = TextToSpeech(ctx.applicationContext) { ok ->
@@ -409,9 +411,19 @@ internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, facts: () -> String) {
         }
         onDispose { t?.stop(); t?.shutdown() }
     }
-    LaunchedEffect(vault) {
+    LaunchedEffect(vault, hasWeather) {
         val uri = vault ?: return@LaunchedEffect
-        lines = withContext(Dispatchers.IO) { runCatching { Briefing.cached(appVault(ctx, uri), today) }.getOrNull() }
+        val r = withContext(Dispatchers.IO) {
+            runCatching { appVault(ctx, uri).let { v -> Briefing.heard(v, today) to Briefing.cached(v, today, needWeather = hasWeather) } }.getOrNull()
+        } ?: return@LaunchedEffect
+        heard = r.first; lines = r.second
+    }
+    fun finished() {
+        val uri = vault ?: return
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { Briefing.markHeard(appVault(ctx, uri), today) } }
+            heard = true
+        }
     }
     fun speakFrom(i: Int) {
         val t = tts ?: return
@@ -419,7 +431,7 @@ internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, facts: () -> String) {
         t.stop()
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) { playing = id?.toIntOrNull() ?: -1 }
-            override fun onDone(id: String?) { if (id?.toIntOrNull() == ls.lastIndex) playing = -1 }
+            override fun onDone(id: String?) { if (id?.toIntOrNull() == ls.lastIndex) { playing = -1; finished() } }
             @Deprecated("old API") override fun onError(id: String?) { playing = -1 }
         })
         ls.drop(i).forEachIndexed { n, l -> t.speak(l, TextToSpeech.QUEUE_ADD, null, "${i + n}") }
@@ -431,12 +443,13 @@ internal fun BriefingCard(vault: Uri?, prefs: AppPrefs, facts: () -> String) {
         busy = true; error = null
         scope.launch {
             val r = withContext(Dispatchers.IO) {
-                runCatching { Briefing.lines(ask(ctx, prefs, facts(), Briefing.system(prefs.assistantName))).also { Briefing.save(appVault(ctx, uri), today, it) } }
+                runCatching { Briefing.lines(ask(ctx, prefs, facts(), Briefing.system(prefs.assistantName))).also { Briefing.save(appVault(ctx, uri), today, it, weather = hasWeather) } }
             }
             busy = false
             r.onSuccess { lines = it; speakFrom(0) }.onFailure { error = PhoneBrain.failure(prefs.assistantName, it, viaServer = false) }
         }
     }
+    if (heard) return
     DeckCard(modifier = Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

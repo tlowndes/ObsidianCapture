@@ -74,4 +74,26 @@ class StageTwoTest {
         assertEquals(listOf("One", "Two"), Briefing.lines("- One\n\n• Two"))
         assertNotNull(Briefing.length(listOf("word ".repeat(300))))
     }
+
+    @Test fun `briefing hides once heard and rewrites when the weather was missing`() {
+        val v = FileVault(tmp.root)
+        Briefing.save(v, today, listOf("Dentist at nine forty."), weather = false)
+        assertNull(Briefing.cached(v, today, needWeather = true))
+        assertNotNull(Briefing.cached(v, today))
+        assertFalse(Briefing.heard(v, today))
+        Briefing.markHeard(v, today)
+        assertTrue(Briefing.heard(v, today))
+        assertFalse(Briefing.heard(v, today.plusDays(1)))
+        assertEquals(1, Briefing.cached(v, today)!!.size)
+    }
+
+    @Test fun `briefing gets the whole forecast`() {
+        val w = WeatherSummary(15, 7, "Wet morning, mild afternoon", "Rain till 11, dry from 13:00", "Leave the washing in.",
+            listOf(DayPart("Morning", "🌧️", 9, 90)))
+        val f = Briefing.weatherFacts(w)
+        assertTrue(f.contains("15° high, 7° low"))
+        assertTrue(f.contains("dry from 13:00"))
+        assertTrue(f.contains("washing"))
+        assertTrue(f.contains("morning 9° 90% rain"))
+    }
 }
