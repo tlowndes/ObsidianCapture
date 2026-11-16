@@ -165,7 +165,7 @@ def chores():
         age = (today - c["done"]).days if c["done"] else None
         fill = (age / c["every"]) if age is not None else 1.0
         since = "not yet" if age is None else "today" if age <= 0 else "1 day" if age == 1 else f"{age} days"
-        out.append({"label": c["label"], "name": c["name"], "since": since, "every": c["every"], "fill": round(fill, 2), "by": c["by"]})
+        out.append({"label": c["label"], "name": c["name"], "since": since, "every": c["every"], "fill": round(fill, 2), "by": c["by"], "done": c["done"].isoformat() if c["done"] else None})
     return sorted(out, key=lambda c: -c["fill"])
 
 
@@ -179,6 +179,94 @@ def chore_done(name, who):
             lines[n] = chore_line(c)
             write(CHORES, "\n".join(lines))
             return
+
+
+def add_chore(name, every):
+    name = clean_text(name).replace("·", "")
+    if not name:
+        return
+    try:
+        every = max(1, min(365, int(every)))
+    except (TypeError, ValueError):
+        every = 7
+    lines = read(CHORES).split("\n")
+    if any((c := parse_chore(line)) and c["name"].lower() == name.lower() for line in lines):
+        return
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append(f"- {name} · every {every}")
+    write(CHORES, "\n".join(lines) + "\n")
+
+
+def parse_date(s):
+    try:
+        return date.fromisoformat(str(s))
+    except (TypeError, ValueError):
+        return None
+
+
+def untick_item(text):
+    text = clean_text(text).lower()
+    lines = read(SHOPPING).split("\n")
+    for n, line in enumerate(lines):
+        m = TICK.match(line)
+        if m and m.group(1) in "xX" and bare(m.group(2).strip()).lower() == text:
+            lines[n] = re.sub(r"\[[xX]\]", "[ ]", line, count=1)
+            write(SHOPPING, "\n".join(lines))
+            return
+
+
+def remove_item(text):
+    text = clean_text(text).lower()
+    lines = read(SHOPPING).split("\n")
+    keep = [l for l in lines if not ((m := TICK.match(l)) and bare(m.group(2).strip()).lower() == text)]
+    if len(keep) != len(lines):
+        write(SHOPPING, "\n".join(keep))
+
+
+def clear_shopping():
+    lines = read(SHOPPING).split("\n")
+    keep = [l for l in lines if not TICK.match(l)]
+    if len(keep) != len(lines):
+        write(SHOPPING, "\n".join(keep))
+
+
+def remove_chore(name):
+    name = clean_text(name).lower()
+    lines = read(CHORES).split("\n")
+    keep = [l for l in lines if not ((c := parse_chore(l)) and c["name"].lower() == name)]
+    if len(keep) != len(lines):
+        write(CHORES, "\n".join(keep))
+
+
+def undo_chore(name, done, by):
+    name = clean_text(name).lower()
+    lines = read(CHORES).split("\n")
+    for n, line in enumerate(lines):
+        c = parse_chore(line)
+        if c and c["name"].lower() == name:
+            c["done"], c["by"] = parse_date(done), (clean_text(by)[:40] or None)
+            lines[n] = chore_line(c)
+            write(CHORES, "\n".join(lines))
+            return
+
+
+def restore_chore(label, every, done, by):
+    label = clean_text(label).replace("·", "")
+    if not label:
+        return
+    try:
+        every = max(1, min(365, int(every)))
+    except (TypeError, ValueError):
+        every = 7
+    lines = read(CHORES).split("\n")
+    c = parse_chore(f"- {label} · every {every}")
+    if not c or any((x := parse_chore(l)) and x["name"].lower() == c["name"].lower() for l in lines):
+        return
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append(chore_line({"label": label, "every": every, "done": parse_date(done), "by": clean_text(by)[:40] or None}))
+    write(CHORES, "\n".join(lines) + "\n")
 
 
 def mark_state():
@@ -195,34 +283,47 @@ PAGE = """<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e6e4df;--accent:#5b5bd6;--warn:#c2410c}
 @media (prefers-color-scheme:dark){:root{--bg:#14161c;--card:#1d2028;--ink:#f2f2f4;--muted:#9a9aa5;--line:#2c2f39;--accent:#8b8bf0;--warn:#fb923c}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,sans-serif}
-main{max-width:520px;margin:0 auto;padding:20px 16px 48px}h1{font-size:26px;margin:4px 0 2px}h2{font-size:15px;color:var(--muted);margin:28px 0 8px;font-weight:600}
+main{max-width:520px;margin:0 auto;padding:20px 16px calc(96px + env(safe-area-inset-bottom))}h1{font-size:26px;margin:4px 0 2px}h2{font-size:15px;color:var(--muted);margin:28px 0 8px;font-weight:600}
 .sub{color:var(--muted);font-size:13px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-form{display:flex;gap:8px;margin:16px 0 0}input{flex:1;font:inherit;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
-button{font:inherit;border:0;border-radius:12px;padding:0 16px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+form{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 16px}input{flex:1 1 160px;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button{font:inherit;border:0;border-radius:12px;padding:0 16px;min-height:44px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
 .row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-top:1px solid var(--line)}.row:first-child{border-top:0}
-.box{width:22px;height:22px;border-radius:7px;border:2px solid var(--muted);flex:none;background:none;padding:0}
+.box{width:28px;height:28px;min-height:28px;border-radius:7px;border:2px solid var(--muted);flex:none;background:none;padding:0}
 .grow{flex:1;min-width:0}.tag{font-size:12px;color:var(--muted)}.done{background:none;color:var(--accent);border:1px solid var(--line);padding:6px 12px;font-size:14px}
 .bar{height:4px;border-radius:2px;background:var(--line);margin-top:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
 .late .bar i{background:var(--warn)}.empty{padding:16px 14px;color:var(--muted)}
+.x{background:none;color:var(--muted);width:44px;min-width:44px;padding:0;font-size:22px;flex:none}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:496px;margin:0 auto;background:#1d1d1f;color:#fff;border-radius:14px;padding:6px 6px 6px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:9}.toast[hidden]{display:none}.toast span{flex:1}.toast button{background:none;color:#a5a5ff;padding:0 14px}
 </style></head><body><main>
 <h1>Our shopping</h1><div class="sub">Shared by __OWNER__ · updates in a few seconds</div>
 <form id="add"><input id="t" maxlength="120" placeholder="Add an item…" autocomplete="off" enterkeyhint="done"><button>Add</button></form>
 <h2>Shopping</h2><div class="card" id="shop"></div>
-<h2>Chores</h2><div class="card" id="chores"></div>
+<div style="margin-top:10px;text-align:right"><button id="clr" class="done">Clear list</button></div>
+<h2>Chores</h2>
+<form id="addc"><input id="cn" maxlength="120" placeholder="Add a chore…" autocomplete="off"><select id="ce" aria-label="How often" style="flex:none;width:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit"><option value="3">Every few days</option><option value="7" selected>Weekly</option><option value="14">Fortnightly</option><option value="30">Monthly</option></select><button>Add</button></form>
+<div class="card" id="chores"></div>
+<div id="toast" class="toast" hidden><span id="tmsg"></span><button id="tundo">Undo</button></div>
 </main><script>
 const base=location.pathname.replace(/\\/?$/,'/');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function post(p,b){await fetch(base+p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)});load()}
+const toastEl=document.getElementById('toast'),tmsg=document.getElementById('tmsg');let undoFn=null,tt=null,shopItems=[],chNames=[];
+document.getElementById('clr').onclick=()=>{const items=shopItems.slice();if(!items.length)return;if(!confirm('Clear the whole shopping list?'))return;post('clearshopping',{});say('List cleared',async()=>{for(const t of items)await fetch(base+'add',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:t})});load()})};
+function say(msg,fn){tmsg.textContent=msg;undoFn=fn;toastEl.hidden=false;clearTimeout(tt);tt=setTimeout(()=>{toastEl.hidden=true;undoFn=null},6000)}
+document.getElementById('tundo').onclick=async()=>{const f=undoFn;toastEl.hidden=true;undoFn=null;clearTimeout(tt);if(f)await f()};
 async function load(){
   let d;try{d=await (await fetch(base+'api',{cache:'no-store'})).json()}catch(e){return}
-  const s=document.getElementById('shop');
-  s.innerHTML=d.shopping.length?d.shopping.map(i=>`<div class="row"><button class="box" aria-label="Got it" data-t="${esc(i.text)}"></button><div class="grow">${esc(i.text)}</div>${i.partner?'<span class="tag">you</span>':''}</div>`).join(''):'<div class="empty">Nothing on the list</div>';
-  s.querySelectorAll('.box').forEach(b=>b.onclick=()=>post('tick',{text:b.dataset.t}));
-  const c=document.getElementById('chores');
-  c.innerHTML=d.chores.length?d.chores.map(x=>`<div class="row ${x.fill>=1.25?'late':''}"><div class="grow">${esc(x.label)}<div class="tag">${esc(x.since)} · every ${x.every}${x.by?' · '+esc(x.by)+' did it last':''}</div><div class="bar"><i style="width:${Math.min(100,Math.round(x.fill*100))}%"></i></div></div><button class="done" data-n="${esc(x.name)}">Done</button></div>`).join(''):'<div class="empty">No chores yet</div>';
-  c.querySelectorAll('.done').forEach(b=>b.onclick=()=>post('done',{name:b.dataset.n}));
+  const s=document.getElementById('shop');shopItems=d.shopping.map(i=>i.text);
+  s.innerHTML=d.shopping.length?d.shopping.map(i=>`<div class="row"><button class="box" aria-label="Got it" data-t="${esc(i.text)}"></button><div class="grow">${esc(i.text)}</div>${i.partner?'<span class="tag">you</span>':''}<button class="x" aria-label="Remove" data-t="${esc(i.text)}">×</button></div>`).join(''):'<div class="empty">Nothing on the list</div>';
+  s.querySelectorAll('.box').forEach(b=>b.onclick=()=>{const t=b.dataset.t;post('tick',{text:t});say('Got it',()=>post('untick',{text:t}))});
+  s.querySelectorAll('.x').forEach(b=>b.onclick=()=>{const t=b.dataset.t;post('removeitem',{text:t});say('Removed',()=>post('add',{text:t}))});
+  const c=document.getElementById('chores');chNames=d.chores.map(x=>x.name);
+  c.innerHTML=d.chores.length?d.chores.map(x=>`<div class="row ${x.fill>=1.25?'late':''}"><div class="grow">${esc(x.label)}<div class="tag">${esc(x.since)} · every ${x.every}${x.by?' · '+esc(x.by)+' did it last':''}</div><div class="bar"><i style="width:${Math.min(100,Math.round(x.fill*100))}%"></i></div></div><button class="done" data-c="${esc(JSON.stringify(x))}">Done</button><button class="x" aria-label="Remove" data-c="${esc(JSON.stringify(x))}">×</button></div>`).join(''):'<div class="empty">No chores yet</div>';
+  c.querySelectorAll('.done').forEach(b=>b.onclick=()=>{const x=JSON.parse(b.dataset.c);post('done',{name:x.name});say('Marked done',()=>post('undone',{name:x.name,done:x.done,by:x.by}))});
+  c.querySelectorAll('.x').forEach(b=>b.onclick=()=>{const x=JSON.parse(b.dataset.c);post('removechore',{name:x.name});say('Removed',()=>post('restorechore',{label:x.label,every:x.every,done:x.done,by:x.by}))});
 }
-document.getElementById('add').onsubmit=e=>{e.preventDefault();const t=document.getElementById('t');if(t.value.trim()){post('add',{text:t.value});t.value=''}};
+document.getElementById('add').onsubmit=e=>{e.preventDefault();const t=document.getElementById('t'),v=t.value.trim();if(v){const dup=shopItems.some(x=>x.toLowerCase()===v.toLowerCase());post('add',{text:v});t.value='';if(!dup)say('Added',()=>post('removeitem',{text:v}))}};
+document.getElementById('addc').onsubmit=e=>{e.preventDefault();const n=document.getElementById('cn'),d=document.getElementById('ce'),v=n.value.trim();if(v){const dup=chNames.some(x=>x.toLowerCase()===v.toLowerCase());post('addchore',{name:v,every:d.value});n.value='';if(!dup)say('Added chore',()=>post('removechore',{name:v}))}};
 load();setInterval(()=>{if(!document.hidden)load()},5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
 </script></body></html>"""
 
@@ -265,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         r = self.route()
-        if r not in ("add", "tick", "done"):
+        if r not in ("add", "tick", "untick", "removeitem", "clearshopping", "addchore", "removechore", "restorechore", "done", "undone"):
             return self.send(404, b"Not found")
         n = int(self.headers.get("Content-Length") or 0)
         if n > 2048:
@@ -280,6 +381,20 @@ class Handler(BaseHTTPRequestHandler):
                 add_item(body.get("text"))
             elif r == "tick":
                 tick_item(body.get("text"))
+            elif r == "untick":
+                untick_item(body.get("text"))
+            elif r == "removeitem":
+                remove_item(body.get("text"))
+            elif r == "clearshopping":
+                clear_shopping()
+            elif r == "addchore":
+                add_chore(body.get("name"), body.get("every"))
+            elif r == "removechore":
+                remove_chore(body.get("name"))
+            elif r == "restorechore":
+                restore_chore(body.get("label"), body.get("every"), body.get("done"), body.get("by"))
+            elif r == "undone":
+                undo_chore(body.get("name"), body.get("done"), body.get("by"))
             else:
                 chore_done(body.get("name"), who)
             mark_state()
