@@ -76,7 +76,27 @@ internal fun mailColour(k: MailKind): Color = when (k) {
     MailKind.REPLY -> Primary; MailKind.BILL -> Amber; MailKind.JOB -> Purple; MailKind.DELIVERY -> LinkBlue; MailKind.RECEIPT -> TaskGreen; MailKind.READ -> Muted
 }
 
-internal fun openProtonWeb() = runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(MailDigest.PROTON_WEB)) }
+/** Opens the Proton Mail desktop app if it's installed (its Start menu shortcut or install folder), else Proton on the web. */
+internal fun openProtonWeb() = runCatching {
+    val app = protonMailApp()
+    if (app != null && runCatching { ProcessBuilder("cmd", "/c", "start", "", app.absolutePath).start() }.isSuccess) return@runCatching
+    java.awt.Desktop.getDesktop().browse(java.net.URI(MailDigest.PROTON_WEB))
+}
+
+private fun protonMailApp(): java.io.File? {
+    if (!System.getProperty("os.name").orEmpty().startsWith("Windows")) return null
+    val env = System.getenv()
+    val menus = listOfNotNull(env["APPDATA"], env["ProgramData"]).map { java.io.File(it, "Microsoft/Windows/Start Menu/Programs") }
+    menus.forEach { dir ->
+        dir.walk().maxDepth(3).firstOrNull { f ->
+            val n = f.name.lowercase()
+            f.isFile && n.endsWith(".lnk") && n.startsWith("proton mail") && "bridge" !in n
+        }?.let { return it }
+    }
+    // The installer puts a launcher exe at the top of %LOCALAPPDATA%\proton_mail.
+    return env["LOCALAPPDATA"]?.let { java.io.File(it, "proton_mail") }?.takeIf { it.isDirectory }
+        ?.listFiles { f -> f.isFile && f.name.lowercase().let { it.endsWith(".exe") && "proton" in it && "update" !in it } }?.firstOrNull()
+}
 
 @Composable
 private fun KindTag(k: MailKind) = Text(

@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- Without this, Android 11+ hides the Proton Mail app and "Open in Proton" falls back to the web. -->
+        <package android:name="ch.protonmail.android" />
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
