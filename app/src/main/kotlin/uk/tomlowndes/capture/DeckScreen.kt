@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -255,8 +256,45 @@ fun DeckScreen(
 
     fun setMood(n: Int) = changeHabits { Mood.set(it, n) }
 
+    // Stage 3 (body-people-errands-v1, wellbeing-v1, growth-v1): sleep and steps, What helps you, flashcards.
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        if (!prefs.healthOn) return@LaunchedEffect
+        val ok = runCatching { HealthSync.sync(ctx, uri) }.isSuccess
+        if (ok) withContext(Dispatchers.IO) { runCatching { Habits.load(appVault(ctx, uri)) }.getOrNull() }?.let { data = data.copy(habits = it) }
+    }
+    var helps by remember { mutableStateOf<MonthPatterns?>(null) }
+    var helpsOpen by remember { mutableStateOf(false) }
+    var helpsClosed by remember { mutableStateOf(prefs.helpsClosed) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        val day = LocalDate.now()
+        if (!Patterns.showCard(day) || helpsClosed == Patterns.lastMonth(day).toString()) return@LaunchedEffect
+        helps = withContext(Dispatchers.IO) { runCatching { loadOrMakePatterns(ctx, prefs, uri, day) }.getOrNull() }
+    }
+    var cardsDue by remember { mutableStateOf<Int?>(null) }
+    // Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest from the box, and spend from receipts.
+    var inbox by remember { mutableStateOf<InboxData?>(null) }
+    var mailOpen by remember { mutableStateOf<Mail?>(null) }
+    var spend by remember { mutableStateOf<Pair<MonthSpend, MonthSpend>?>(null) }
+    var recat by remember { mutableStateOf<Receipt?>(null) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        inbox = withContext(Dispatchers.IO) { runCatching { loadInbox(ctx, uri) }.getOrNull() }
+        spend = withContext(Dispatchers.IO) { runCatching { loadSpend(ctx, uri, LocalDate.now()) }.getOrNull() }
+    }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        cardsDue = withContext(Dispatchers.IO) {
+            runCatching { Flashcards.decks(appVault(ctx, uri), java.io.File(ctx.cacheDir, "vault-index.json")) }.getOrNull()
+                ?.takeIf { it.isNotEmpty() }?.let { Flashcards.dueToday(it, LocalDate.now()).size }
+        }
+    }
+
     val low = energy == Energy.LOW
-    val maxMin = if (low) SHORT_MIN else null
+    // After a short night, Next step and Top tasks only offer easy ones (settings › Health).
+    val shortNight = !low && prefs.easyAfterShort && data.habits?.let { Body.shortNight(it, LocalDate.now()) } == true
+    val maxMin = if (low) SHORT_MIN else if (shortNight) Body.EASY_TASK_MIN else null
     val next = Deck.nextStep(data.tasks, later, maxMin)
     val top = Deck.topTasks(data.tasks, if (energy == Energy.HIGH) 3 else 2, later, maxMin)
     val hidden = data.layout.hidden
@@ -361,6 +399,11 @@ fun DeckScreen(
                 if (HomeCard.TODAY !in hidden) rows.addAll(calendarRows(data.calendars, cal, onOpenSettings, earlierOpen) {
                     earlierOpen = !earlierOpen; prefs.earlierOpenOn = if (earlierOpen) LocalDate.now().toString() else null
                 })
+                data.habits?.let { h ->
+                    Body.sleepLine(h, today)?.let { line -> rows.add { QuietRow(null, line, onClick = { onOpenSub(Sub.HABITS) }) } }
+                    if (shortNight) rows.add { QuietRow(null, "🔋 Short night, go easy", "tasks under ${Body.EASY_TASK_MIN}m", rightColour = Amber) }
+                    Body.stepsLine(h, today, prefs.stepGoal)?.let { line -> rows.add { QuietRow(null, line, onClick = { onOpenSub(Sub.HABITS) }) } }
+                }
                 if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
                     rows.add {
                         val paid = b.task.raw in paying
@@ -385,6 +428,8 @@ fun DeckScreen(
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
+            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { m -> mailOpen = m }, onAll = { onOpenSub(Sub.INBOX) }) }
+            DeckSection.SPEND -> if (HomeCard.SPEND !in hidden) spend?.let { (now, last) -> SpendCard(now, last) { recat = it } }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
                 DeckCard {
@@ -408,18 +453,30 @@ fun DeckScreen(
                         onKeep = { passageSeen(passage, keep = true) },
                         onNext = { passageSeen(passage, keep = false) })
                 }
-                if (showRoutines || showProject || showJournal || showHome) {
+                val showLearn = cardsDue != null
+                if (showRoutines || showProject || showJournal || showHome || showLearn) {
                     SectionLabel("More")
-                    TileRow {
-                        if (showHome) {
-                            val due = Chores.due(chores, today).size
-                            Tile("🏠", "Home", if (due > 0) "$due need doing" else "all fresh", dot = due > 0) { onOpenSub(Sub.CHORES) }
-                        }
-                        if (showRoutines) Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
+                    val tiles = mutableListOf<@Composable RowScope.() -> Unit>()
+                    if (showHome) tiles.add {
+                        val due = Chores.due(chores, today).size
+                        Tile("🏠", "Home", if (due > 0) "$due need doing" else "all fresh", dot = due > 0) { onOpenSub(Sub.CHORES) }
+                    }
+                    if (showRoutines) tiles.add {
+                        Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                             data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                         }
-                        if (showProject) Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) }
-                        if (showJournal) Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true }
+                    }
+                    if (showProject) tiles.add { Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) } }
+                    if (showJournal) tiles.add { Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true } }
+                    if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
+                    // Three to a row; a short last row keeps the same tile width.
+                    val perRow = if (tiles.size == 4) 2 else 3
+                    tiles.chunked(perRow).forEachIndexed { i, chunk ->
+                        if (i > 0) Box(Modifier.height(8.dp))
+                        TileRow {
+                            chunk.forEach { it() }
+                            repeat(perRow - chunk.size) { Box(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }
@@ -459,6 +516,12 @@ fun DeckScreen(
             Briefing.prompt(Slip.build(today, data.tasks, events, weather, SlipOptions(), today, data.jobs), next?.let { TaskViews.plainText(it) },
                 listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }))
         }
+        // What helps you (wellbeing-v1): first week of the month, until closed.
+        helps?.let { p ->
+            HelpsCard(p, onAll = { helpsOpen = true }) {
+                helps = null; helpsClosed = p.month.toString(); prefs.helpsClosed = helpsClosed
+            }
+        }
         StatPills(
             Deck.dueCount(data.tasks, today), data.focusMin, data.habits?.progress(today),
             onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) },
@@ -487,6 +550,18 @@ fun DeckScreen(
     drag.section?.let { s -> LiftedSection(drag, origin) { Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { Section(s) } } }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
+    mailOpen?.let { m -> MailSheet(m, vault, snack) { mailOpen = null; refresh++ } }
+    recat?.let { r ->
+        CategorySheet(r) { c ->
+            recat = null
+            val uri = vault
+            if (c != null && c != r.category && uri != null) scope.launch {
+                withContext(Dispatchers.IO) { runCatching { Spend.recategorise(appVault(ctx, uri), r, c) } }
+                refresh++
+            }
+        }
+    }
+    if (helpsOpen) helps?.let { p -> HelpsSheet(p) { helpsOpen = false } }
     talking?.let { t ->
         TalkSheet(t, vault, prefs, snack, onFocus = onStartFocus) {
             talking = null; snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed; refresh++

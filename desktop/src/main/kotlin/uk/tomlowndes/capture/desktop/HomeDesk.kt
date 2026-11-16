@@ -345,5 +345,9 @@ internal fun SnapPanel(state: AppState, result: SnapResult?, failed: String?, on
 }
 
 /** Saves the ticked Snap items to the vault. Returns how many. Blocking. */
-internal fun saveSnap(state: AppState, r: SnapResult): Int = Snap.save(state.writer()!!, r, steps = r.steps, parent = r.what)
+internal fun saveSnap(state: AppState, r: SnapResult): Int {
+    val n = Snap.save(state.writer()!!, r, steps = r.steps, parent = r.what)
+    state.vault?.let { v -> runCatching { Snap.saveReceipt(v, r) } }
+    return n
+}
 

@@ -57,8 +57,10 @@ import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import uk.tomlowndes.capture.Bill
 import uk.tomlowndes.capture.CalEvent
 import uk.tomlowndes.capture.DayPlan
@@ -104,8 +106,8 @@ data class FocusRun(val task: TaskItem, val minutes: Int, val endsAt: Long, val 
  * Cards the desktop Deck shows, and which column each starts in (windows-catchup-v1). Plan today and Mood live in the
  * Now line; Stuck? is a button on Next step. Dragging a card across (deck-drag-v1) keeps its column in [Prefs.deckLeft].
  */
-private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.CHORES, HomeCard.TOP_TASKS, HomeCard.HABITS)
-private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.READING, HomeCard.JOBS)
+private val LEFT = setOf(HomeCard.NEXT_STEP, HomeCard.BILLS, HomeCard.CHORES, HomeCard.TOP_TASKS, HomeCard.HABITS, HomeCard.SPEND)
+private val RIGHT = setOf(HomeCard.TODAY, HomeCard.WEATHER, HomeCard.PROJECTS, HomeCard.READ_LATER, HomeCard.ROUTINES, HomeCard.HIGHLIGHTS, HomeCard.READING, HomeCard.JOBS, HomeCard.INBOX)
 
 private data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -149,6 +151,28 @@ fun DeckPane(state: AppState) {
     var passageIdx by remember { mutableStateOf(0) }
     var talking by remember { mutableStateOf<TaskItem?>(null) }
     var snoozed by remember { mutableStateOf(state.prefs.talkSnoozed) }
+    // Stage 3: What helps you (first week of the month) and Learn.
+    var helps by remember { mutableStateOf<uk.tomlowndes.capture.MonthPatterns?>(null) }
+    var helpsOpen by remember { mutableStateOf(false) }
+    var learnOpen by remember { mutableStateOf(false) }
+    var cardsDue by remember { mutableStateOf<Int?>(null) }
+    // Stage 4: the email digest from the box, and spend from receipts.
+    var inbox by remember { mutableStateOf<DeskInbox?>(null) }
+    var mailOpen by remember { mutableStateOf<uk.tomlowndes.capture.Mail?>(null) }
+    var spend by remember { mutableStateOf<Pair<uk.tomlowndes.capture.MonthSpend, uk.tomlowndes.capture.MonthSpend>?>(null) }
+    var stageFour by remember { mutableStateOf(0) }
+    LaunchedEffect(state.vault, state.changes, stageFour) {
+        inbox = withContext(Dispatchers.IO) { runCatching { loadDeskInbox(state) }.getOrNull() }
+        state.inboxOpen = inbox?.open(LocalDate.now())?.size ?: 0
+        spend = withContext(Dispatchers.IO) { runCatching { loadDeskSpend(state, LocalDate.now()) }.getOrNull() }
+    }
+    LaunchedEffect(state.vault, learnOpen) {
+        if (learnOpen) return@LaunchedEffect
+        cardsDue = withContext(Dispatchers.IO) { dueCardCount(state) }
+        val day = LocalDate.now()
+        if (helps == null && uk.tomlowndes.capture.Patterns.showCard(day) && state.prefs.helpsClosed != uk.tomlowndes.capture.Patterns.lastMonth(day).toString())
+            helps = withContext(Dispatchers.IO) { runCatching { loadOrMakePatterns(state, day) }.getOrNull() }
+    }
     val drag = remember { DeckDrag() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
@@ -278,6 +302,8 @@ fun DeckPane(state: AppState) {
             HomeCard.READING -> data.passages.getOrNull(passageIdx)?.let { p ->
                 ReadingCard(p, onOpen = { state.openArticle(p.ref) }, onKeep = { passageSeen(p, true) }, onNext = { passageSeen(p, false) })
             }
+            HomeCard.INBOX -> inbox?.let { InboxDeckCard(state, it) { m -> mailOpen = m } }
+            HomeCard.SPEND -> spend?.let { (now, last) -> SpendDeckCard(state, now, last) { stageFour++ } }
             else -> Unit
         }
     }
@@ -294,6 +320,8 @@ fun DeckPane(state: AppState) {
         HomeCard.JOBS -> data.jobs > 0
         HomeCard.CHORES -> uk.tomlowndes.capture.Chores.due(data.chores, today).isNotEmpty()
         HomeCard.READING -> passageIdx < data.passages.size
+        HomeCard.INBOX -> inbox?.digest != null
+        HomeCard.SPEND -> spend?.first?.receipts?.isNotEmpty() == true
         else -> false
     }
     val shown = visible.filter { (it in LEFT || it in RIGHT) && shows(it) }
@@ -326,6 +354,9 @@ fun DeckPane(state: AppState) {
     }
 
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
+    if (helpsOpen) helps?.let { p -> HelpsDialog(state, p) { helpsOpen = false } }
+    if (learnOpen) LearnDialog(state) { learnOpen = false }
+    mailOpen?.let { m -> MailDialog(state, m) { mailOpen = null; stageFour++ } }
     talking?.let { t ->
         TalkDialog(state, t) {
             talking = null
@@ -389,6 +420,9 @@ fun DeckPane(state: AppState) {
                 snoozed = uk.tomlowndes.capture.TalkThrough.snooze(snoozed, t, today); state.prefs.talkSnoozed = snoozed
             }
         }
+        helps?.let { p ->
+            HelpsCardDesk(p, onAll = { helpsOpen = true }) { helps = null; state.prefs.helpsClosed = p.month.toString() }
+        }
         NowBar(nowItems, nowIndex) { nowIndex++ }
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
@@ -397,6 +431,12 @@ fun DeckPane(state: AppState) {
             DeckPill(data.habits?.progress(today)?.let { (done, total) -> "Habits $done/$total" } ?: "Habits", Purple) {
                 state.openInObsidian(Habits.PATH)
             }
+            // Sleep and steps come from the phone (Health Connect) through the Habits note.
+            data.habits?.let { h ->
+                uk.tomlowndes.capture.Body.sleepLine(h, today)?.let { DeckPill(it, if (uk.tomlowndes.capture.Body.shortNight(h, today)) Amber else Purple) { state.openInObsidian(Habits.PATH) } }
+                uk.tomlowndes.capture.Body.stepsLine(h, today, state.prefs.stepGoal)?.let { DeckPill(it, TaskGreen) { state.openInObsidian(Habits.PATH) } }
+            }
+            cardsDue?.let { n -> DeckPill(if (n > 0) "🧠 Learn $n" else "🧠 Learn ✓", Primary) { learnOpen = true } }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
             val pickUp = { runCatching { keys.requestFocus() }; Unit }
