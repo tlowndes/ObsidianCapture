@@ -63,6 +63,7 @@ fun MainWindow(state: AppState) {
                 Tab.JARVIS -> JarvisPane(state)
                 Tab.HOME -> HomePane(state)
                 Tab.INBOX -> InboxPane(state)
+                Tab.PEOPLE -> PeoplePane(state)
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
                 Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
@@ -122,6 +123,7 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
         NavItem(state, Tab.VAULT, "🗂", "Vault")
         NavItem(state, Tab.HOME, "🏠", "Home")
+        NavItem(state, Tab.PEOPLE, "👥", "People")
         state.routine?.let { r ->
             NavItem(state, Tab.ROUTINES, "⏱", r.routine.name) { Text("${r.step + 1}/${r.routine.steps.size}", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         }

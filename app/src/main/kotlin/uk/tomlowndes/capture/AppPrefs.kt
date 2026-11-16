@@ -270,6 +270,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("helps_closed", null)
         set(v) { p.edit().putString("helps_closed", v).apply() }
 
+    /** People: the day the birthday gift tasks were last checked. */
+    var giftsCheckedOn: String?
+        get() = p.getString("gifts_checked_on", null)
+        set(v) { p.edit().putString("gifts_checked_on", v).apply() }
+
     var phoneBrain: Boolean
         get() = p.getBoolean("phone_brain", false)
         set(v) { p.edit().putBoolean("phone_brain", v).apply() }

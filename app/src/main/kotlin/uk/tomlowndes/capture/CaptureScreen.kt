@@ -533,7 +533,15 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
                     if (link) {
                         val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
                         ReadLater.save(ctx, uri, url, null, wasTags)
-                    } else { VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString()); true }
+                    } else {
+                        // "gift idea for Mum: kneeler" goes in Mum's note when there is one (People, Stage 5).
+                        val gift = People.giftIdea(value)?.let { (who, idea) ->
+                            val v = appVault(ctx, uri)
+                            People.find(People.list(v), who)?.also { p -> People.addGift(v, p, idea) }
+                        }
+                        if (gift == null) VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString())
+                        true
+                    }
                 }
             }
             busy = false

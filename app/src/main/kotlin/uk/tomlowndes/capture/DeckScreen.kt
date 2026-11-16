@@ -278,6 +278,12 @@ fun DeckScreen(
     var mailOpen by remember { mutableStateOf<Mail?>(null) }
     var spend by remember { mutableStateOf<Pair<MonthSpend, MonthSpend>?>(null) }
     var recat by remember { mutableStateOf<Receipt?>(null) }
+    // Stage 5: people a week ahead, tonight's meal, errands.
+    var home by remember { mutableStateOf<HomeBits?>(null) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        home = withContext(Dispatchers.IO) { runCatching { loadHomeBits(ctx, uri, prefs, LocalDate.now()) }.getOrNull() }
+    }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         inbox = withContext(Dispatchers.IO) { runCatching { loadInbox(ctx, uri) }.getOrNull() }
@@ -404,6 +410,11 @@ fun DeckScreen(
                     if (shortNight) rows.add { QuietRow(null, "🔋 Short night, go easy", "tasks under ${Body.EASY_TASK_MIN}m", rightColour = Amber) }
                     Body.stepsLine(h, today, prefs.stepGoal)?.let { line -> rows.add { QuietRow(null, line, onClick = { onOpenSub(Sub.HABITS) }) } }
                 }
+                home?.let { hb ->
+                    hb.tonight?.let { m -> rows.add { QuietRow("🍽", "Tonight: ${m.label}", if (m.recipe != null) "Cook this ›" else "Week ›", rightColour = Primary,
+                        onClick = { onOpenSub(if (m.recipe != null) Sub.RECIPES else Sub.MEALS) }) } }
+                    hb.people.take(2).forEach { n -> rows.add { QuietRow(null, People.deckLine(n), onClick = { onOpenSub(Sub.PEOPLE) }) } }
+                }
                 if (HomeCard.BILLS !in hidden) TaskViews.billsDue(data.tasks, today).forEach { b ->
                     rows.add {
                         val paid = b.task.raw in paying
@@ -454,7 +465,8 @@ fun DeckScreen(
                         onNext = { passageSeen(passage, keep = false) })
                 }
                 val showLearn = cardsDue != null
-                if (showRoutines || showProject || showJournal || showHome || showLearn) {
+                val showLife = vault != null
+                if (showRoutines || showProject || showJournal || showHome || showLearn || showLife) {
                     SectionLabel("More")
                     val tiles = mutableListOf<@Composable RowScope.() -> Unit>()
                     if (showHome) tiles.add {
@@ -469,6 +481,11 @@ fun DeckScreen(
                     if (showProject) tiles.add { Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) } }
                     if (showJournal) tiles.add { Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true } }
                     if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
+                    if (showLife) {
+                        tiles.add { Tile("🍽", "Meals", home?.let { "${it.planned} of 7 planned" }) { onOpenSub(Sub.MEALS) } }
+                        tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
+                        tiles.add { Tile("📍", "Errands", home?.errands?.takeIf { it > 0 }?.let { "$it to do" } ?: "none") { onOpenSub(Sub.ERRANDS) } }
+                    }
                     // Three to a row; a short last row keeps the same tile width.
                     val perRow = if (tiles.size == 4) 2 else 3
                     tiles.chunked(perRow).forEachIndexed { i, chunk ->

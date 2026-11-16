@@ -144,6 +144,10 @@ fun HomePane(state: AppState) {
             TextAction("＋ Add chore") { adding = true }
             Text("Click = done today · right-click = edit", fontSize = 12.sp, color = Muted)
         }
+        // Stage 5: the week's meals as a board, and errands by place.
+        MealBoard(state)
+        Spacer(Modifier.height(28.dp))
+        ErrandsList(state)
     }
 
     if (adding || editing != null) {

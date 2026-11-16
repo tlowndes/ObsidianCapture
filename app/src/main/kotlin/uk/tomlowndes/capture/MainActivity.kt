@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
     private fun readOpenRequest(i: Intent?) {
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
+        if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -179,6 +180,7 @@ private fun subFor(slot: String?) = when (slot) {
     "focus" -> Sub.FOCUS
     "snap" -> Sub.SNAP
     "jobs" -> Sub.JOBS
+    "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
     else -> null
 }
@@ -285,6 +287,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.CHORES -> ChoresScreen(vault, snack) { sub = null }
                 sub == Sub.LEARN -> LearnScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.INBOX -> InboxScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.PEOPLE -> PeopleScreen(vault, snack) { sub = null }
+                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack) { sub = null }
+                sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
                 sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PLAN -> PlanScreen(vault, prefs, snack) { sub = null }
