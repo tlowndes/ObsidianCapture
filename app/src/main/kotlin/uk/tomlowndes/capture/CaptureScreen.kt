@@ -445,7 +445,7 @@ private fun SortedRow(work: Boolean, text: String, tag: String?, trailing: Strin
 
 private data class Added(val isLink: Boolean, val text: String, val sub: String)
 
-private enum class CaptureSheet { KIND, DATE, TIME, REPEAT, TAGS }
+private enum class CaptureSheet { KIND, DATE, TIME, REPEAT, TAGS, PLACE }
 
 /** A small chip along the bottom of the capture box; [on] when it holds a value. */
 @Composable
@@ -480,6 +480,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
     val entry = if (link) null else RapidLog.parse(text, today0, kindPick)
     val kind = entry?.kind ?: LogKind.TASK
     val tagData = rememberTagData(vault)
+    val places = rememberPlaces(vault).first
     // A link is saved as typed, so only the chips tag it.
     val typedTags = if (link) emptyList() else Tags.inText(text)
     val onTags = (picked + typedTags).distinct()
@@ -599,6 +600,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
                     ToolChip(if (repeat != null) "↻ on" else "↻", repeat != null) { sheet = CaptureSheet.REPEAT }
                 }
                 ToolChip(if (onTags.isEmpty()) "#" else onTags.joinToString(" ") { Tags.label(it) }, onTags.isNotEmpty()) { sheet = CaptureSheet.TAGS }
+                if (!link && kind.isTask) ToolChip(placeChipLabel(text, places), Errands.tags(text).isNotEmpty()) { sheet = CaptureSheet.PLACE }
             }
             Box(
                 Modifier.padding(start = 8.dp).size(38.dp).clip(CircleShape).background(if (canSend) Primary else Primary.copy(alpha = 0.35f))
@@ -638,6 +640,10 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
                 }
                 CaptureSheet.REPEAT -> RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
                 CaptureSheet.TAGS -> TagRow(tagData, onTags, ::toggleTag)
+                CaptureSheet.PLACE -> {
+                    Text("Place", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    PlaceRow(vault, text, { text = it }, label = false)
+                }
                 null -> {}
             }
         }

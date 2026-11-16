@@ -24,6 +24,15 @@ object Errands {
 
     fun tags(raw: String): List<String> = TAG.findAll(raw).map { "@" + it.groupValues[1].lowercase() }.toList()
 
+    /** Adds [tag] to the end of [text], or takes it out (any case) when it's already there. */
+    fun toggle(text: String, tag: String): String {
+        val t = cleanTag(tag).takeIf { it.length > 1 } ?: return text
+        val re = Regex("(?<![\\w@])" + Regex.escape(t) + "(?![A-Za-z0-9&'_-])", RegexOption.IGNORE_CASE)
+        if (re.containsMatchIn(text)) return text.replace(Regex("[ \\t]*" + re.pattern, RegexOption.IGNORE_CASE), "").replace(Regex("[ \\t]{2,}"), " ").trim()
+        val base = text.trimEnd()
+        return if (base.isEmpty()) t else "$base $t"
+    }
+
     fun cleanTag(s: String) = "@" + s.trim().removePrefix("@").lowercase().replace(Regex("[^a-z0-9&'_-]"), "")
 
     fun parsePlaces(text: String?): List<Place> = text.orEmpty().replace("\r", "").split("\n").mapNotNull { l ->

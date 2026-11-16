@@ -203,7 +203,7 @@ internal fun PlaceEditorScreen(
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(draft.name) }
     var tag by remember { mutableStateOf(draft.tag) }
-    var tagTouched by remember { mutableStateOf(draft.original != null) }
+    var tagTouched by remember { mutableStateOf(draft.original != null || (draft.name.isEmpty() && draft.tag.isNotEmpty())) }
     var radius by remember { mutableIntStateOf(draft.radius) }
     var centre by remember { mutableStateOf(GeoPoint(draft.lat, draft.lon)) }
     val ring = remember { Polygon().apply {
