@@ -87,7 +87,7 @@ internal fun SheetButton(text: String, modifier: Modifier = Modifier, primary: B
 @Composable
 private fun Thinking(text: String) {
     Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.width(18.dp))
+        CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
         Text(text, fontSize = 13.sp, color = Muted)
     }
 }
