@@ -132,11 +132,11 @@ object PhoneOutbox {
             else -> null
         }
         if (direct != null) {
-            prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
+            prefs.spend("Jarvis", PhoneBrain.costUsd(PhoneBrain.FAST, direct.inTok, direct.outTok))
             return Triple(direct.reply, direct.sorted, emptyList())
         }
         val answer = PhoneBrain.chat(key, PhoneBrain.model(prefs.brainClever), listOf(PhoneBrain.Turn(true, text)), today, listOf("#work", "#personal"), prefs.assistantName) {}
-        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(answer.model, answer.inputTokens, answer.outputTokens))
+        prefs.spend("Jarvis", PhoneBrain.costUsd(answer.model, answer.inputTokens, answer.outputTokens))
         val sorted = PhoneBrain.sortedOf(answer.tasks, answer.notes)
         return Triple(answer.text.ifBlank { "Done." }, sorted, answer.handoffs)
     }

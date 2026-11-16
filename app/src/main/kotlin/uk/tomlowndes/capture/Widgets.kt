@@ -93,6 +93,7 @@ object Widgets {
     fun tasksChanged(ctx: Context) {
         val app = ctx.applicationContext
         scope.launch { runCatching { refreshTasks(app) } }
+        HomeWidgets.changed(app)
     }
 
     internal val read = MutableStateFlow<WidgetRead?>(null)

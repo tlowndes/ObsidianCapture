@@ -214,7 +214,7 @@ object Recipes {
 
     /** The shopping note with [items] added (skipping any already open there), plus how many were added. */
     fun withShopping(text: String, items: List<String>): Pair<String, Int> {
-        val have = shoppingOpen(text).map { it.lowercase() }.toSet()
+        val have = shoppingOpen(text).map { SharedList.clean(it).lowercase() }.toSet()
         val add = items.map { it.trim() }.filter { it.isNotEmpty() && it.lowercase() !in have }.distinctBy { it.lowercase() }
         if (add.isEmpty()) return text to 0
         val lines = text.split("\n").toMutableList()

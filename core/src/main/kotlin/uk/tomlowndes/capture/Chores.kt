@@ -7,7 +7,7 @@ import java.time.temporal.ChronoUnit
  * A home job that "decays" (home-life-v1): no due date, just how often it wants doing. [done] is when it was last done
  * (null: never, so it shows as full).
  */
-data class Chore(val name: String, val emoji: String = "", val every: Int = 7, val done: LocalDate? = null) {
+data class Chore(val name: String, val emoji: String = "", val every: Int = 7, val done: LocalDate? = null, val by: String? = null) {
     val label get() = if (emoji.isEmpty()) name else "$emoji $name"
 
     /** Days since it was last done (null when never). */
@@ -20,7 +20,7 @@ data class Chore(val name: String, val emoji: String = "", val every: Int = 7, v
     fun ageLabel(today: LocalDate): String {
         val a = age(today)
         val since = when (a) { null -> "not yet"; 0L -> "today"; 1L -> "1 day"; else -> "$a days" }
-        return "$since · every $every"
+        return "$since · every $every" + (by?.let { " · $it did it last" } ?: "")
     }
 }
 
@@ -38,6 +38,7 @@ object Chores {
     private val LINE = Regex("^\\s*[-*]\\s+(.+?)\\s*$")
     private val EVERY = Regex("^every\\s+(\\d+)(?:\\s*days?)?$", RegexOption.IGNORE_CASE)
     private val DONE = Regex("^done\\s+(\\d{4}-\\d{2}-\\d{2})$", RegexOption.IGNORE_CASE)
+    private val BY = Regex("^by\\s+(\\S.*)$", RegexOption.IGNORE_CASE)
 
     val STARTER = listOf(
         Chore("Clean bathroom", "🛁", 7), Chore("Change bedding", "🧺", 14), Chore("Hoover downstairs", "🧹", 5),
@@ -59,16 +60,18 @@ object Chores {
         if (parts.isEmpty()) return null
         var every = 7
         var done: LocalDate? = null
+        var by: String? = null
         parts.drop(1).forEach { p ->
+            BY.matchEntire(p)?.let { by = it.groupValues[1].trim() }
             EVERY.matchEntire(p)?.let { every = it.groupValues[1].toInt().coerceIn(1, 365) }
             DONE.matchEntire(p)?.let { done = runCatching { LocalDate.parse(it.groupValues[1]) }.getOrNull() }
         }
         val (emoji, name) = splitEmoji(parts[0])
         if (name.isBlank()) return null
-        return Chore(name, emoji, every, done)
+        return Chore(name, emoji, every, done, by)
     }
 
-    fun line(c: Chore): String = "- " + c.label + " · every ${c.every}" + (c.done?.let { " · done $it" } ?: "")
+    fun line(c: Chore): String = "- " + c.label + " · every ${c.every}" + (c.done?.let { " · done $it" } ?: "") + (c.by?.let { " · by $it" } ?: "")
 
     /** Leading emoji (anything that isn't a letter or digit) split from the name. */
     fun splitEmoji(s: String): Pair<String, String> {
@@ -128,7 +131,7 @@ object Chores {
     }
 
     /** Marks [c] done on [day]. Returns the chore as it was, for Undo. */
-    fun markDone(v: Vault, c: Chore, day: LocalDate = LocalDate.now()): Chore { change(v, c.name, c.copy(done = day)); return c }
+    fun markDone(v: Vault, c: Chore, day: LocalDate = LocalDate.now()): Chore { change(v, c.name, c.copy(done = day, by = null)); return c }
 
     fun put(v: Vault, old: String?, c: Chore) = change(v, old, c)
     fun remove(v: Vault, c: Chore) = change(v, c.name, null)

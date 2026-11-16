@@ -550,9 +550,10 @@ private fun ClaudeSettings(state: AppState) {
         else "Fast is the usual model. A quiet month stays very cheap.") {
         Pill(listOf("Fast", "Clever"), if (clever) 1 else 0, Modifier.width(200.dp)) { clever = it == 1; p.brainClever = clever }
     }
-    Setting("This month", "Worked out on this PC from what Claude reports") {
+    Setting("On this PC", "Worked out from what Claude reports") {
         Text(p.brainSpend.label(), fontSize = 13.sp, color = Muted, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
     }
+    CapSettingsDesk(state)
 }
 
 private fun mask(k: String) = k.trim().let { if (it.length <= 10) "••••" else it.take(7) + "…" + it.takeLast(4) }

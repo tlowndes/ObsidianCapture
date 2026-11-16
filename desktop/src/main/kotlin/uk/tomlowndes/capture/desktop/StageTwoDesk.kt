@@ -68,7 +68,7 @@ internal fun deskAsk(state: AppState, user: String, system: String, clever: Bool
     val key = state.prefs.claudeKey?.takeIf { it.isNotBlank() } ?: error("Add the Claude key in Settings")
     val model = PhoneBrain.model(clever)
     val d = PhoneBrain.complete(key, user, system, model = model, maxTokens = maxTokens, seconds = if (clever) 120 else PhoneBrain.CHAT_TIMEOUT_S)
-    state.prefs.brainSpend = state.prefs.brainSpend.add(PhoneBrain.costUsd(model, d.inTok, d.outTok))
+    state.prefs.spend("Helpers", PhoneBrain.costUsd(model, d.inTok, d.outTok))
     return d.reply
 }
 
@@ -133,7 +133,7 @@ internal fun TalkDialog(state: AppState, t: TaskItem, onDone: () -> Unit) {
             val sent = listOf(PhoneBrain.Turn(true, "(You asked: ${TalkThrough.opener(name)})")) + turns.drop(1)
             val d = state.io("Couldn't reach $who") {
                 PhoneBrain.converse(state.prefs.claudeKey!!, TalkThrough.system(name, days, who), sent).also {
-                    state.prefs.brainSpend = state.prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
+                    state.prefs.spend("Helpers", PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
                 }
             }
             busy = false

@@ -143,6 +143,7 @@ fun HomePane(state: AppState) {
         Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TextAction("＋ Add chore") { adding = true }
             Text("Click = done today · right-click = edit", fontSize = 12.sp, color = Muted)
+            SharedPillDesk(state)
         }
         // Stage 5: the week's meals as a board, and errands by place.
         MealBoard(state)
@@ -186,7 +187,7 @@ internal fun saveRecipe(state: AppState, url: String, claude: Boolean): String? 
     val recipe = found ?: run {
         val key = state.prefs.claudeKey?.takeIf { claude && it.isNotBlank() } ?: return null
         val r = PhoneBrain.complete(key, "Page: $url\n\n$text", Recipes.CLAUDE_SYSTEM)
-        state.prefs.brainSpend = state.prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
+        state.prefs.spend("Recipes", PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
         Recipes.fromClaude(r.reply, url)
     } ?: return null
     Recipes.save(v, recipe)
@@ -299,7 +300,7 @@ internal fun snapJpeg(src: BufferedImage): String {
 internal fun readSnap(state: AppState, img: BufferedImage, mode: SnapMode = SnapMode.AUTO): SnapResult {
     val key = state.prefs.claudeKey?.takeIf { it.isNotBlank() } ?: error("Add the Claude key in Settings to read images")
     val r = PhoneBrain.vision(key, Snap.system(LocalDate.now(), mode, listOf("#work", "#personal")), snapJpeg(img), "image/jpeg", Snap.PROMPT)
-    state.prefs.brainSpend = state.prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
+    state.prefs.spend("Recipes", PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
     return Snap.parse(r.reply) ?: error("Claude's answer didn't make sense, try again")
 }
 

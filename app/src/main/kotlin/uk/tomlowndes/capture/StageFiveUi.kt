@@ -310,6 +310,7 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         BackTitle("Errands", errands?.let { "${it.sumOf { e -> e.items.size }} to do at ${it.size} places" }, onBack)
+        SharedPill(vault)
         errands?.let { es ->
             if (es.isEmpty()) Text("Add @tesco or @b&q to any task and it shows here.", fontSize = 14.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp))
             ListCard(Modifier.padding(top = 6.dp)) {

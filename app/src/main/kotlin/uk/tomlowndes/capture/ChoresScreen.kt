@@ -109,6 +109,7 @@ fun ChoresScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         val due = all?.let { Chores.due(it, today).size } ?: 0
         Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Home", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            SharedPill(vault)
             if (due > 0) Text("$due need doing", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Primary,
                 modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(PrimaryTint).padding(horizontal = 10.dp, vertical = 4.dp))
         }

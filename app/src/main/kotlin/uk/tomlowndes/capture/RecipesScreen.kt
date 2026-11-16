@@ -58,7 +58,7 @@ internal fun saveRecipe(ctx: Context, vault: Uri, url: String): String? {
         val key = SecretStore(ctx).claudeKey?.takeIf { it.isNotBlank() } ?: return null
         val prefs = AppPrefs(ctx)
         val r = PhoneBrain.complete(key, "Page: $url\n\n$text", Recipes.CLAUDE_SYSTEM)
-        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
+        prefs.spend("Recipes", PhoneBrain.costUsd(PhoneBrain.FAST, r.inTok, r.outTok))
         Recipes.fromClaude(r.reply, url)
     } ?: return null
     Recipes.save(appVault(ctx, vault), recipe, LocalDate.now())

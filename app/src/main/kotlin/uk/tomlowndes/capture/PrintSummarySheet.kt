@@ -107,7 +107,7 @@ internal fun PrintSummarySheet(source: SummarySource, snack: SnackbarHostState, 
                     }
                     if (api) {
                         val d = PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.")
-                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                        prefs.spend("Printing", PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
                         d.reply
                     } else Jarvis.sendText(address, token, prompt, "jarvis").reply
                 }
