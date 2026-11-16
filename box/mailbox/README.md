@@ -4,7 +4,14 @@
 `99 - Meta/Email.md` in the vault for Flight Deck's Inbox card and page. Obsidian Sync carries it to the phone and PC.
 
 - Read-only: folders are opened with `EXAMINE` and mail is fetched with `BODY.PEEK`, so nothing is marked read,
-  moved or deleted. There's no SMTP, so it can't send.
+  moved or deleted.
+- The one thing it sends: **calendar invites Tom asks for**. "Add to Proton Calendar" in the app adds a line to
+  `99 - Meta/Inbox/calendar-out.md`; each run the script emails an `.ics` invite through Bridge SMTP to Tom's own
+  address (`CAL_TO`, default `BRIDGE_USER`) and ticks the line. Proton Mail shows Yes / Maybe / No; Yes adds it to
+  Proton Calendar. If Proton doesn't show the buttons for an invite from yourself, set `CAL_ORGANIZER` to another
+  address of yours (an alias works).
+- **Hidden senders**: Settings › Inbox lists them under `## Hidden senders` in `Email settings.md`. "everything" is
+  skipped before Claude sees it; "alerts" drops anything from that sender that isn't a real reply.
 - Only the sender, subject and first 1,500 characters go to Claude (Haiku). No attachments.
 - Settings › Inbox in the app writes `99 - Meta/Email settings.md` (how often, what to pick out, Check now). The timer
   runs every 5 minutes and the script only does work when that says it's time.
@@ -21,7 +28,7 @@
 ```
 
 `BRIDGE_PASS` is the Bridge password from `protonmail-bridge --cli` then `info`, **not** the Proton password.
-Optional: `BRIDGE_HOST` (127.0.0.1), `BRIDGE_PORT` (1143), `FOLDERS` (`Starred,Labels/Vault`), `MODEL` (`claude-haiku-5-5`).
+Optional: `BRIDGE_HOST` (127.0.0.1), `BRIDGE_PORT` (1143), `BRIDGE_SMTP_PORT` (1025), `CAL_TO`, `CAL_ORGANIZER`, `FOLDERS` (`Starred,Labels/Vault`), `MODEL` (`claude-haiku-5-5`).
 
 ## systemd (user units)
 

@@ -158,7 +158,7 @@ fun DeckPane(state: AppState) {
     var cardsDue by remember { mutableStateOf<Int?>(null) }
     // Stage 4: the email digest from the box, and spend from receipts.
     var inbox by remember { mutableStateOf<DeskInbox?>(null) }
-    var mailOpen by remember { mutableStateOf<uk.tomlowndes.capture.Mail?>(null) }
+    var mailOpen by remember { mutableStateOf<List<uk.tomlowndes.capture.Mail>?>(null) }
     var spend by remember { mutableStateOf<Pair<uk.tomlowndes.capture.MonthSpend, uk.tomlowndes.capture.MonthSpend>?>(null) }
     var stageFour by remember { mutableStateOf(0) }
     LaunchedEffect(state.vault, state.changes, stageFour) {

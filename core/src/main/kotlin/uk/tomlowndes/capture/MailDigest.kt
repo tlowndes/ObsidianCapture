@@ -21,6 +21,8 @@ data class Mail(
     val gist: String = "", val task: String? = null, val due: LocalDate? = null,
     val billName: String? = null, val amount: BigDecimal? = null, val billDue: LocalDate? = null,
     val company: String? = null, val jobStatus: String? = null, val shop: String? = null, val link: String? = null,
+    /** Delivery slot like "07:00-13:00", and how often a bill repeats ("monthly"), when the box found them. */
+    val window: String? = null, val repeat: String? = null,
 )
 
 /** The digest note the box writes: when it last looked, how many it read, and the emails it picked out. */
@@ -43,6 +45,8 @@ object MailDigest {
     /** The box checks every 30 minutes by default; after two missed checks the card says paused. */
     const val PAUSED_MIN = 75L
     val NEEDS_YOU = setOf(MailKind.REPLY, MailKind.BILL, MailKind.JOB)
+    /** State value for an email Tom starred in the app: pinned to the top until he handles it. */
+    const val IMPORTANT = "important"
     private val TAG = Regex("<!--mail:(\\{.*\\})-->")
 
     fun parse(text: String): Digest {
@@ -85,6 +89,7 @@ object MailDigest {
                 m.str("detail") ?: m.str("summary").orEmpty(), m.str("summary").orEmpty(), task?.str("text"), task?.day("due") ?: del?.day("when"),
                 bill?.str("name"), bill?.str("amount")?.replace("£", "")?.let { runCatching { BigDecimal(it) }.getOrNull() }, bill?.day("due"),
                 job?.str("company"), job?.str("status")?.let { st -> Jobs.STATUSES.firstOrNull { it.equals(st, true) } },
+                window = del?.str("window"), repeat = bill?.str("repeat"),
             )
         }
         val counts = o.optJSONObject("counts")
@@ -99,6 +104,7 @@ object MailDigest {
             s("date")?.let { runCatching { LocalDateTime.parse(it.take(16)) }.getOrNull() }, s("summary").orEmpty(),
             s("gist").orEmpty(), s("task"), d("due"), s("bill"), s("amount")?.replace("£", "")?.let { runCatching { BigDecimal(it) }.getOrNull() },
             d("bill_due"), s("company"), s("job_status")?.let { st -> Jobs.STATUSES.firstOrNull { it.equals(st, true) } }, s("shop"), s("link"),
+            s("window"), s("repeat"),
         )
     }
 
@@ -110,6 +116,7 @@ object MailDigest {
         m.task?.let { o.put("task", it) }; m.due?.let { o.put("due", it.toString()) }
         m.billName?.let { o.put("bill", it) }; m.amount?.let { o.put("amount", it.toPlainString()) }; m.billDue?.let { o.put("bill_due", it.toString()) }
         m.company?.let { o.put("company", it) }; m.jobStatus?.let { o.put("job_status", it) }; m.shop?.let { o.put("shop", it) }; m.link?.let { o.put("link", it) }
+        m.window?.let { o.put("window", it) }; m.repeat?.let { o.put("repeat", it) }
         return "- ${m.kind.emoji} **${m.from}** · ${m.gist.ifEmpty { m.subject }} <!--mail:$o-->"
     }
 
@@ -134,6 +141,7 @@ object MailDigest {
     fun open(m: Mail, state: Map<String, String>, today: LocalDate): Boolean = when (val s = state[m.id]) {
         null -> true
         "done", "dismissed" -> false
+        IMPORTANT -> true
         else -> s.removePrefix("snooze:").let { runCatching { !today.isBefore(LocalDate.parse(it)) }.getOrDefault(true) }
     }
 
@@ -160,6 +168,16 @@ object MailDigest {
         return jobs.sortedBy { it.closed }.firstOrNull { j -> j.company.lowercase().let { it.isNotEmpty() && (c in it || it in c) } }
     }
 
+    /** A bill as the sheet shows it: payee, amount, due date and repeat, each one Tom can change before saving. */
+    data class BillDraft(val name: String, val amount: BigDecimal?, val due: LocalDate?, val repeat: BillRepeat)
+
+    /** The bill the box pulled out of [m]; payee falls back to the sender, repeat to what the box said (or once). */
+    fun billDraft(m: Mail): BillDraft = BillDraft(
+        (m.billName ?: m.from.substringBefore(" <")).trim().ifEmpty { m.subject },
+        m.amount, m.billDue ?: m.due,
+        BillRepeat.values().firstOrNull { it.name.equals(m.repeat?.trim(), true) || it.label.equals(m.repeat?.trim(), true) } ?: BillRepeat.ONCE,
+    )
+
     /** What the sheet offers to save: a task, a bill and a job status change. Only those that apply. */
     data class Save(val task: String?, val due: LocalDate?, val bill: Boolean, val job: Job?, val status: String?)
 
@@ -171,17 +189,20 @@ object MailDigest {
             else -> null
         }
         val due = m.due ?: if (task != null) today.plusDays(1) else null
-        return Save(task, due, m.kind == MailKind.BILL && m.billName != null, job, m.jobStatus?.takeIf { job != null && !it.equals(job.status, true) })
+        return Save(task, due, m.kind == MailKind.BILL, job, m.jobStatus?.takeIf { job != null && !it.equals(job.status, true) })
     }
 
     /**
      * Saves the ticked parts: the task to Quick Task, the bill as a #bill task, the job's new status (with a line in its
      * log), then marks the email done. Returns how many things were saved.
      */
-    fun save(v: Vault, w: VaultWriter, m: Mail, s: Save, task: Boolean, bill: Boolean, job: Boolean, today: LocalDate = LocalDate.now()): Int {
+    fun save(v: Vault, w: VaultWriter, m: Mail, s: Save, task: Boolean, bill: Boolean, job: Boolean, today: LocalDate = LocalDate.now(), draft: BillDraft? = null): Int {
         var n = 0
         if (task && s.task != null) { w.addTask(s.task, s.due?.toString()); n++ }
-        if (bill && s.bill) { w.addTask(Bills.text(m.billName!!, m.amount, BillRepeat.ONCE), (m.billDue ?: m.due)?.toString()); n++ }
+        if (bill && s.bill) {
+            val b = draft ?: billDraft(m)
+            w.addTask(Bills.text(b.name, b.amount, b.repeat), b.due?.toString()); n++
+        }
         if (job && s.job != null && s.status != null) {
             Jobs.setStatus(v, s.job.path, s.status)
             VaultIo.edit(v, s.job.path) { lines ->
@@ -199,6 +220,10 @@ object MailDigest {
     data class BoxSettings(
         val replies: Boolean = true, val bills: Boolean = true, val jobs: Boolean = true, val deliveries: Boolean = true,
         val every: Int = 30, val checkNow: LocalDateTime? = null,
+        /** Senders Tom marked not important: the app hides them and the box skips them. */
+        val hide: List<HideRule> = emptyList(),
+        /** Senders Tom marked always important. */
+        val important: List<String> = emptyList(),
     )
 
     fun settings(v: Vault): BoxSettings = v.read(SETTINGS)?.replace("\r", "")?.split("\n")?.let { l ->
@@ -207,12 +232,13 @@ object MailDigest {
             b("replies", true), b("bills", true), b("jobs", true), b("deliveries", true),
             Md.fmGet(l, "every")?.trim()?.toIntOrNull()?.coerceIn(10, 240) ?: 30,
             Md.fmGet(l, "check_now")?.trim()?.let { runCatching { LocalDateTime.parse(it.take(16)) }.getOrNull() },
+            InboxSort.hideRules(l), InboxSort.importantSenders(l),
         )
     } ?: BoxSettings()
 
     fun saveSettings(v: Vault, s: BoxSettings) {
         val body = "---\ntype: email-settings\nreplies: ${s.replies}\nbills: ${s.bills}\njobs: ${s.jobs}\ndeliveries: ${s.deliveries}\nevery: ${s.every}\n" +
-            (s.checkNow?.let { "check_now: ${it.toString().take(16)}\n" } ?: "") + "---\n\nSettings › Inbox in Flight Deck. The box reads this before each check.\n"
+            (s.checkNow?.let { "check_now: ${it.toString().take(16)}\n" } ?: "") + "---\n\nSettings › Inbox in Flight Deck. The box reads this before each check.\n" + InboxSort.listsBody(s)
         if (v.entry(SETTINGS) == null) { v.mkdirs(SETTINGS.substringBeforeLast('/')); VaultIo.write(v, v.create(SETTINGS.substringBeforeLast('/'), SETTINGS.substringAfterLast('/').removeSuffix(".md"), "md"), body) }
         else VaultIo.write(v, SETTINGS, body)
     }
