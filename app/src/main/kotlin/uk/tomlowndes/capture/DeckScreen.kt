@@ -276,7 +276,7 @@ fun DeckScreen(
     var cardsDue by remember { mutableStateOf<Int?>(null) }
     // Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest from the box, and spend from receipts.
     var inbox by remember { mutableStateOf<InboxData?>(null) }
-    var mailOpen by remember { mutableStateOf<Mail?>(null) }
+    var mailOpen by remember { mutableStateOf<List<Mail>?>(null) }
     var spend by remember { mutableStateOf<Pair<MonthSpend, MonthSpend>?>(null) }
     var recat by remember { mutableStateOf<Receipt?>(null) }
     // Stage 5: people a week ahead, tonight's meal, errands.
@@ -440,7 +440,7 @@ fun DeckScreen(
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
-            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { m -> mailOpen = m }, onAll = { onOpenSub(Sub.INBOX) }) }
+            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { g -> mailOpen = g }, onAll = { onOpenSub(Sub.INBOX) }) }
             DeckSection.SPEND -> if (HomeCard.SPEND !in hidden) spend?.let { (now, last) -> SpendCard(now, last) { recat = it } }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
@@ -569,7 +569,7 @@ fun DeckScreen(
     drag.section?.let { s -> LiftedSection(drag, origin) { Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { Section(s) } } }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
-    mailOpen?.let { m -> MailSheet(m, vault, snack) { mailOpen = null; refresh++ } }
+    mailOpen?.let { g -> MailSheet(g, vault, snack) { mailOpen = null; refresh++ } }
     recat?.let { r ->
         CategorySheet(r) { c ->
             recat = null

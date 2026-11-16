@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Proton inbox digest for Flight Deck (proton-inbox-v1). Runs on the Oracle box every 5 minutes from a systemd timer.
 
-Reads Starred and the Vault label through Proton Mail Bridge, READ-ONLY (IMAP EXAMINE and BODY.PEEK, no SMTP), asks
-Claude Fast what each new email needs, and writes "99 - Meta/Email.md" in the vault. Obsidian Sync carries it to the
+Reads Starred and the Vault label through Proton Mail Bridge, READ-ONLY (IMAP EXAMINE and BODY.PEEK), asks
+Claude Fast what each new email needs, and writes "99 - Meta/Email.md" in the vault. Senders Tom hid in Settings > Inbox
+are skipped. The one thing it sends: calendar invites Tom asked for ("99 - Meta/Inbox/calendar-out.md"), emailed through
+Bridge SMTP to his own address only, so Proton Mail shows Yes / Maybe / No and Yes adds it to Proton Calendar. Obsidian Sync carries it to the
 phone and PC. It checks only as often as Settings > Inbox says ("99 - Meta/Email settings.md"), or straight away after
 "Check now". Standard library only.
 
 Settings come from ~/mailbox/.env (chmod 600): BRIDGE_USER, BRIDGE_PASS (the Bridge password, not your Proton one),
-ANTHROPIC_API_KEY, VAULT (the vault folder). Optional: BRIDGE_HOST, BRIDGE_PORT, FOLDERS, MODEL.
+ANTHROPIC_API_KEY, VAULT (the vault folder). Optional: BRIDGE_HOST, BRIDGE_PORT, BRIDGE_SMTP_PORT (1025), FOLDERS, MODEL,
+CAL_TO (where invites go; default BRIDGE_USER), CAL_ORGANIZER (who the invite is from; default CAL_TO).
 """
 import datetime as dt
 import email
@@ -17,7 +20,11 @@ import imaplib
 import json
 import os
 import re
+import smtplib
 import ssl
+import uuid
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import sys
 import tempfile
 import urllib.request
@@ -27,6 +34,7 @@ HOME = Path(os.environ.get("MAILBOX_HOME", Path.home() / "mailbox"))
 DIGEST = "99 - Meta/Email.md"
 OLD_DIGEST = "01 - Inbox/Email.md"  # where it lived before 1.38; removed after the first write here
 SETTINGS = "99 - Meta/Email settings.md"
+CALENDAR = "99 - Meta/Inbox/calendar-out.md"
 KEEP_DAYS = 30
 LOOK_BACK_DAYS = 14
 BODY_CHARS = 1500
@@ -72,6 +80,35 @@ def frontmatter(path):
             k, v = line.split(":", 1)
             out[k.strip()] = v.strip().strip('"')
     return out
+
+
+def sender_key(name):
+    return re.sub(r"\s+", " ", (name or "").split(" <")[0].strip().strip('"').lower())
+
+
+def hidden_senders(path):
+    """Settings > Inbox > Hidden: {sender: alerts_only}. Lines under '## Hidden senders' like '- Indeed · everything · 2026-11-16'."""
+    try:
+        lines = path.read_text(encoding="utf-8").replace("\r", "").splitlines()
+    except FileNotFoundError:
+        return {}
+    out, on = {}, False
+    for line in lines:
+        if line.startswith("## "):
+            on = line.strip().lower() == "## hidden senders"
+        elif on and line.strip().startswith("- "):
+            parts = [p.strip() for p in line.strip()[2:].split(" · ")]
+            if parts[0]:
+                out[sender_key(parts[0])] = len(parts) > 1 and parts[1].lower() == "alerts"
+    return out
+
+
+def is_hidden(hide, sender, kind=None):
+    """True when Tom hid this sender: everything, or only alerts (kind known and not a real reply)."""
+    k = sender_key(sender)
+    if k not in hide:
+        return False
+    return not hide[k] or (kind is not None and kind != "reply")
 
 
 def due(settings, state, now):
@@ -153,10 +190,12 @@ def fetch(folders):
 def system(today):
     return f"""You sort emails for Tom's to-do app. Today is {today:%A %d %B %Y}. Reply with JSON only, no prose and no code fences:
 {{"kind": "reply"|"bill"|"job"|"delivery"|"receipt"|"read"|"skip", "gist": string, "summary": string, "task": string or null, "due": "YYYY-MM-DD" or null,
-"bill": string or null, "amount": "12.34" or null, "bill_due": "YYYY-MM-DD" or null, "company": string or null, "job_status": "Applied"|"Interview"|"Offer"|"Rejected" or null, "shop": string or null}}
-- reply: a real person waiting on Tom. bill: money to pay or a renewal (bill = payee, amount, bill_due = pay-by date).
+"bill": string or null, "amount": "12.34" or null, "bill_due": "YYYY-MM-DD" or null, "repeat": "monthly"|"yearly"|"weekly"|"once" or null,
+"company": string or null, "job_status": "Applied"|"Interview"|"Offer"|"Rejected" or null, "shop": string or null, "window": "HH:MM-HH:MM" or null}}
+- reply: a real person waiting on Tom. bill: money to pay or a renewal (bill = payee, amount = the amount to pay, even a minimum
+  payment on a statement, bill_due = pay-by date, repeat = how often it comes, e.g. monthly for a statement or direct debit).
 - job: a recruiter or employer about a role (company; job_status when it's clear, e.g. Interview for a call or interview invite).
-- delivery: a parcel on its way (due = the delivery day). receipt: a purchase already paid (shop, amount).
+- delivery: a parcel on its way (due = the delivery day, window = the delivery slot if given). receipt: a purchase already paid (shop, amount).
 - read: worth knowing, nothing to do. skip: newsletters, promos, notifications.
 - gist: under 12 words, what it's about (e.g. "Asks if you're free Saturday for Mum's birthday lunch").
 - summary: 1-3 short sentences with times, dates and asks. task: a short to-do when Tom needs to act, else null. UK English."""
@@ -180,7 +219,8 @@ def ask(mail, today):
 
 def line(item):
     tag = {k: v for k, v in item.items() if v not in (None, "") and k in
-           ("id", "kind", "from", "subject", "date", "summary", "gist", "task", "due", "bill", "amount", "bill_due", "company", "job_status", "shop")}
+           ("id", "kind", "from", "subject", "date", "summary", "gist", "task", "due", "bill", "amount", "bill_due", "repeat", "company",
+            "job_status", "shop", "window")}
     return "- %s **%s** · %s <!--mail:%s-->" % (EMOJI.get(item["kind"], "📄"), item["from"], item.get("gist") or item["subject"],
                                               json.dumps(tag, ensure_ascii=False, separators=(",", ":")))
 
@@ -204,6 +244,68 @@ def write_digest(vault, items, read, skipped, cost, now):
         old.unlink()  # only our own old digest, never a note Tom wrote
 
 
+CAL_TAG = re.compile(r"<!--cal:(\{.*\})-->")
+
+
+def ics(ev, organizer, to, now):
+    """A one-event iCalendar invite (all day, or timed when start/end are given), in UK time."""
+    day = ev["date"].replace("-", "")
+    if ev.get("start") and ev.get("end"):
+        when = ["DTSTART;TZID=Europe/London:%sT%s00" % (day, ev["start"].replace(":", "")),
+                "DTEND;TZID=Europe/London:%sT%s00" % (day, ev["end"].replace(":", ""))]
+    else:
+        nxt = (dt.date.fromisoformat(ev["date"]) + dt.timedelta(days=1)).strftime("%Y%m%d")
+        when = ["DTSTART;VALUE=DATE:" + day, "DTEND;VALUE=DATE:" + nxt]
+    title = ev["title"].replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+    return "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Flight Deck//Inbox//EN", "METHOD:REQUEST", "BEGIN:VEVENT",
+        "UID:flightdeck-%s@flightdeck" % re.sub(r"[^A-Za-z0-9._-]", "", ev["id"])[:60],
+        "DTSTAMP:" + now.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), *when, "SUMMARY:" + title,
+        "DESCRIPTION:Added from the Flight Deck inbox.", "ORGANIZER;CN=Flight Deck:mailto:" + organizer,
+        "ATTENDEE;CN=Tom;RSVP=TRUE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:" + to,
+        "SEQUENCE:0", "STATUS:CONFIRMED", "TRANSP:TRANSPARENT", "END:VEVENT", "END:VCALENDAR", ""])
+
+
+def send_invites(vault, now):
+    """Emails Tom an invite for each unticked line in calendar-out.md, then ticks it. Only ever to CAL_TO."""
+    path = vault / CALENDAR
+    if not path.exists():
+        return
+    lines = path.read_text(encoding="utf-8").replace("\r", "").split("\n")
+    todo = [(i, json.loads(m.group(1))) for i, l in enumerate(lines) if l.strip().startswith("- [ ]") and (m := CAL_TAG.search(l))]
+    if not todo:
+        return
+    to = os.environ.get("CAL_TO") or os.environ["BRIDGE_USER"]
+    organizer = os.environ.get("CAL_ORGANIZER") or to
+    host = os.environ.get("BRIDGE_HOST", "127.0.0.1")
+    ctx = ssl.create_default_context()
+    if host in ("127.0.0.1", "localhost"):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    with smtplib.SMTP(host, int(os.environ.get("BRIDGE_SMTP_PORT", "1025")), timeout=60) as smtp:
+        smtp.starttls(context=ctx)
+        smtp.login(os.environ["BRIDGE_USER"], os.environ["BRIDGE_PASS"])
+        for i, ev in todo:
+            msg = MIMEMultipart("mixed")
+            msg["Subject"] = "📅 " + ev["title"]
+            msg["From"] = "Flight Deck <%s>" % os.environ["BRIDGE_USER"]
+            msg["To"] = to
+            msg["Message-ID"] = "<%s@flightdeck>" % uuid.uuid4()
+            alt = MIMEMultipart("alternative")
+            alt.attach(MIMEText("%s on %s. Tap Yes to add it to Proton Calendar." % (ev["title"], ev["date"]), "plain", "utf-8"))
+            cal = MIMEText(ics(ev, organizer, to, now), "calendar", "utf-8")
+            cal.set_param("method", "REQUEST")
+            alt.attach(cal)
+            msg.attach(alt)
+            smtp.sendmail(os.environ["BRIDGE_USER"], [to], msg.as_string())
+            lines[i] = lines[i].replace("- [ ]", "- [x]", 1)
+            print("Sent invite:", ev["title"])
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    os.replace(tmp, path)
+
+
 def main():
     env()
     HOME.mkdir(parents=True, exist_ok=True)
@@ -211,6 +313,10 @@ def main():
     now = dt.datetime.now().replace(second=0, microsecond=0)
     settings = frontmatter(vault / SETTINGS)
     state = load("state.json", {})
+    try:
+        send_invites(vault, now)  # every run, so an invite lands within minutes of the tap
+    except Exception as e:
+        print("Calendar invites failed:", e, file=sys.stderr)
     if "--now" not in sys.argv and not due(settings, state, now):
         return
     wanted = {"reply": settings.get("replies", "true") != "false", "bill": settings.get("bills", "true") != "false",
@@ -223,8 +329,12 @@ def main():
         state.update(month=month, cost=0.0)
     folders = [f.strip() for f in os.environ.get("FOLDERS", "Starred,Labels/Vault").split(",") if f.strip()]
     new = 0
+    hide = hidden_senders(vault / SETTINGS)
     for mail in fetch(folders):
         if mail["id"] in seen:
+            continue
+        if is_hidden(hide, mail["from"]):  # hidden for everything: don't spend Claude on it
+            seen[mail["id"]] = {"at": now.isoformat(), "kind": "hidden"}
             continue
         try:
             got, cost = ask(mail, now.date())
@@ -237,10 +347,14 @@ def main():
         new += 1
         if kind == "skip" or not wanted.get(kind, True):
             continue
-        items.append({**{k: got.get(k) for k in ("gist", "summary", "task", "due", "bill", "amount", "bill_due", "company", "job_status", "shop")},
+        if is_hidden(hide, mail["from"], kind):
+            seen[mail["id"]]["kind"] = "hidden"
+            continue
+        items.append({**{k: got.get(k) for k in ("gist", "summary", "task", "due", "bill", "amount", "bill_due", "repeat", "company",
+                                                 "job_status", "shop", "window")},
                       "id": mail["id"], "kind": kind, "from": mail["from"], "subject": mail["subject"], "date": mail["date"]})
     cutoff = (now - dt.timedelta(days=KEEP_DAYS)).isoformat()
-    items = [i for i in items if i["date"] >= cutoff]
+    items = [i for i in items if i["date"] >= cutoff and not is_hidden(hide, i["from"], i["kind"])]
     seen = {k: v for k, v in seen.items() if v["at"] >= cutoff}
     skipped = sum(1 for v in seen.values() if v["kind"] == "skip")
     write_digest(vault, items, len(seen), skipped, state["cost"] * 0.79, now)  # USD to GBP, roughly
