@@ -198,6 +198,8 @@ fun DeckScreen(
     }
 
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
+    var talking by remember { mutableStateOf<TaskItem?>(null) }
+    var snoozed by remember { mutableStateOf(prefs.talkSnoozed) }
     // Evening check-in (journal-prompt-v2): written today? Read from this month's journal note.
     var journalDone by remember { mutableStateOf(false) }
     var journalOpen by remember { mutableStateOf(false) }
@@ -445,6 +447,18 @@ fun DeckScreen(
                 onSplit = { breaking = it }, onStuck = { onOpenSub(Sub.STUCK) }
             )
         }
+        // Talk me through it (wellbeing-v1): a task that has waited 3+ days, once a day at most.
+        if (claudeKey(ctx, prefs) != null) TalkThrough.stuck(data.tasks, today, TalkThrough.readSnoozed(snoozed))?.let { t ->
+            StuckNudge(t, TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) {
+                snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed
+            }
+        }
+        // Morning audio briefing (growth-v1): from 6am until noon.
+        if (claudeKey(ctx, prefs) != null && LocalTime.now().hour in Briefing.READY_HOUR until 12) BriefingCard(vault, prefs) {
+            val events = CalendarSync.cached(ctx).flatMap { it.events }
+            Briefing.prompt(Slip.build(today, data.tasks, events, weather, SlipOptions(), today, data.jobs), next?.let { TaskViews.plainText(it) },
+                listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }))
+        }
         StatPills(
             Deck.dueCount(data.tasks, today), data.focusMin, data.habits?.progress(today),
             onTasks = { onOpenTab(Tab.TASKS) }, onFocus = { onOpenSub(Sub.FOCUS) },
@@ -473,6 +487,11 @@ fun DeckScreen(
     drag.section?.let { s -> LiftedSection(drag, origin) { Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { Section(s) } } }
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack) { breaking = null; refresh++ } }
+    talking?.let { t ->
+        TalkSheet(t, vault, prefs, snack, onFocus = onStartFocus) {
+            talking = null; snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed; refresh++
+        }
+    }
     if (habitsOpen) data.habits?.let { n ->
         DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
     }

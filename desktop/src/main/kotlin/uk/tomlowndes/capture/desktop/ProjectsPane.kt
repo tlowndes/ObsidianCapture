@@ -393,6 +393,7 @@ private fun ProjectDetail(state: AppState, title: String, images: MutableMap<Str
     var links by remember(title) { mutableStateOf<List<IdeaNote.Link>>(emptyList()) }
     var repo by remember(title) { mutableStateOf<Pair<String, String>?>(null) }
     var github by remember(title) { mutableStateOf<GitHubRepo.Activity?>(null) }
+    var casing by remember(title) { mutableStateOf(false) }
     var githubError by remember(title) { mutableStateOf(false) }
     var tab by remember(title) { mutableIntStateOf(0) }
     var text by remember(title) { mutableStateOf(state.prefs.draft("idea_$title")) }
@@ -478,11 +479,13 @@ private fun ProjectDetail(state: AppState, title: String, images: MutableMap<Str
     }
 
     val d = doc
+    if (casing) CaseStudyDialog(state, title) { casing = false }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 36.dp).padding(top = 26.dp, bottom = if (pending.isEmpty()) 90.dp else 170.dp).verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.clip(CircleShape).hand().clickable(enabled = d != null) { menu = true }.padding(3.dp)) { StatusGlyph(d?.status ?: "idea", 18.dp) }
                 Box(Modifier.weight(1f).padding(start = 10.dp)) { H1(title, 26) }
+                if (d != null && hasClaude(state)) Chip("✨ Case study", small = true, color = Purple, modifier = Modifier.padding(end = 8.dp)) { casing = true }
                 Box {
                     Box(
                         Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, Outline, RoundedCornerShape(10.dp))

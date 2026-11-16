@@ -147,6 +147,8 @@ fun DeckPane(state: AppState) {
         mutableStateOf(state.prefs.deckLeft?.mapNotNull { n -> HomeCard.values().firstOrNull { it.name == n } }?.toSet() ?: LEFT)
     }
     var passageIdx by remember { mutableStateOf(0) }
+    var talking by remember { mutableStateOf<TaskItem?>(null) }
+    var snoozed by remember { mutableStateOf(state.prefs.talkSnoozed) }
     val drag = remember { DeckDrag() }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
@@ -324,6 +326,12 @@ fun DeckPane(state: AppState) {
     }
 
     if (managing) ManageHabitsDialog(state) { managing = false; reload() }
+    talking?.let { t ->
+        TalkDialog(state, t) {
+            talking = null
+            snoozed = uk.tomlowndes.capture.TalkThrough.snooze(snoozed, t, today); state.prefs.talkSnoozed = snoozed; reload()
+        }
+    }
     planning?.let { evening ->
         PlanDialog(
             data.tasks, data.events, evening,
@@ -364,10 +372,23 @@ fun DeckPane(state: AppState) {
                     color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
             }
+            if (hasClaude(state)) BriefingButton(state) {
+                uk.tomlowndes.capture.Briefing.prompt(
+                    uk.tomlowndes.capture.Slip.build(today, data.tasks, data.events, weather, uk.tomlowndes.capture.SlipOptions(), today),
+                    next?.let { TaskViews.plainText(it) },
+                    listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }),
+                )
+            }
             Text("🧾", fontSize = 17.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.slipOpen = true }.padding(8.dp))
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }
         UpdateBanner(state)
+        // Talk me through it (wellbeing-v1): a task that has waited 3+ days.
+        if (hasClaude(state)) uk.tomlowndes.capture.TalkThrough.stuck(data.tasks, today, uk.tomlowndes.capture.TalkThrough.readSnoozed(snoozed))?.let { t ->
+            StuckNudgeDesk(t, uk.tomlowndes.capture.TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) {
+                snoozed = uk.tomlowndes.capture.TalkThrough.snooze(snoozed, t, today); state.prefs.talkSnoozed = snoozed
+            }
+        }
         NowBar(nowItems, nowIndex) { nowIndex++ }
         Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DeckPill("Tasks due ${Deck.dueCount(data.tasks, today)}", Amber) { state.tab = Tab.TASKS }
