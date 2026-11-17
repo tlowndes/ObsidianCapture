@@ -133,7 +133,7 @@ fun DeckScreen(
     var travel by remember { mutableStateOf<TravelLine?>(null) }
     LaunchedEffect(cal, refresh, data.calendars) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
-        val events = cal.filter { it.id in on }.flatMap { it.events }
+        val events = cal.filter { it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }
         travel = withContext(Dispatchers.IO) { runCatching { TravelFetch.line(ctx, events) }.getOrNull() }
     }
     var canLocate by remember { mutableStateOf(WeatherFetch.allowed(ctx)) }
@@ -592,7 +592,7 @@ fun DeckScreen(
     if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
     if (journalOpen) DeckSheet({ journalOpen = false }, full = true) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
-        val events = cal.filter { it.id in on }.flatMap { it.events }.count { it.on(LocalDate.now()) }
+        val events = cal.filter { it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }.count { it.on(LocalDate.now()) }
         JournalSheet(vault, events, snack) { journalDone = true; journalOpen = false; refresh++ }
     }
 }

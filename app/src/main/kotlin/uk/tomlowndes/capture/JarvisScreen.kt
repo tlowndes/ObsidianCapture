@@ -36,6 +36,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.zIndex
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
@@ -683,7 +684,9 @@ fun JarvisScreen(
 
     // imePadding keeps the type box above the keyboard (the app draws edge to edge, so nothing else moves it).
     Box(Modifier.fillMaxSize().imePadding()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(scroll).padding(bottom = if (rec && inChat) 300.dp else 150.dp)) {
+        // tower-bar-events-v1: the title and the mode switch stay pinned; only the chat scrolls under them.
+        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().background(Bg).padding(horizontal = 20.dp).padding(bottom = 10.dp)) {
             ScreenTitle(title.ifBlank { who }) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (usesBrain(worker) || usesNano(worker)) Text(
@@ -696,6 +699,9 @@ fun JarvisScreen(
                 }
             }
             Box(Modifier.padding(top = 12.dp)) { header() }
+        }
+        if (scroll.value > 0) HorizontalDivider(color = Outline)
+        Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp).verticalScroll(scroll).padding(bottom = if (rec && inChat) 300.dp else 150.dp)) {
 
             if (!inChat) {
                 // A new chat: the big button.
@@ -894,6 +900,7 @@ fun JarvisScreen(
                 }
             }
             if (demo) Text("Demo mode: no server, replies are canned.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 14.dp))
+        }
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Bg).padding(horizontal = 18.dp, vertical = 10.dp)) {

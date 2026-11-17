@@ -17,7 +17,35 @@ object CalendarSync {
     const val EVERY_MS = 30 * 60_000L
     private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences("calendar", Context.MODE_PRIVATE)
 
-    fun cached(ctx: Context): List<CalendarCache> = runCatching {
+    /** The Proton calendars as last fetched, then events added in the app (99 - Meta/Events.md) as one more calendar. */
+    fun cached(ctx: Context): List<CalendarCache> = proton(ctx) + appCache(ctx)
+
+    private fun appCache(ctx: Context): List<CalendarCache> {
+        val events = readEvents(AppEvents.CAL_ID, p(ctx).getString("app", null) ?: return emptyList())
+        return listOf(CalendarCache(AppEvents.CAL_ID, true, 0L, events))
+    }
+
+    /** Reads Events.md again into the phone's copy. Call off the main thread, after adding or removing an event. */
+    fun refreshApp(ctx: Context, vault: Uri) {
+        val events = AppEvents.calendar(appVault(ctx, vault), LocalDate.now().minusDays(1), 8)
+        p(ctx).edit().putString("app", eventsJson(events).toString()).apply()
+    }
+
+    private fun readEvents(id: String, json: String): List<CalEvent> = runCatching {
+        val ev = JSONArray(json)
+        (0 until ev.length()).map { j ->
+            val e = ev.getJSONObject(j)
+            CalEvent(id, e.getString("title"), LocalDateTime.parse(e.getString("start")), LocalDateTime.parse(e.getString("end")), e.getBoolean("allDay"),
+                e.optString("location").ifEmpty { null }, e.optString("note").ifEmpty { null })
+        }
+    }.getOrDefault(emptyList())
+
+    private fun eventsJson(events: List<CalEvent>) = JSONArray(events.map { e ->
+        JSONObject().put("title", e.title).put("start", e.start.toString()).put("end", e.end.toString()).put("allDay", e.allDay)
+            .put("location", e.location ?: "").put("note", e.note ?: "")
+    })
+
+    private fun proton(ctx: Context): List<CalendarCache> = runCatching {
         val a = JSONArray(p(ctx).getString("cache", "[]"))
         (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
@@ -38,7 +66,7 @@ object CalendarSync {
         p(ctx).edit().putString("cache", a.toString()).apply()
     }
 
-    fun lastSync(ctx: Context) = cached(ctx).filter { it.ok }.maxOfOrNull { it.syncedAt } ?: 0L
+    fun lastSync(ctx: Context) = proton(ctx).filter { it.ok }.maxOfOrNull { it.syncedAt } ?: 0L
 
     private fun fetch(url: String): String {
         val c = URL(CalendarConfig.fetchUrl(url)).openConnection() as HttpURLConnection
@@ -54,7 +82,7 @@ object CalendarSync {
     /** Fetches every enabled calendar. A failed one keeps its old events, marked not ok. Call off the main thread. */
     fun sync(ctx: Context, vault: Uri): List<CalendarCache> {
         val sources = CalendarConfig.load(appVault(ctx, vault)).filter { it.enabled }
-        val old = cached(ctx).associateBy { it.id }
+        val old = proton(ctx).associateBy { it.id }
         val today = LocalDate.now()
         val now = System.currentTimeMillis()
         val out = sources.map { s ->
@@ -62,7 +90,8 @@ object CalendarSync {
                 .getOrElse { old[s.id]?.copy(ok = false) ?: CalendarCache(s.id, false, 0, emptyList()) }
         }
         store(ctx, out)
-        return out
+        runCatching { refreshApp(ctx, vault) }
+        return cached(ctx)
     }
 
     /** Checks a pasted link before it's saved. */

@@ -144,7 +144,7 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
         }
         pill()
         Box(Modifier.height(14.dp))
-        QuickAdd(vault, link = mode == 1, snack = snack, onQueued = { refreshWaiting() })
+        QuickAdd(vault, prefs, link = mode == 1, snack = snack, onQueued = { refreshWaiting() })
         Box(Modifier.height(16.dp))
     }
 }
@@ -335,7 +335,7 @@ private fun HeadChip(label: String, on: Boolean, onClick: () -> Unit) {
 
 /** Search the vault's notes by name; with nothing typed, the ones changed most recently. */
 @Composable
-private fun PickNoteDialog(all: List<NoteInfo>, onDismiss: () -> Unit, onPick: (NoteInfo) -> Unit) {
+internal fun PickNoteDialog(all: List<NoteInfo>, onDismiss: () -> Unit, onPick: (NoteInfo) -> Unit) {
     var q by remember { mutableStateOf("") }
     val shown = remember(all, q) {
         if (q.isBlank()) VaultBrowse.recent(all, 8)
@@ -461,7 +461,7 @@ private fun ToolChip(label: String, on: Boolean, onClick: () -> Unit) {
 /** Task and Read later, as Capture had them before Flight Deck: one field, due chips for tasks, Just added. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQueued: () -> Unit = {}) {
+private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: SnackbarHostState, onQueued: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val history = remember { mutableStateListOf<Added>() }
@@ -476,6 +476,8 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
     var picked by remember { mutableStateOf<List<String>>(emptyList()) }
     // Rapid log (paper-hybrid-v1): the kind chip, overridden by a mark typed at the start of the line.
     var kindPick by remember { mutableStateOf(LogKind.TASK) }
+    // ○ ★ – open their own sheet, laid out like Edit task (tower-bar-events-v1).
+    var kindSheet by remember { mutableStateOf<LogKind?>(null) }
     val today0 = LocalDate.now()
     val entry = if (link) null else RapidLog.parse(text, today0, kindPick)
     val kind = entry?.kind ?: LogKind.TASK
@@ -493,20 +495,66 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
         }
     }
 
-    /** Notes and events go to the inbox note as one line each. */
-    fun submitLog(e: LogEntry) {
+    fun done(text0: String, sub: String, msg: String) {
+        history.add(0, Added(false, text0, sub))
+        text = ""; picked = emptyList(); kindPick = LogKind.TASK; kindSheet = null
+        scope.launch { snack.showSnackbar(msg) }
+    }
+
+    fun saveEvent(e: AppEvent) {
         val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
         busy = true
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).appendInbox(listOf(RapidLog.inboxLine(e))) } }
+            val r = withContext(Dispatchers.IO) { runCatching { AppEvents.add(appVault(ctx, uri), e); runCatching { CalendarSync.refreshApp(ctx, uri) } } }
             busy = false
             r.onSuccess {
-                history.add(0, Added(false, e.text, "${e.kind.mark} ${e.kind.label.replaceFirstChar { it.uppercase() }} · ${VaultWriter.INBOX}/Inbox"))
-                text = ""; picked = emptyList()
-                snack.showSnackbar(if (e.kind == LogKind.EVENT) "Event logged" else "Note logged")
+                val whenText = dueLabel(e.date) + (e.time?.let { " " + it.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) } ?: " · all day")
+                done(e.title, "○ Event · $whenText" + (e.place?.let { " · 📍 $it" } ?: ""), "Event added")
+            }.onFailure { snack.showSnackbar("Couldn't save the event: ${it.message ?: "try again"}") }
+        }
+    }
+
+    fun savePriority(value: String, due: LocalDate?, rule: String?, mins: Int?, p: Priority) {
+        val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
+        busy = true
+        val line = Priority.with(value + (mins?.let { " ⏱ ${it}m" } ?: "") + (rule?.let { " 🔁 $it" } ?: ""), p)
+        val first = due ?: if (rule != null) LocalDate.now() else null
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).addTask(line, first?.toString()) } }
+            busy = false
+            r.onSuccess {
+                done(Tags.strip(value).ifBlank { value }, "★ Task · ${p.title}" + (first?.let { " · due ${dueLabel(it)}" } ?: ""), "Task added")
             }.onFailure {
-                PhoneOutbox.keepLines(ctx, listOf(RapidLog.inboxLine(e)))
+                PhoneOutbox.keepTask(ctx, line, first?.toString())
                 onQueued()
+                kindSheet = null; text = ""
+                snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
+            }
+        }
+    }
+
+    fun saveNote(value: String, dest: NoteDest, date: LocalDate, target: NoteInfo?) {
+        val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
+        busy = true
+        val sort = when (dest) {
+            NoteDest.LOG -> null
+            NoteDest.NEW -> SortResult(emptyList(), emptyList(), value, noteTitle = Sorting.titleFrom(value))
+            NoteDest.ADD -> SortResult(emptyList(), emptyList(), value, addTo = NoteTarget(target!!.title, target.path, null))
+        }
+        val line = "- $date " + value.replace("\n", " ")
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (sort == null) VaultWriter(ctx, uri).appendInbox(listOf(line))
+                    else Sorting.save(sort, VaultWriter(ctx, uri), IdeaStore(ctx, uri, prefs))
+                }
+            }
+            busy = false
+            val where = when (dest) { NoteDest.LOG -> "Inbox log"; NoteDest.NEW -> "new note in ${VaultWriter.INBOX}"; NoteDest.ADD -> target?.title.orEmpty() }
+            r.onSuccess { done(value, "– Note · $where", "Note saved") }.onFailure {
+                if (sort == null) PhoneOutbox.keepLines(ctx, listOf(line)) else PhoneOutbox.keepSort(ctx, sort)
+                onQueued()
+                kindSheet = null; text = ""
                 snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
             }
         }
@@ -514,7 +562,7 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
 
     fun submit() {
         if (busy) return
-        if (entry != null && !entry.kind.isTask) { if (entry.text.isNotBlank()) submitLog(entry); return }
+        if (entry != null && entry.kind != LogKind.TASK) { kindSheet = entry.kind; return }
         // Typed date and estimate fill in what the chips left empty; the mark and those words come off the task.
         val value = (entry?.text ?: text).trim()
         val uri = vault
@@ -621,7 +669,10 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
     if (sheet != null) ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Bg) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
             when (sheet) {
-                CaptureSheet.KIND -> KindChips(kind) { kindPick = it; text = RapidLog.mark(text).second; sheet = null }
+                CaptureSheet.KIND -> KindChips(kind) {
+                    text = RapidLog.mark(text).second; sheet = null
+                    if (it == LogKind.TASK) kindPick = LogKind.TASK else kindSheet = it
+                }
                 CaptureSheet.DATE -> {
                     val today = LocalDate.now()
                     val custom = due != null && due != today && due != today.plusDays(1)
@@ -670,6 +721,13 @@ private fun QuickAdd(vault: Uri?, link: Boolean, snack: SnackbarHostState, onQue
         }
     }
     if (picking) PickDateDialog(due, onPick = { due = it; picking = false }, onDismiss = { picking = false })
+    val words = Tags.withTags(entry?.text ?: RapidLog.mark(text).second, picked)
+    when (kindSheet) {
+        LogKind.EVENT -> NewEventSheet(vault, tagData, words, entry?.due ?: due, busy, ::saveEvent) { kindSheet = null }
+        LogKind.PRIORITY -> NewPrioritySheet(vault, tagData, words, due ?: entry?.due, minutes ?: entry?.minutes, busy, ::savePriority) { kindSheet = null }
+        LogKind.NOTE -> NewNoteSheet(vault, tagData, words, busy, ::saveNote) { kindSheet = null }
+        else -> {}
+    }
 }
 
 /** • task ○ event – note ★ priority: the rapid-log kind for the line in the box. */

@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Tower bar and events v1</title>
+<style>
+:root{--bg:#0f131c;--surface:#161b27;--surface2:#1e2534;--outline:#2a3245;--primary:#7aa2ff;--tint:#1b2440;--text:#e8ecf5;--muted:#8a93a8;--faint:#5d667c;--purple:#b39dff;--red:#ff8a80;--green:#5fd39a;--amber:#f5c06a;--mono:"JetBrains Mono",Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{background:#07090e;font-family:Roboto,"Segoe UI",sans-serif;color:var(--text);padding:36px 44px;width:1400px}
+.h{font-size:22px;font-weight:700;margin-bottom:6px}.intro{font-size:14px;color:var(--muted);margin-bottom:26px;max-width:1200px;line-height:1.5}.intro b{color:var(--text)}
+.row{display:flex;gap:34px;align-items:flex-start;margin-bottom:34px}.col{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:14px;color:var(--muted);font-weight:600}.cap b{color:var(--text)}
+.note{font-size:13px;color:var(--muted);line-height:1.55;width:400px}.note b{color:var(--text)}
+.new{outline:2px dashed var(--purple);outline-offset:3px;border-radius:14px}
+.phone{width:400px;height:800px;background:var(--bg);border-radius:44px;border:2px solid #232a3a;padding:22px 18px 0;position:relative;overflow:hidden}
+.card{background:var(--surface);border:1px solid var(--outline);border-radius:22px;margin-bottom:12px}
+.card .hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;font-weight:700;font-size:17px}
+.card .hd span{font-family:var(--mono);font-weight:400;font-size:12px;color:var(--muted)}
+.it{padding:12px 16px;border-top:1px solid var(--outline)}
+.it .t{display:flex;gap:10px;align-items:flex-start;font-size:15px}.it .t b{font-weight:600}
+.it small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+.ic{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;background:var(--tint)}
+.acts{display:flex;gap:6px;margin:9px 0 0 40px;flex-wrap:wrap}
+.chip{border:1px solid var(--outline);border-radius:12px;padding:6px 11px;font-size:13px;white-space:nowrap;color:var(--text)}
+.chip.p{background:var(--primary);color:#0b1020;border-color:var(--primary);font-weight:700}
+.chip.m{color:var(--muted)}
+.k{font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;padding:2px 7px;border-radius:6px;margin-left:auto;white-space:nowrap}
+.k.r{background:#2a1f3d;color:var(--purple)}.k.b{background:#3a2a12;color:var(--amber)}.k.d{background:#16302a;color:var(--green)}.k.j{background:var(--tint);color:var(--primary)}
+.nav{position:absolute;left:0;right:0;bottom:0;height:70px;border-top:1px solid var(--outline);background:#121724;display:flex;justify-content:space-around;align-items:center;font-size:13px;color:var(--muted)}
+.nav b{color:var(--primary)}
+h1{font-size:26px;font-weight:700}.top{display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px}
+.pill{font-family:var(--mono);font-size:12px;color:var(--primary);background:var(--tint);border-radius:999px;padding:4px 10px}
+.lbl{font-family:var(--mono);font-size:11px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;margin:16px 0 6px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface2);border-radius:26px 26px 0 0;border-top:1px solid var(--outline);padding:12px 18px 22px}
+.grab{width:40px;height:4px;border-radius:4px;background:var(--outline);margin:0 auto 14px}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.ai{background:var(--tint);border-radius:14px;padding:11px 13px;font-size:13.5px;line-height:1.5;color:#cdd8f5}.ai .w{font-family:var(--mono);font-size:10.5px;color:var(--primary);letter-spacing:.8px;display:block;margin-bottom:3px}
+.sr{display:flex;align-items:center;justify-content:space-between;padding:12px 2px;border-bottom:1px solid var(--outline);font-size:15px}.sr small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.tog{width:40px;height:24px;border-radius:99px;background:var(--primary);position:relative;flex:none}.tog:after{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.tog.off{background:var(--outline)}.tog.off:after{left:3px;right:auto}
+.tick{width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);flex:none}.tick.on{background:var(--green);border-color:var(--green)}
+.field{background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:9px 12px;font-size:14px;margin-bottom:8px}.field small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px}
+.btns{display:flex;gap:8px;margin-top:12px}.btn{flex:1;text-align:center;padding:12px;border-radius:999px;font-weight:700;font-size:14px;border:1px solid var(--outline)}.btn.p{background:var(--primary);color:#0b1020;border-color:var(--primary)}
+.win{width:1272px;border:1px solid var(--outline);border-radius:12px;overflow:hidden;background:var(--bg);display:flex;height:560px;font-family:"Segoe UI",sans-serif;position:relative}
+.side{width:210px;background:#0b0f18;border-right:1px solid var(--outline);padding:18px 12px}.side div{padding:8px 12px;border-radius:10px;color:var(--muted);font-weight:600;font-size:14px;margin-bottom:2px}.side .on{background:var(--tint);color:var(--primary)}
+.wm{flex:1;padding:22px 26px;overflow:hidden}
+.panel{width:400px;background:var(--surface2);border-left:1px solid var(--outline);padding:20px}
+.bar{height:8px;border-radius:8px;background:var(--outline);overflow:hidden;margin-top:7px}.bar i{display:block;height:100%;border-radius:8px}
+.bub{max-width:82%;padding:10px 13px;border-radius:16px;font-size:14px;line-height:1.45;margin-bottom:8px}.bub.me{margin-left:auto;background:var(--primary);color:#0b1020;border-bottom-right-radius:4px}.bub.ai2{background:var(--surface2);border-bottom-left-radius:4px}
+.wstrip{display:flex;gap:18px}.wcard{flex:1;background:var(--bg);border:1px solid var(--outline);border-radius:12px;padding:18px 20px;font-family:"Segoe UI",sans-serif}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--primary);border-radius:14px;padding:11px 13px;font-size:15px}
+.search .cur{width:2px;height:18px;background:var(--primary)}
+.res{display:flex;gap:10px;align-items:center;padding:11px 2px;border-bottom:1px solid var(--outline);font-size:14.5px}.res small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.res .d{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.res.sel{background:var(--tint);border-radius:12px;padding:11px 10px;border-bottom:0}
+.mapwrap{position:absolute;left:0;right:0;top:0;height:420px}
+.floattop{position:absolute;left:16px;right:16px;top:22px;display:flex;gap:8px;align-items:center}
+.fab{position:absolute;right:16px;top:356px;width:44px;height:44px;border-radius:14px;background:var(--surface2);border:1px solid var(--outline);display:flex;align-items:center;justify-content:center;font-size:18px}
+.seg{display:flex;border:1px solid var(--outline);border-radius:12px;overflow:hidden;font-size:13px}.seg span{flex:1;text-align:center;padding:8px 0;color:var(--muted)}.seg span.on{background:var(--tint);color:var(--primary);font-weight:700}
+.opt{display:flex;gap:12px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--outline)}.opt b{font-size:15px;font-weight:600}.opt small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.foot{position:absolute;left:12px;bottom:6px;font-size:10px;color:var(--faint)}
+
+.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.tchip i{width:8px;height:8px;border-radius:50%;background:var(--purple)}
+.pchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.pchip.on{background:#16302a;border-color:var(--green);color:var(--green)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ta{border:1px solid var(--outline);border-radius:20px;padding:14px 16px;font-size:15px;min-height:70px;margin-top:12px}
+.ta .g{color:var(--green)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+.tool{display:inline-flex;border:1px solid var(--outline);border-radius:10px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.teal{--teal:#5fd3c8}
+.ev{color:#5fd3c8}
+.pinned{position:absolute;left:0;right:0;top:0;background:var(--bg);padding:22px 18px 10px;z-index:3;border-bottom:1px solid var(--outline);box-shadow:0 10px 18px rgba(0,0,0,.45)}
+.sw{display:flex;background:var(--surface);border-radius:999px;padding:4px;margin-top:10px}.sw span{flex:1;text-align:center;padding:9px 0;font-size:14px;font-weight:600;color:var(--muted);border-radius:999px}.sw span.on{background:var(--primary);color:#0b1020}
+.badge{border:1px solid var(--outline);background:var(--tint);color:var(--primary);border-radius:999px;padding:5px 11px;font-size:13px}
+.me{background:var(--primary);color:#0b1020;border-radius:18px 18px 4px 18px;padding:11px 14px;font-size:14px;margin:0 0 10px 60px;line-height:1.45}
+.tw{background:var(--surface);border:1px solid var(--outline);border-radius:18px;padding:11px 14px;font-size:14px;margin:0 50px 10px 0;line-height:1.45}.tw .w{font-family:var(--mono);font-size:10px;color:var(--primary);letter-spacing:1px;display:block;margin-bottom:4px}
+.inp{position:absolute;left:14px;right:70px;bottom:84px;border:1px solid var(--outline);border-radius:999px;padding:12px 16px;color:var(--muted);font-size:14px;background:var(--bg)}
+.mic{position:absolute;right:14px;bottom:84px;width:46px;height:46px;border-radius:50%;background:var(--primary)}
+.meta{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:1px;margin-top:10px}
+.meta .m{margin-left:auto;border:1px solid var(--amber);color:var(--amber);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.meta .n{border:1px solid var(--outline);color:var(--primary);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.arrow{position:absolute;right:6px;top:190px;font-family:var(--mono);font-size:11px;color:var(--purple);writing-mode:vertical-rl}
+.tf{border:1px solid var(--outline);border-radius:14px;padding:10px 13px;font-size:14px;color:var(--muted);margin-top:8px;min-height:58px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}.ans td{padding:9px 10px;border-top:1px solid var(--outline);vertical-align:top;line-height:1.45}.ans th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--muted);padding:6px 10px}
+code{font-family:var(--mono);font-size:12px;color:#cdd8f5;background:var(--tint);padding:1px 5px;border-radius:5px}
+</style></head><body>
+<div class="h">Tower top bar + New event, priority and note v1</div>
+<div class="intro"><b>1.</b> On the Tower tab the title, phone badge, receipt and Task / Read later / Tower switch stay pinned; the chat scrolls under them. <b>2.</b> Picking <b>○ Event</b> on Capture opens a <b>New event</b> sheet laid out like Edit task: date, time, length, location, notes. <b>3.</b> Events are saved to <b>99 - Meta/Events.md</b> and show alongside your Proton calendar everywhere it already shows (Deck, Tasks, Plan day, Weekly, Daily Slip). Dashed purple = new.</div>
+<div class="row">
+
+<div class="col"><div class="cap"><b>1 · Tower</b> · top bar pinned while scrolling</div>
+<div class="phone">
+ <div class="pinned new" style="outline-offset:-3px">
+  <div class="top" style="margin:4px 0 0"><h1>Capture</h1><div style="display:flex;gap:10px;align-items:center"><span class="badge">⚡ phone</span><span style="font-size:20px">🧾</span></div></div>
+  <div class="sw"><span>Task</span><span>Read later</span><span class="on">Tower</span></div>
+ </div>
+ <div style="position:absolute;top:150px;left:18px;right:18px">
+  <div class="tw" style="margin-top:-40px;opacity:.55"><span class="w">TOWER</span>…can't write out the 20 to 30 pages of treat and activity ideas here.</div>
+  <div class="me">Add a task to find free forms of ID for the 23rd job seekers</div>
+  <div class="tw"><span class="w">TOWER</span>I've added "Find free forms of identification for the 23rd Job Seekers" to the Check and save card, ready for you to confirm.<div style="margin-top:8px"><span class="chip" style="font-size:12px">📝 Save as note</span></div></div>
+  <div class="me">And one for Monday about the slow capture app</div>
+  <div class="tw"><span class="w">TOWER</span>Done, it's on the Check and save card.</div>
+ </div>
+ <div class="inp">Message Tower…</div><div class="mic"></div>
+ <div class="nav"><span>Deck</span><b>Capture</b><span>Tasks</span><span>Vault</span></div>
+</div>
+<div class="note">Only the chat scrolls. The pinned bar gets a thin line and shadow once you've scrolled, so you can see where the chat goes under it. The <b>Chat · Tower · 12 messages / Muted / New chat</b> row stays at the top of the chat and scrolls away with it, so the pinned bar stays short. Task and Read later tabs behave as now.</div></div>
+
+<div class="col"><div class="cap"><b>2 · New event</b> · same layout as Edit task</div>
+<div class="phone">
+ <h1 style="margin-top:20px;opacity:.4">Capture</h1>
+ <div class="dim"></div>
+ <div class="sheet new" style="outline-offset:-2px;top:70px;background:var(--surface)">
+  <div class="grab"></div>
+  <div style="font-weight:700;font-size:19px"><span class="ev">○</span> New event</div>
+  <div class="ta" style="min-height:52px">Dentist check-up</div>
+  <div class="flow" style="margin-top:12px"><span class="chip">Today</span><span class="chip">Tomorrow</span><span class="chip p">Thu 20 Nov</span></div>
+  <div class="lbl">Time</div>
+  <div class="flow"><span class="chip">All day</span><span class="chip p">14:30</span></div>
+  <div class="flow"><span class="chip">30m</span><span class="chip p">1h</span><span class="chip">2h</span><span class="chip">Half day</span></div>
+  <div class="lbl">Location</div>
+  <div class="flow"><span class="pchip on">📍 Headingley Dental</span><span class="pchip">📍 Home</span><span class="pchip" style="color:var(--muted)">＋ Place</span></div>
+  <div class="lbl">Notes</div>
+  <div class="tf">Bring the new address form</div>
+  <div class="lbl">Tag</div>
+  <div class="flow"><span class="tchip"><i style="background:var(--amber)"></i>Work</span><span class="tchip"><i style="background:var(--green)"></i>Personal</span></div>
+  <div class="btn p" style="margin-top:16px">Save event</div>
+ </div>
+</div>
+<div class="note">Tap the <b>○ Event</b> kind (or type <b>○</b> at the start) and this sheet opens with your words in it. A typed date ("dentist thu 2:30pm") fills the chips. <b>Pick date</b> and the time chip open the usual pickers. <b>＋ Place</b> is the same picker as errands and tasks, or you can type an address. No priority: that stays on tasks.</div></div>
+
+<div class="col"><div class="cap"><b>3 · Where it shows</b> · with the calendar</div>
+<div class="phone">
+ <h1 style="margin-top:20px">Deck</h1>
+ <div class="card new" style="margin-top:16px;outline-offset:2px">
+  <div class="hd">Thursday 20 <span>3 on</span></div>
+  <div class="it"><div class="t"><div class="ic">📅</div><div><b>09:00 Stand-up</b><small>Proton calendar</small></div></div></div>
+  <div class="it"><div class="t"><div class="ic ev" style="background:#123430">○</div><div><b>14:30 Dentist check-up</b><small>until 15:30 · 📍 Headingley Dental</small><small>Bring the new address form</small></div></div>
+   <div class="acts"><span class="chip m" style="font-size:12px">📍 Directions</span><span class="chip m" style="font-size:12px">Edit</span></div></div>
+  <div class="it"><div class="t"><div class="ic">📅</div><div><b>18:00 Five-a-side</b><small>Proton calendar</small></div></div></div>
+ </div>
+ <div class="lbl">In the vault</div>
+ <div class="field"><small>99 - Meta/Events.md</small><span style="font-family:var(--mono);font-size:11.5px">- ○ 2026-11-20 14:30 1h Dentist check-up 📍 Headingley Dental — Bring the new address form</span></div>
+ <div class="nav"><b>Deck</b><span>Capture</span><span>Tasks</span><span>Vault</span></div>
+</div>
+<div class="note">App events sit with Proton ones in time order, marked <b class="ev">○</b> in teal. Notes show as a second line; the location gets a Directions button. Tap to edit or remove. They also appear in Tasks' Upcoming, Plan day, Weekly and the Daily Slip. Proton stays read-only, so these don't go into Proton.</div></div>
+
+</div>
+<div class="row">
+
+<div class="col"><div class="cap"><b>4 · New priority</b> · same sheet, High already picked</div>
+<div class="phone">
+ <h1 style="margin-top:20px;opacity:.4">Capture</h1>
+ <div class="dim"></div>
+ <div class="sheet new" style="outline-offset:-2px;top:70px;background:var(--surface)">
+  <div class="grab"></div>
+  <div style="font-weight:700;font-size:19px"><span style="color:var(--amber)">★</span> New priority</div>
+  <div class="ta" style="min-height:52px">Send CV to Studio North</div>
+  <div class="flow" style="margin-top:12px"><span class="chip p">Today</span><span class="chip">Tomorrow</span><span class="chip">Pick date</span></div>
+  <div class="flow"><span class="chip">5m</span><span class="chip">15m</span><span class="chip p">30m</span><span class="chip">1h</span></div>
+  <div class="lbl">Priority</div>
+  <div class="flow"><span class="chip">🔺 Highest</span><span class="chip p">⏫ High</span><span class="chip">🔼 Medium</span></div>
+  <div class="lbl">Repeat</div>
+  <div class="flow"><span class="chip p">None</span><span class="chip">Daily</span><span class="chip">Weekly</span><span class="chip">↻ Custom</span></div>
+  <div class="lbl">Tag</div>
+  <div class="flow"><span class="tchip"><i style="background:var(--amber)"></i>Work</span><span class="tchip"><i style="background:var(--green)"></i>Personal</span></div>
+  <div class="lbl">Place</div>
+  <div class="flow"><span class="pchip">📍 Tesco Extra</span><span class="pchip" style="color:var(--muted)">＋ Place</span></div>
+  <div class="btn p" style="margin-top:16px">Save task</div>
+ </div>
+</div>
+<div class="note">Exactly the Edit task layout, with ⏫ High already picked. Saves to <b>⚡ Quick Task.md</b> as now and shows in Tasks as High.</div></div>
+
+<div class="col"><div class="cap"><b>5 · New note</b> · same sheet, note fields</div>
+<div class="phone">
+ <h1 style="margin-top:20px;opacity:.4">Capture</h1>
+ <div class="dim"></div>
+ <div class="sheet new" style="outline-offset:-2px;top:70px;background:var(--surface)">
+  <div class="grab"></div>
+  <div style="font-weight:700;font-size:19px"><span>–</span> New note</div>
+  <div class="ta" style="min-height:90px">Portfolio idea: case study on the Flight Deck redesign, before and after shots</div>
+  <div class="lbl">Save to</div>
+  <div class="flow"><span class="chip p">Inbox log</span><span class="chip">New note</span><span class="chip">Add to a note</span></div>
+  <div class="hint">One dated line at the end of 01 - Inbox/Inbox.md</div>
+  <div class="lbl">Date</div>
+  <div class="flow"><span class="chip p">Today</span><span class="chip">Pick date</span></div>
+  <div class="lbl">Tag</div>
+  <div class="flow"><span class="tchip"><i style="background:var(--amber)"></i>Work</span><span class="tchip"><i style="background:var(--green)"></i>Personal</span><span class="tchip"><i></i>#portfolio</span></div>
+  <div class="btn p" style="margin-top:16px">Save note</div>
+ </div>
+</div>
+<div class="note"><b>Save to</b> uses the same choices as Tower's 📝 Save as note. <b>Inbox log</b> is today's behaviour, now with the date on the line. <b>New note</b> makes its own note in 01 - Inbox. <b>Add to a note</b> opens the note picker. No time or priority, because notes don't need them.</div></div>
+
+<div class="col"><div class="cap"><b>Same pattern for all four</b></div>
+<div class="note" style="width:400px;margin-top:6px">
+<b>Kind chip</b> on Capture: • Task stays inline as now (chips under the box). Picking <b>○ Event</b>, <b>★ Priority</b> or <b>– Note</b> opens its sheet with your words already in.<br><br>
+<b>Order in every sheet:</b> title · text box · when · details (time, priority or Save to) · Tag · Place/Location · Save button.<br><br>
+<b>Headers</b> use the kind mark in its colour: teal ○, amber ★, plain –, so you can tell them apart at a glance.<br><br>
+Edit task itself doesn't change.</div></div>
+
+</div>
+</body></html>

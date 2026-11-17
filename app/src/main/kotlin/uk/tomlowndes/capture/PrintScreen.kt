@@ -182,7 +182,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             val lists = vault?.let { runCatching { VaultWriter(ctx, it).listTaskLists() }.getOrNull() }
             val tasks = lists?.open.orEmpty()
             val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
-            val events = CalendarSync.cached(ctx).filter { on == null || it.id in on }.flatMap { it.events }
+            val events = CalendarSync.cached(ctx).filter { on == null || it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }
             val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
             val jobs = vault?.let { runCatching { Jobs.list(appVault(ctx, it)) }.getOrNull() }.orEmpty()
             val listNotes = vault?.let { v ->

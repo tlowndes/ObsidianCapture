@@ -18,7 +18,9 @@ data class CalendarSource(val id: String, val name: String, val url: String, val
 /** One event occurrence in local time. All-day events run from midnight to midnight. */
 data class CalEvent(
     val calendarId: String, val title: String, val start: LocalDateTime, val end: LocalDateTime, val allDay: Boolean,
-    val location: String? = null
+    val location: String? = null,
+    /** Notes on an event added in the app (Proton events have none). */
+    val note: String? = null,
 ) {
     fun isNow(now: LocalDateTime) = !allDay && !now.isBefore(start) && now.isBefore(end)
     fun on(d: LocalDate) = start.isBefore(d.plusDays(1).atStartOfDay()) && (end.isAfter(d.atStartOfDay()) || start.toLocalDate() == d)

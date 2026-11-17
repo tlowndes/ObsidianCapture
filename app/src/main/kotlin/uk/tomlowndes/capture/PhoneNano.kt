@@ -58,7 +58,7 @@ internal object NanoContext {
         val today = java.time.LocalDate.now()
         val tasks = vault?.let { runCatching { VaultWriter(ctx, it).listTasks() }.getOrNull() }.orEmpty()
         val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
-        val events = runCatching { CalendarSync.cached(ctx).filter { on == null || it.id in on }.flatMap { it.events } }.getOrDefault(emptyList())
+        val events = runCatching { CalendarSync.cached(ctx).filter { on == null || it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events } }.getOrDefault(emptyList())
         val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
         val day = NanoRoute.context(today, events, tasks, weather)
         val notes = vault?.let { v ->

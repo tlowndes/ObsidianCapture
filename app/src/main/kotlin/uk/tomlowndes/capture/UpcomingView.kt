@@ -306,7 +306,7 @@ private fun EventRow(e: CalEvent, now: LocalDateTime, colour: Color, calendar: S
         Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(colour))
         Column(Modifier.weight(1f)) {
             Text(e.title, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val sub = listOfNotNull(calendar, travel?.let { "leave by ${it.leaveBy.format(HM)}" } ?: e.location).joinToString(" · ")
+            val sub = listOfNotNull(calendar, travel?.let { "leave by ${it.leaveBy.format(HM)}" } ?: e.location, e.note).joinToString(" · ")
             if (sub.isNotEmpty()) Text(sub, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp))
         }

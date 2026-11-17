@@ -472,7 +472,7 @@ fun TasksScreen(
         }
 
         if (upcoming && dayView) {
-            DayTimeline(shown, cal.flatMap { it.events }, sources.associate { it.id to hexColour(it.colour) }, now) { t, time -> setTime(t, time) }
+            DayTimeline(shown, cal.flatMap { it.events }, (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), now) { t, time -> setTime(t, time) }
         } else if (upcoming) {
             val events = cal.flatMap { it.events }
             val bills = TaskViews.billsMonth(tasks, ticked, today)
@@ -481,7 +481,7 @@ fun TasksScreen(
             }
             UpcomingList(
                 days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
-                colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
+                colours = (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), names = sources.associate { it.id to it.name } + (AppEvents.CAL_ID to AppEvents.NAME),
                 travel = travel, onFit = { fitting = it },
                 top = billsTop,
                 onDrop = { t, d -> if (d.start != null) plan(t, d.date, d.start) else move(t, d.date) },
