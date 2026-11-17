@@ -165,7 +165,7 @@ object Chores {
     fun withRoom(text: String, room: ChoreRoom, oldName: String? = null): String {
         val lines = text.removeSuffix("\n").split("\n").toMutableList()
         val old = oldName?.let { o -> rooms(text).firstOrNull { it.name.equals(o, true) } }
-        val kept = room.chores.map { c -> old?.chores?.firstOrNull { it.name.equals(c.name, true) }?.copy(every = c.every, emoji = c.emoji.ifEmpty { it.emoji }) ?: c }
+        val kept = room.chores.map { c -> old?.chores?.firstOrNull { it.name.equals(c.name, true) }?.let { o -> o.copy(every = c.every, emoji = c.emoji.ifEmpty { o.emoji }) } ?: c }
         val block = listOf(roomLine(room.copy(reset = old?.reset ?: room.reset))) + kept.map { line(it) }
         val sp = oldName?.let { span(lines, it) }
         if (sp != null) {
