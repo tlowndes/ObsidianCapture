@@ -2,10 +2,15 @@ package uk.tomlowndes.capture
 
 import java.time.LocalDate
 
-/** Bullet Journal kinds: • task, ○ event, – note, ★ priority task. */
+/**
+ * Bullet Journal kinds: • task, ○ event, – note, ★ priority task, ! idea (inspiration), ? explore.
+ * Ideas and explores are tasks tagged #idea / #explore, so they show in the task list (capture-compact-v3).
+ */
 enum class LogKind(val mark: String, val label: String) {
-    TASK("•", "task"), EVENT("○", "event"), NOTE("–", "note"), PRIORITY("★", "priority");
-    val isTask get() = this == TASK || this == PRIORITY
+    TASK("•", "task"), EVENT("○", "event"), NOTE("–", "note"), PRIORITY("★", "priority"), IDEA("!", "idea"), EXPLORE("?", "explore");
+    val isTask get() = this == TASK || this == PRIORITY || this == IDEA || this == EXPLORE
+    /** The tag an idea or explore task carries. */
+    val tag: String? get() = when (this) { IDEA -> "#idea"; EXPLORE -> "#explore"; else -> null }
 }
 
 /** One rapid-log line, read: its kind, the words left once the date and estimate are taken off, and those. */
@@ -21,7 +26,9 @@ object RapidLog {
     private val TASK_MARKS = listOf("[ ]", "[]", "☐", "□", "•", "·", "*", "+")
     private val EVENT_MARKS = listOf("○", "◦", "°", "o ", "O ")
     private val NOTE_MARKS = listOf("–", "—", "-", "=", "~")
-    private val PRIORITY_MARKS = listOf("★", "☆", "!", "*!")
+    private val PRIORITY_MARKS = listOf("★", "☆", "*!")
+    private val IDEA_MARKS = listOf("!")
+    private val EXPLORE_MARKS = listOf("?")
     private val DONE_MARKS = listOf("×", "✗", "✓", "✔", "[x]", "[X]", "x ", "X ")
     /** Short words that are more often a name or a noun than a date at the end of a task ("Email Tom", "Watch the sun"). */
     private val NOT_DATES = setOf("tom", "tod", "sun")
@@ -33,6 +40,8 @@ object RapidLog {
         fun rest(m: String) = s.removePrefix(m).trimStart()
         PRIORITY_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.PRIORITY, rest(it), false) }
         DONE_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(null, rest(it), true) }
+        IDEA_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.IDEA, rest(it), false) }
+        EXPLORE_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.EXPLORE, rest(it), false) }
         TASK_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.TASK, rest(it), false) }
         EVENT_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.EVENT, rest(it), false) }
         NOTE_MARKS.firstOrNull { s.startsWith(it) }?.let { return Triple(LogKind.NOTE, rest(it), false) }
@@ -77,9 +86,14 @@ object RapidLog {
         return LogEntry(use, (words + tags).joinToString(" "), due, mins)
     }
 
-    /** The task text as written to Quick Task: estimate and ⏫ for a priority. */
-    fun taskText(e: LogEntry): String =
-        e.text + (e.minutes?.let { " ⏱ ${it}m" } ?: "") + (if (e.kind == LogKind.PRIORITY) " ⏫" else "")
+    /** The task text as written to Quick Task: estimate, ⏫ for a priority, #idea / #explore for those kinds. */
+    fun taskText(e: LogEntry): String = withKindTag(e.text, e.kind) + (e.minutes?.let { " ⏱ ${it}m" } ?: "") + (if (e.kind == LogKind.PRIORITY) " ⏫" else "")
+
+    /** [text] with the #idea / #explore tag its kind needs, unless it's there already. */
+    fun withKindTag(text: String, kind: LogKind): String {
+        val tag = kind.tag ?: return text
+        return if (Regex("(^|\\s)" + Regex.escape(tag) + "(?![\\w/-])", RegexOption.IGNORE_CASE).containsMatchIn(text)) text else "$text $tag"
+    }
 
     /** The line an event or note gets in the inbox note. */
     fun inboxLine(e: LogEntry): String = "- " + (if (e.kind == LogKind.EVENT) "○ " else "") + e.text

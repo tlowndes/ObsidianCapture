@@ -476,12 +476,21 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
     var picked by remember { mutableStateOf<List<String>>(emptyList()) }
     // Rapid log (paper-hybrid-v1): the kind chip, overridden by a mark typed at the start of the line.
     var kindPick by remember { mutableStateOf(LogKind.TASK) }
-    // ○ ★ – open their own sheet, laid out like Edit task (tower-bar-events-v1).
-    var kindSheet by remember { mutableStateOf<LogKind?>(null) }
     var priority by remember { mutableStateOf(Priority.NONE) }
+    // Event details (capture-compact-v3).
+    var evTime by remember { mutableStateOf<java.time.LocalTime?>(null) }
+    var evMinutes by remember { mutableStateOf<Int?>(60) }
+    var evPlace by remember { mutableStateOf("") }
+    var evAddress by remember { mutableStateOf("") }
+    var evNote by remember { mutableStateOf("") }
+    // Idea: the project it belongs to. Explore: a link to start from.
+    var ideaProject by remember { mutableStateOf<String?>(null) }
+    var exploreLink by remember { mutableStateOf("") }
     val today0 = LocalDate.now()
     val entry = if (link) null else RapidLog.parse(text, today0, kindPick)
     val kind = entry?.kind ?: LogKind.TASK
+    // ★ typed or scanned is a task with High priority; the page shows it as a task.
+    val shown = if (kind == LogKind.PRIORITY) LogKind.TASK else kind
     val tagData = rememberTagData(vault)
     val places = rememberPlaces(vault).first
     // A link is saved as typed, so only the chips tag it.
@@ -498,7 +507,8 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
 
     fun done(text0: String, sub: String, msg: String) {
         history.add(0, Added(false, text0, sub))
-        text = ""; picked = emptyList(); kindPick = LogKind.TASK; kindSheet = null
+        text = ""; picked = emptyList(); kindPick = LogKind.TASK; due = null
+        evTime = null; evMinutes = 60; evPlace = ""; evAddress = ""; evNote = ""
         scope.launch { snack.showSnackbar(msg) }
     }
 
@@ -515,47 +525,16 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         }
     }
 
-    fun savePriority(value: String, due: LocalDate?, rule: String?, mins: Int?, p: Priority) {
+    /** A – note line (typed or kept from before): one line at the end of Inbox.md. */
+    fun saveLog(value: String) {
         val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
         busy = true
-        val line = Priority.with(value + (mins?.let { " ⏱ ${it}m" } ?: "") + (rule?.let { " 🔁 $it" } ?: ""), p)
-        val first = due ?: if (rule != null) LocalDate.now() else null
+        val line = "- " + Tags.withTags(value, picked).replace("\n", " ")
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).addTask(line, first?.toString()) } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).appendInbox(listOf(line)) } }
             busy = false
-            r.onSuccess {
-                done(Tags.strip(value).ifBlank { value }, "★ Task · ${p.title}" + (first?.let { " · due ${dueLabel(it)}" } ?: ""), "Task added")
-            }.onFailure {
-                PhoneOutbox.keepTask(ctx, line, first?.toString())
-                onQueued()
-                kindSheet = null; text = ""
-                snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
-            }
-        }
-    }
-
-    fun saveNote(value: String, dest: NoteDest, date: LocalDate, target: NoteInfo?) {
-        val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
-        busy = true
-        val sort = when (dest) {
-            NoteDest.LOG -> null
-            NoteDest.NEW -> SortResult(emptyList(), emptyList(), value, noteTitle = Sorting.titleFrom(value))
-            NoteDest.ADD -> SortResult(emptyList(), emptyList(), value, addTo = NoteTarget(target!!.title, target.path, null))
-        }
-        val line = "- $date " + value.replace("\n", " ")
-        scope.launch {
-            val r = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (sort == null) VaultWriter(ctx, uri).appendInbox(listOf(line))
-                    else Sorting.save(sort, VaultWriter(ctx, uri), IdeaStore(ctx, uri, prefs))
-                }
-            }
-            busy = false
-            val where = when (dest) { NoteDest.LOG -> "Inbox log"; NoteDest.NEW -> "new note in ${VaultWriter.INBOX}"; NoteDest.ADD -> target?.title.orEmpty() }
-            r.onSuccess { done(value, "– Note · $where", "Note saved") }.onFailure {
-                if (sort == null) PhoneOutbox.keepLines(ctx, listOf(line)) else PhoneOutbox.keepSort(ctx, sort)
-                onQueued()
-                kindSheet = null; text = ""
+            r.onSuccess { done(value, "– Note · ${VaultWriter.INBOX}/Inbox", "Note logged") }.onFailure {
+                PhoneOutbox.keepLines(ctx, listOf(line)); onQueued(); text = ""
                 snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
             }
         }
@@ -563,9 +542,23 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
 
     fun submit() {
         if (busy) return
-        if (entry != null && entry.kind != LogKind.TASK) { kindSheet = entry.kind; return }
+        if (entry != null && entry.kind == LogKind.EVENT) {
+            if (entry.text.isBlank()) return
+            val tag = Errands.tags(evPlace).firstOrNull()
+            val place = evAddress.trim().ifEmpty { null } ?: tag?.let { t -> places.firstOrNull { it.tag == t }?.label ?: t }
+            saveEvent(AppEvent(due ?: entry.due ?: LocalDate.now(), Tags.withTags(entry.text, picked).trim(), evTime,
+                if (evTime != null) evMinutes else null, place, evNote.trim().ifEmpty { null }))
+            return
+        }
+        if (entry != null && entry.kind == LogKind.NOTE) { if (entry.text.isNotBlank()) saveLog(entry.text); return }
         // Typed date and estimate fill in what the chips left empty; the mark and those words come off the task.
-        val value = (entry?.text ?: text).trim()
+        val wasKind = entry?.kind ?: LogKind.TASK
+        // Ideas and explores are tasks with their tag, so they show in the task list (capture-compact-v3).
+        val value = (entry?.text ?: text).trim().let { v ->
+            if (link || v.isEmpty()) v else RapidLog.withKindTag(v, wasKind) +
+                (if (wasKind == LogKind.IDEA) ideaProject?.let { " [[$it]]" } ?: "" else "") +
+                (if (wasKind == LogKind.EXPLORE) exploreLink.trim().takeIf { it.isNotEmpty() }?.let { " $it" } ?: "" else "")
+        }
         val uri = vault
         if (value.isEmpty() || busy) return
         if (uri == null) { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
@@ -574,10 +567,10 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         // A repeating task needs a first date for the series to count from.
         val wasDue = due ?: entry?.due ?: if (wasRule != null) LocalDate.now() else null
         val wasMin = minutes ?: entry?.minutes
-        val star = if (entry?.kind == LogKind.PRIORITY) " ⏫" else ""
+        val star = ""
         val wasTags = picked.filter { it !in typedTags }
         val wasTyped = typedTags
-        val wasPriority = priority
+        val wasPriority = if (priority == Priority.NONE && wasKind == LogKind.PRIORITY) Priority.HIGH else priority
         fun taskLine() = (Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""))
             .let { if (wasPriority != Priority.NONE) Priority.with(it, wasPriority) else it }
         scope.launch {
@@ -602,10 +595,11 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                 val tagNote = (wasTags + wasTyped).distinct().joinToString("") { " · ${Tags.label(it)}" }
                 history.add(0, Added(link, if (link) value else Tags.strip(value).ifBlank { value },
                     (if (link) (if (full) "Read later · full page" else "Read later · link only")
-                    else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "") +
+                    else (when (wasKind) { LogKind.IDEA -> "! Idea"; LogKind.EXPLORE -> "? Explore"; else -> "Task" }) + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "") +
                         (wasRule?.let { " · ↻ $it" } ?: "") + (if (wasPriority != Priority.NONE) " · ${wasPriority.mark}" else "")) + tagNote))
                 text = ""; due = null; minutes = null; repeat = null; picked = emptyList(); kindPick = LogKind.TASK; priority = Priority.NONE
-                snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
+                ideaProject = null; exploreLink = ""
+                snack.showSnackbar(if (!link) (when (wasKind) { LogKind.IDEA -> "Idea added"; LogKind.EXPLORE -> "Added to explore"; else -> "Task added" }) else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
             }.onFailure {
                 if (link) {
                     val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
@@ -620,58 +614,91 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
     }
 
     val canSend = text.isNotBlank() && !busy
-    // new-task-layout-v1: a new task gets Edit task's rows right on the page; ○ ★ – open their sheets.
+    // capture-compact-v3: one page for task, event, idea and explore; the rows under the box change with the kind.
     if (!link) {
-        KindChips(kind) { k ->
-            text = RapidLog.mark(text).second
-            if (k == LogKind.TASK) kindPick = LogKind.TASK else kindSheet = k
-        }
+        KindRow(shown) { k -> text = RapidLog.mark(text).second; kindPick = k }
         OutlinedTextField(
             value = text, onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-            placeholder = { Text("What needs doing? Try \"fri 15m\"") }, minLines = 2,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+            placeholder = { Text(when (shown) {
+                LogKind.EVENT -> "What's on?"
+                LogKind.IDEA -> "What's the idea?"
+                LogKind.EXPLORE -> "What do you want to look into?"
+                LogKind.NOTE -> "A thought, a quote, anything"
+                else -> "What needs doing? Try \"fri 15m\""
+            }) }, minLines = 2,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             colors = fieldColors()
         )
-        if (entry != null && text.isNotBlank()) {
+        if (entry != null && text.isNotBlank() && (entry.due != null && due == null || entry.minutes != null && minutes == null)) {
             val bits = listOfNotNull(
-                "${entry.kind.mark} ${entry.kind.label}",
                 entry.due?.takeIf { due == null }?.let { dueChip(it) },
                 entry.minutes?.takeIf { minutes == null }?.let { TaskRules.minutesLabel(it) },
-            ) + Tags.inText(text)
+            )
             Text("→ " + bits.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Green,
-                modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp))
         }
-        val today = LocalDate.now()
-        val custom = due != null && due != today && due != today.plusDays(1)
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AppChip(due == today, { due = if (due == today) null else today }, { Text("Today") })
-            AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) }, { Text("Tomorrow") })
-            AppChip(custom, { picking = true }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
-        }
-        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
-        }
-        Text("PRIORITY", fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = Muted, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Priority.CHOICES.forEach { p ->
-                AppChip(priority == p, { priority = p }, {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PriorityFlag(p)
-                        Text(if (p == Priority.NONE) "None" else p.title)
+        val shownDue = due ?: entry?.due
+        when (shown) {
+            LogKind.EVENT -> {
+                MiniSection("Date") { DateMini(due ?: entry?.due ?: LocalDate.now(), { due = it }, { picking = true }) }
+                MiniSection("Time · Length") {
+                    MiniChip("All day", evTime == null) { evTime = null }
+                    MiniChip(evTime?.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) ?: "Pick time", evTime != null) {
+                        val t = evTime ?: java.time.LocalTime.of(9, 0)
+                        android.app.TimePickerDialog(ctx, { _, h, m -> evTime = java.time.LocalTime.of(h, m) }, t.hour, t.minute, true).show()
                     }
-                })
+                    if (evTime != null) { MiniGap(); LengthMini(evMinutes, listOf(30, 60, 120, 240)) { evMinutes = it } }
+                }
+                PlaceRow(vault, evPlace, { evPlace = it }, title = "Location", hint = null, compact = true)
+                CompactField(evAddress, { evAddress = it }, "Or type an address")
+                Column(Modifier.padding(top = 8.dp)) {
+                    MiniLabel("Notes")
+                    CompactField(evNote, { evNote = it }, "Anything to remember")
+                }
+                TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
+            }
+            LogKind.IDEA -> {
+                val projects = rememberProjects(vault, prefs)
+                MiniSection("Project") {
+                    MiniChip("None", ideaProject == null) { ideaProject = null }
+                    projects.forEach { p -> MiniChip(p, ideaProject == p) { ideaProject = if (ideaProject == p) null else p } }
+                }
+                MiniSection("Review by") { DateMini(due, { due = it }, { picking = true }, week = true, none = true) }
+                TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
+            }
+            LogKind.EXPLORE -> {
+                MiniSection("Look into · Length") {
+                    DateMini(shownDue, { due = it }, { picking = true }, week = true)
+                    MiniGap()
+                    LengthMini(minutes ?: entry?.minutes, listOf(15, 30, 60)) { minutes = it }
+                }
+                Column(Modifier.padding(top = 8.dp)) {
+                    MiniLabel("Link")
+                    CompactField(exploreLink, { exploreLink = it }, "A link to start from (optional)", uri = true)
+                }
+                TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
+            }
+            LogKind.NOTE -> TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
+            else -> {
+                MiniSection("Date · Length") {
+                    DateMini(shownDue, { due = it }, { picking = true })
+                    MiniGap()
+                    LengthMini(minutes ?: entry?.minutes, listOf(15, 30, 60, 120)) { minutes = it }
+                }
+                PriorityMini(if (priority == Priority.NONE && kind == LogKind.PRIORITY) Priority.HIGH else priority) { priority = it }
+                RepeatMini(repeat) { repeat = it }
+                TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
+                PlaceRow(vault, text, { text = it }, hint = null, compact = true)
             }
         }
-        RepeatPicker(repeat, due ?: entry?.due, inlineCustom = true) { repeat = it }
-        TagRow(tagData, onTags, ::toggleTag)
-        PlaceRow(vault, text, { text = it })
         Text(
-            "Add task", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(CircleShape)
+            when (shown) { LogKind.EVENT -> "Add event"; LogKind.IDEA -> "Add idea"; LogKind.EXPLORE -> "Add explore"; LogKind.NOTE -> "Log note"; else -> "Add task" },
+            color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(CircleShape)
                 .background(if (canSend) Primary else Primary.copy(alpha = 0.4f))
-                .clickable(enabled = canSend) { submit() }.padding(vertical = 14.dp)
+                .clickable(enabled = canSend) { submit() }.padding(vertical = 12.dp)
         )
     } else {
     // Read later: the text box is the hero (tidy-v1), with tags as a chip along its bottom edge.
@@ -719,10 +746,7 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
     if (sheet != null) ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Bg) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
             when (sheet) {
-                CaptureSheet.KIND -> KindChips(kind) {
-                    text = RapidLog.mark(text).second; sheet = null
-                    if (it == LogKind.TASK) kindPick = LogKind.TASK else kindSheet = it
-                }
+                CaptureSheet.KIND -> KindChips(kind) { kindPick = it; sheet = null }
                 CaptureSheet.DATE -> {
                     val today = LocalDate.now()
                     val custom = due != null && due != today && due != today.plusDays(1)
@@ -740,7 +764,7 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                     }
                 }
                 CaptureSheet.REPEAT -> RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
-                CaptureSheet.TAGS -> TagRow(tagData, onTags, ::toggleTag)
+                CaptureSheet.TAGS -> TagRow(tagData, onTags, onToggle = ::toggleTag)
                 CaptureSheet.PLACE -> {
                     Text("Place", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     PlaceRow(vault, text, { text = it }, label = false)
@@ -750,9 +774,12 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         }
     }
     if (history.isNotEmpty()) {
-        Box(Modifier.height(16.dp))
-        GroupLabel("Just added")
-        Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(16.dp))) {
+        // Folded by default on the task page so the form fits without scrolling (capture-compact-v3).
+        var open by remember { mutableStateOf(link) }
+        Box(Modifier.height(14.dp))
+        Text("JUST ADDED · ${history.size} " + if (open) "▴" else "▾", fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
+            color = Muted, modifier = Modifier.clickable { open = !open }.padding(vertical = 4.dp))
+        if (open) Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(16.dp))) {
             history.take(5).forEachIndexed { i, e ->
                 if (i > 0) HorizontalDivider(color = Outline)
                 Row(
@@ -760,7 +787,7 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (e.isLink) LinkTint else TaskTint), contentAlignment = Alignment.Center) {
-                        Text(if (e.isLink) "🔗" else if (e.sub.startsWith("–")) "–" else if (e.sub.startsWith("○")) "○" else "✓")
+                        Text(if (e.isLink) "🔗" else listOf("–", "○", "!", "?").firstOrNull { e.sub.startsWith(it) } ?: "✓")
                     }
                     Column {
                         Text(e.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
@@ -771,13 +798,6 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         }
     }
     if (picking) PickDateDialog(due, onPick = { due = it; picking = false }, onDismiss = { picking = false })
-    val words = Tags.withTags(entry?.text ?: RapidLog.mark(text).second, picked)
-    when (kindSheet) {
-        LogKind.EVENT -> NewEventSheet(vault, tagData, words, entry?.due ?: due, busy, ::saveEvent) { kindSheet = null }
-        LogKind.PRIORITY -> NewPrioritySheet(vault, tagData, words, due ?: entry?.due, minutes ?: entry?.minutes, busy, ::savePriority) { kindSheet = null }
-        LogKind.NOTE -> NewNoteSheet(vault, tagData, words, busy, ::saveNote) { kindSheet = null }
-        else -> {}
-    }
 }
 
 /** • task ○ event – note ★ priority: the rapid-log kind for the line in the box. */

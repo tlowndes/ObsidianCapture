@@ -427,6 +427,13 @@ fun TasksScreen(
                 )
             }
         }
+        // ! Ideas and ? Explore (capture-compact-v3): one tap to see just those.
+        val ideaCount = tasks.count { TaskViews.IDEA_TAG in TaskViews.tags(it) }
+        val exploreCount = tasks.count { TaskViews.EXPLORE_TAG in TaskViews.tags(it) }
+        if (!upcoming && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (ideaCount > 0) MiniChip("! Ideas · $ideaCount", tag == TaskViews.IDEA_TAG, Amber) { pickTag(if (tag == TaskViews.IDEA_TAG) null else TaskViews.IDEA_TAG) }
+            if (exploreCount > 0) MiniChip("? Explore · $exploreCount", tag == TaskViews.EXPLORE_TAG, Purple) { pickTag(if (tag == TaskViews.EXPLORE_TAG) null else TaskViews.EXPLORE_TAG) }
+        }
         if (upcoming) UpcomingModeSwitch(dayView) { dayView = it; prefs.upcomingDay = it }
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
