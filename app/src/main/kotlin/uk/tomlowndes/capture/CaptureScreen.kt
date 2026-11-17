@@ -467,6 +467,8 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
     val history = remember { mutableStateListOf<Added>() }
     var text by remember(link) { mutableStateOf("") }
     var due by remember { mutableStateOf<LocalDate?>(null) }
+    // "＋ Add on this day" from Month view: start with that date picked.
+    LaunchedEffect(CapturePreset.date) { CapturePreset.date?.let { due = it; CapturePreset.date = null } }
     var minutes by remember { mutableStateOf<Int?>(null) }
     var repeat by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }

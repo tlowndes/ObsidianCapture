@@ -48,6 +48,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var upcomingDay: Boolean
         get() = p.getBoolean("upcoming_day", false)
         set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** Upcoming's mode (calendar-view-v1): LIST, DAY, WEEK or MONTH. Null falls back to [upcomingDay]. */
+    var upcomingMode: String?
+        get() = p.getString("upcoming_mode", null)
+        set(v) { p.edit().putString("upcoming_mode", v).apply() }
     /** The day Plan today was done ("2026-11-10"), and the day Shut down was. */
     var plannedOn: String?
         get() = p.getString("planned_on", null)

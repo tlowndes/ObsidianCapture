@@ -79,6 +79,7 @@ fun TasksScreen(
     onOpenSettings: () -> Unit = {},
     onOpenTriage: () -> Unit = {},
     onOpenGuardBackups: () -> Unit = {},
+    onAddOn: (LocalDate) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -120,7 +121,16 @@ fun TasksScreen(
     var removingAll by remember { mutableStateOf<List<TaskItem>?>(null) }
     BackHandler(enabled = selecting) { selected.clear() }
     var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
-    var dayView by remember { mutableStateOf(prefs.upcomingDay) }
+    var mode by remember { mutableStateOf(UpcomingMode.values().firstOrNull { it.name == prefs.upcomingMode } ?: if (prefs.upcomingDay) UpcomingMode.DAY else UpcomingMode.LIST) }
+    val dayView = mode == UpcomingMode.DAY
+    // Week and Month (calendar-view-v1): the range on screen, read for itself, plus birthdays from People.
+    var month by remember { mutableStateOf(java.time.YearMonth.now()) }
+    var pickedDay by remember { mutableStateOf(LocalDate.now()) }
+    var weekOf by remember { mutableStateOf(CalendarGrid.weekStart(LocalDate.now())) }
+    var rangeEvents by remember { mutableStateOf<List<CalEvent>>(emptyList()) }
+    var rangeTick by remember { mutableStateOf(0) }
+    var birthdays by remember { mutableStateOf<Map<LocalDate, List<String>>>(emptyMap()) }
+    var openEvent by remember { mutableStateOf<CalEvent?>(null) }
     var billsOpen by remember { mutableStateOf(false) }
     var addingBill by remember { mutableStateOf(false) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
@@ -139,6 +149,33 @@ fun TasksScreen(
         if (System.currentTimeMillis() - CalendarSync.lastSync(ctx) > CalendarSync.EVERY_MS)
             cal = withContext(Dispatchers.IO) { runCatching { CalendarSync.sync(ctx, uri) }.getOrDefault(cal) }
         travel = withContext(Dispatchers.IO) { runCatching { TravelFetch.line(ctx, cal.flatMap { it.events }) }.getOrNull() }
+    }
+    val rangeFrom = if (mode == UpcomingMode.MONTH) CalendarGrid.monthDays(month).first() else weekOf
+    val rangeTo = if (mode == UpcomingMode.MONTH) CalendarGrid.monthDays(month).last() else weekOf.plusDays(6)
+    LaunchedEffect(vault, upcoming, mode, rangeFrom, rangeTick) {
+        val uri = vault ?: return@LaunchedEffect
+        if (!upcoming || (mode != UpcomingMode.WEEK && mode != UpcomingMode.MONTH)) return@LaunchedEffect
+        rangeEvents = withContext(Dispatchers.IO) { runCatching { CalendarSync.range(ctx, uri, rangeFrom, rangeTo) }.getOrDefault(rangeEvents) }
+        birthdays = withContext(Dispatchers.IO) { runCatching { CalendarGrid.birthdays(People.list(appVault(ctx, uri)), rangeFrom, rangeTo) }.getOrDefault(emptyMap()) }
+    }
+    /** Changes one of the app's own events, then reads the calendars again. */
+    fun editEvent(e: CalEvent, change: (AppEvent) -> AppEvent?) {
+        val uri = vault ?: return
+        openEvent = null
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val v = appVault(ctx, uri)
+                    val own = AppEvents.load(v).firstOrNull { it.toCal() == e } ?: error("Couldn't find it in Events.md")
+                    AppEvents.remove(v, own)
+                    change(own)?.let { AppEvents.add(v, it) }
+                    CalendarSync.refreshApp(ctx, uri)
+                    CalendarSync.forgetRanges()
+                }
+            }
+            cal = CalendarSync.cached(ctx); rangeTick++
+            r.onFailure { snack.showSnackbar("Couldn't change the event: ${it.message}") }
+        }
     }
 
     /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
@@ -434,7 +471,7 @@ fun TasksScreen(
             if (ideaCount > 0) MiniChip("! Ideas · $ideaCount", tag == TaskViews.IDEA_TAG, Amber) { pickTag(if (tag == TaskViews.IDEA_TAG) null else TaskViews.IDEA_TAG) }
             if (exploreCount > 0) MiniChip("? Explore · $exploreCount", tag == TaskViews.EXPLORE_TAG, Purple) { pickTag(if (tag == TaskViews.EXPLORE_TAG) null else TaskViews.EXPLORE_TAG) }
         }
-        if (upcoming) UpcomingModeSwitch(dayView) { dayView = it; prefs.upcomingDay = it }
+        if (upcoming) UpcomingModes(mode) { mode = it; prefs.upcomingMode = it.name }
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
@@ -478,7 +515,14 @@ fun TasksScreen(
             }
         }
 
-        if (upcoming && dayView) {
+        val calColours = sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))
+        if (upcoming && mode == UpcomingMode.MONTH) {
+            MonthView(month, { month = it }, pickedDay, { pickedDay = it }, shown, rangeEvents, birthdays, calColours,
+                onTask = { editing = it }, onEvent = { openEvent = it }, onAdd = onAddOn)
+        } else if (upcoming && mode == UpcomingMode.WEEK) {
+            WeekView(weekOf, { weekOf = it }, shown, rangeEvents, calColours, now, onTask = { editing = it }, onEvent = { openEvent = it },
+                onDay = { pickedDay = it; month = java.time.YearMonth.from(it); mode = UpcomingMode.MONTH; prefs.upcomingMode = mode.name })
+        } else if (upcoming && dayView) {
             DayTimeline(shown, cal.flatMap { it.events }, (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), now) { t, time -> setTime(t, time) }
         } else if (upcoming) {
             val events = cal.flatMap { it.events }
@@ -630,6 +674,17 @@ fun TasksScreen(
         FitTaskSheet(g, shown, onPick = { t -> fitting = null; plan(t, g.start.toLocalDate(), g.start.toLocalTime()) }, onDismiss = { fitting = null })
     }
 
+    openEvent?.let { e ->
+        val own = e.calendarId == AppEvents.CAL_ID
+        EventSheet(
+            e, if (own) AppEvents.NAME else sources.firstOrNull { it.id == e.calendarId }?.name ?: "Calendar",
+            (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR)))[e.calendarId] ?: Purple, own,
+            onDismiss = { openEvent = null },
+            onDelete = { editEvent(e) { null } },
+            onMove = { d -> editEvent(e) { it.copy(date = d) } },
+            onSave = { title, place, note -> editEvent(e) { it.copy(title = title, place = place, note = note) } },
+        )
+    }
     editing?.let { t ->
         EditTaskSheet(
             t, tagData, vault,
