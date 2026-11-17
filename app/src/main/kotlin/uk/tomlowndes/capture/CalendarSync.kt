@@ -27,7 +27,7 @@ object CalendarSync {
 
     /** Reads Events.md again into the phone's copy. Call off the main thread, after adding or removing an event. */
     fun refreshApp(ctx: Context, vault: Uri) {
-        val events = AppEvents.calendar(appVault(ctx, vault), LocalDate.now().minusDays(1), 8)
+        val events = AppEvents.calendar(appVault(ctx, vault), LocalDate.now().minusDays(1), Upcoming.DAYS + 1L)
         p(ctx).edit().putString("app", eventsJson(events).toString()).apply()
     }
 
@@ -86,7 +86,7 @@ object CalendarSync {
         val today = LocalDate.now()
         val now = System.currentTimeMillis()
         val out = sources.map { s ->
-            runCatching { CalendarCache(s.id, true, now, Ics.events(fetch(s.url), s.id, today, today.plusDays(6))) }
+            runCatching { CalendarCache(s.id, true, now, Ics.events(fetch(s.url), s.id, today, today.plusDays(Upcoming.DAYS - 1L))) }
                 .getOrElse { old[s.id]?.copy(ok = false) ?: CalendarCache(s.id, false, 0, emptyList()) }
         }
         store(ctx, out)
