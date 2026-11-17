@@ -678,6 +678,12 @@ fun TasksScreen(
         FitTaskSheet(g, shown, onPick = { t -> fitting = null; plan(t, g.start.toLocalDate(), g.start.toLocalTime()) }, onDismiss = { fitting = null })
     }
 
+    var asks by remember { mutableStateOf<List<CalendarAsk>>(emptyList()) }
+    LaunchedEffect(openEvent) {
+        val uri = vault ?: return@LaunchedEffect
+        if (openEvent?.calendarId != AppEvents.CAL_ID) return@LaunchedEffect
+        asks = withContext(Dispatchers.IO) { runCatching { InboxSort.calendar(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+    }
     openEvent?.let { e ->
         val own = e.calendarId == AppEvents.CAL_ID
         EventSheet(
@@ -687,6 +693,21 @@ fun TasksScreen(
             onDelete = { editEvent(e) { null } },
             onMove = { d -> editEvent(e) { it.copy(date = d) } },
             onSave = { title, place, note -> editEvent(e) { it.copy(title = title, place = place, note = note) } },
+            proton = InboxSort.calendarStatus(asks, AppEvents.askId(e)),
+            onProton = {
+                val uri = vault
+                if (uri != null) scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val v = appVault(ctx, uri)
+                            val own = AppEvents.load(v).firstOrNull { it.toCal() == e } ?: error("Couldn't find it in Events.md")
+                            InboxSort.askCalendar(v, AppEvents.ask(own))
+                            InboxSort.calendar(v)
+                        }
+                    }
+                    r.onSuccess { asks = it }.onFailure { snack.showSnackbar("Couldn't send it: ${it.message}") }
+                }
+            },
         )
     }
     editing?.let { t ->

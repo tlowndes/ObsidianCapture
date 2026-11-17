@@ -514,15 +514,23 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         scope.launch { snack.showSnackbar(msg) }
     }
 
+    var evProton by remember { mutableStateOf(prefs.eventsToProton) }
     fun saveEvent(e: AppEvent) {
         val uri = vault ?: run { scope.launch { snack.showSnackbar("Pick your vault folder in Settings first") }; return }
         busy = true
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { AppEvents.add(appVault(ctx, uri), e); runCatching { CalendarSync.refreshApp(ctx, uri) } } }
+            val r = withContext(Dispatchers.IO) { runCatching {
+                val v = appVault(ctx, uri)
+                AppEvents.add(v, e)
+                // Add to Proton Calendar (events-to-proton-v1): the box emails an invite, Tom taps Yes.
+                if (evProton) InboxSort.askCalendar(v, AppEvents.ask(e))
+                runCatching { CalendarSync.refreshApp(ctx, uri) }
+            } }
             busy = false
             r.onSuccess {
                 val whenText = dueLabel(e.date) + (e.time?.let { " " + it.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) } ?: " · all day")
-                done(e.title, "○ Event · $whenText" + (e.place?.let { " · 📍 $it" } ?: ""), "Event added")
+                done(e.title, "○ Event · $whenText" + (e.place?.let { " · 📍 $it" } ?: "") + (if (evProton) " · invite to Proton" else ""),
+                    if (evProton) "Event added · Proton invite on its way" else "Event added")
             }.onFailure { snack.showSnackbar("Couldn't save the event: ${it.message ?: "try again"}") }
         }
     }
@@ -658,6 +666,17 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                 Column(Modifier.padding(top = 8.dp)) {
                     MiniLabel("Notes")
                     CompactField(evNote, { evNote = it }, "Anything to remember")
+                }
+                Row(
+                    Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface1)
+                        .border(1.dp, Outline, RoundedCornerShape(12.dp)).padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Add to Proton Calendar", fontSize = 14.sp)
+                        Text("Sends you an invite. Tap Yes in Proton Mail.", fontSize = 11.5.sp, color = Muted)
+                    }
+                    AppSwitch(evProton) { evProton = it; prefs.eventsToProton = it }
                 }
                 TagRow(tagData, onTags, compact = true, onToggle = ::toggleTag)
             }

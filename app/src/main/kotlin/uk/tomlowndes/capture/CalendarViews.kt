@@ -248,6 +248,7 @@ internal fun WeekView(
 internal fun EventSheet(
     e: CalEvent, calendar: String, colour: Color, own: Boolean, onDismiss: () -> Unit,
     onDelete: () -> Unit, onMove: (LocalDate) -> Unit, onSave: (title: String, place: String?, note: String?) -> Unit,
+    proton: String? = null, onProton: (() -> Unit)? = null,
 ) {
     var editing by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
@@ -271,6 +272,20 @@ internal fun EventSheet(
             } else {
                 e.location?.let { InfoBox("Location", "📍 $it") }
                 e.note?.let { InfoBox("Notes", it) }
+                // events-to-proton-v1: where its invite is, or a button to send one.
+                if (own) Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(Surface1)
+                        .border(1.dp, Outline, RoundedCornerShape(12.dp))
+                        .then(if (proton == null && onProton != null) Modifier.clickable { onProton() } else Modifier)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Proton Calendar", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        proton ?: "Add to Proton", fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        color = when { proton == null -> Primary; proton.endsWith("✓") -> Green; else -> Amber }
+                    )
+                }
             }
             if (own) Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (editing) {

@@ -48,6 +48,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var upcomingDay: Boolean
         get() = p.getBoolean("upcoming_day", false)
         set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** New events also go to Proton Calendar as an emailed invite (events-to-proton-v1): the switch's starting position. */
+    var eventsToProton: Boolean
+        get() = p.getBoolean("events_to_proton", true)
+        set(v) { p.edit().putBoolean("events_to_proton", v).apply() }
     /** Tasks shows Chores by room (chores-rooms-v1). */
     var tasksChores: Boolean
         get() = p.getBoolean("tasks_chores", false)

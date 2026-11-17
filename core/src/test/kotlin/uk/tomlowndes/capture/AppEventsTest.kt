@@ -46,3 +46,25 @@ class AppEventsTest {
         assertEquals(listOf("Later"), AppEvents.load(v).map { it.title })
     }
 }
+
+class AppEventsProtonTest {
+    private val day = LocalDate.of(2026, 11, 24)
+
+    @Test fun `an event becomes an invite with where and notes`() {
+        val e = AppEvent(day, "Haircut", LocalTime.of(10, 0), 60, "Barbers", "Bring card")
+        val a = AppEvents.ask(e)
+        assertEquals("10:00", a.start); assertEquals("11:00", a.end)
+        assertEquals("Barbers", a.location); assertEquals("Bring card", a.note)
+        assertEquals(AppEvents.askId(e.toCal()), a.id)
+        val back = InboxSort.parseCalendar(InboxSort.calendarLine(a)).single()
+        assertEquals(a, back)
+        assertEquals(null, AppEvents.ask(AppEvent(day, "Birthday")).start)
+    }
+
+    @Test fun `the app copy steps aside once Proton has it`() {
+        val mine = AppEvent(day, "Haircut", LocalTime.of(10, 0), 60).toCal()
+        val other = AppEvent(day, "Dentist", LocalTime.of(14, 0)).toCal()
+        val proton = CalEvent("p", "haircut", mine.start, mine.end, false)
+        assertEquals(listOf(other), AppEvents.withoutCopies(listOf(mine, other), listOf(proton)))
+    }
+}

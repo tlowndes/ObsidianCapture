@@ -18,7 +18,11 @@ object CalendarSync {
     private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences("calendar", Context.MODE_PRIVATE)
 
     /** The Proton calendars as last fetched, then events added in the app (99 - Meta/Events.md) as one more calendar. */
-    fun cached(ctx: Context): List<CalendarCache> = proton(ctx) + appCache(ctx)
+    fun cached(ctx: Context): List<CalendarCache> {
+        val p = proton(ctx)
+        // Once Proton has an event the app sent it (events-to-proton-v1), the app's own copy steps aside.
+        return p + appCache(ctx).map { c -> c.copy(events = AppEvents.withoutCopies(c.events, p.flatMap { it.events })) }
+    }
 
     private fun appCache(ctx: Context): List<CalendarCache> {
         val events = readEvents(AppEvents.CAL_ID, p(ctx).getString("app", null) ?: return emptyList())
@@ -104,7 +108,7 @@ object CalendarSync {
     fun range(ctx: Context, vault: Uri, from: LocalDate, to: LocalDate, fresh: Boolean = false): List<CalEvent> {
         val key = from to to
         val now = System.currentTimeMillis()
-        if (!fresh) ranges[key]?.takeIf { now - it.first < EVERY_MS }?.let { return it.second + appRange(ctx, vault, from, to) }
+        if (!fresh) ranges[key]?.takeIf { now - it.first < EVERY_MS }?.let { return it.second + AppEvents.withoutCopies(appRange(ctx, vault, from, to), it.second) }
         val sources = CalendarConfig.load(appVault(ctx, vault)).filter { it.enabled }
         val cached = proton(ctx).associateBy { it.id }
         val proton = sources.flatMap { s ->
@@ -112,7 +116,7 @@ object CalendarSync {
                 .getOrElse { cached[s.id]?.events.orEmpty().filter { e -> !e.start.toLocalDate().isAfter(to) && !e.end.toLocalDate().isBefore(from) } }
         }
         ranges[key] = now to proton
-        return proton + appRange(ctx, vault, from, to)
+        return proton + AppEvents.withoutCopies(appRange(ctx, vault, from, to), proton)
     }
 
     /** Drops the remembered ranges, so the next [range] reads the app's events again (after an edit). */

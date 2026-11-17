@@ -71,6 +71,24 @@ object AppEvents {
         }
     }
 
+    // ---- Proton Calendar (events-to-proton-v1) ----
+
+    /** The id an event's invite gets in calendar-out.md: the same for the event and its calendar copy. */
+    fun askId(e: CalEvent): String = "ev-" + Integer.toHexString((e.title.trim().lowercase() + "|" + e.start).hashCode())
+
+    /** The invite the box emails for [e] (through Bridge), so it lands in Proton Calendar. */
+    fun ask(e: AppEvent): CalendarAsk {
+        val c = e.toCal()
+        return CalendarAsk(
+            askId(c), e.title, e.date, e.time?.format(HM), if (e.time != null) c.end.toLocalTime().format(HM) else null,
+            location = e.place, note = e.note,
+        )
+    }
+
+    /** The app's events less any Proton already has (same title and start), so an event doesn't show twice. */
+    fun withoutCopies(app: List<CalEvent>, proton: List<CalEvent>): List<CalEvent> =
+        app.filter { a -> proton.none { p -> p.title.trim().equals(a.title.trim(), true) && p.start == a.start } }
+
     /** Takes off the line for [e] (the first that reads back the same). */
     fun remove(v: Vault, e: AppEvent) = VaultIo.edit(v, PATH) { lines ->
         val i = lines.indexOfFirst { parse(it) == e }
