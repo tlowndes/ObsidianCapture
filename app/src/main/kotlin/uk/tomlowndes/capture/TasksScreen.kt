@@ -108,7 +108,9 @@ fun TasksScreen(
     val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var upcoming by remember { mutableStateOf(prefs.tasksUpcoming) }
+    var view by remember { mutableStateOf(if (prefs.tasksChores) TasksView.CHORES else if (prefs.tasksUpcoming) TasksView.UPCOMING else TasksView.LIST) }
+    val upcoming = view == TasksView.UPCOMING
+    val chores = view == TasksView.CHORES
     val swipe = remember { prefs.taskSwipe }
     val swipes = remember { Triple(prefs.swipeRight, prefs.swipeLeft, prefs.swipeLongLeft) }
     // Select mode (multiselect-swipes-v1): long-press a row; the selected lines, by their raw text.
@@ -444,7 +446,7 @@ fun TasksScreen(
         val triage = Triage.candidates(tasks, today).size
         // One control row (tidy-v1): List / Upcoming and a Filter button; the chips open in a sheet.
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TasksViewSwitch(upcoming, Modifier.weight(1f)) { upcoming = it; prefs.tasksUpcoming = it; selected.clear() }
+            TasksViewSwitch(view, Modifier.weight(1f)) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; selected.clear() }
             val active: String? = note?.let { VaultTasks.noteName(it) } ?: when (filter) {
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
@@ -452,7 +454,7 @@ fun TasksScreen(
                 TaskFilter.URGENT -> "High+"
                 else -> null
             } ?: tag ?: if (sort == TaskSort.PRIORITY && !upcoming) "priority" else null
-            Row(
+            if (!chores) Row(
                 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, if (active != null) Primary else Outline, RoundedCornerShape(12.dp))
                     .clickable { filtering = true }.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -467,7 +469,7 @@ fun TasksScreen(
         // ! Ideas and ? Explore (capture-compact-v3): one tap to see just those.
         val ideaCount = tasks.count { TaskViews.IDEA_TAG in TaskViews.tags(it) }
         val exploreCount = tasks.count { TaskViews.EXPLORE_TAG in TaskViews.tags(it) }
-        if (!upcoming && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!upcoming && !chores && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (ideaCount > 0) MiniChip("! Ideas · $ideaCount", tag == TaskViews.IDEA_TAG, Amber) { pickTag(if (tag == TaskViews.IDEA_TAG) null else TaskViews.IDEA_TAG) }
             if (exploreCount > 0) MiniChip("? Explore · $exploreCount", tag == TaskViews.EXPLORE_TAG, Purple) { pickTag(if (tag == TaskViews.EXPLORE_TAG) null else TaskViews.EXPLORE_TAG) }
         }
@@ -516,7 +518,9 @@ fun TasksScreen(
         }
 
         val calColours = sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))
-        if (upcoming && mode == UpcomingMode.MONTH) {
+        if (chores) {
+            ChoreRoomsView(vault, snack)
+        } else if (upcoming && mode == UpcomingMode.MONTH) {
             MonthView(month, { month = it }, pickedDay, { pickedDay = it }, shown, rangeEvents, birthdays, calColours,
                 onTask = { editing = it }, onEvent = { openEvent = it }, onAdd = onAddOn)
         } else if (upcoming && mode == UpcomingMode.WEEK) {

@@ -48,6 +48,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var upcomingDay: Boolean
         get() = p.getBoolean("upcoming_day", false)
         set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** Tasks shows Chores by room (chores-rooms-v1). */
+    var tasksChores: Boolean
+        get() = p.getBoolean("tasks_chores", false)
+        set(v) { p.edit().putBoolean("tasks_chores", v).apply() }
     /** Upcoming's mode (calendar-view-v1): LIST, DAY, WEEK or MONTH. Null falls back to [upcomingDay]. */
     var upcomingMode: String?
         get() = p.getString("upcoming_mode", null)
