@@ -1,0 +1,131 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>New task layout v1</title>
+<style>
+:root{--bg:#0f131c;--surface:#161b27;--surface2:#1e2534;--outline:#2a3245;--primary:#7aa2ff;--tint:#1b2440;--text:#e8ecf5;--muted:#8a93a8;--faint:#5d667c;--purple:#b39dff;--red:#ff8a80;--green:#5fd39a;--amber:#f5c06a;--mono:"JetBrains Mono",Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{background:#07090e;font-family:Roboto,"Segoe UI",sans-serif;color:var(--text);padding:36px 44px;width:1400px}
+.h{font-size:22px;font-weight:700;margin-bottom:6px}.intro{font-size:14px;color:var(--muted);margin-bottom:26px;max-width:1200px;line-height:1.5}.intro b{color:var(--text)}
+.row{display:flex;gap:34px;align-items:flex-start;margin-bottom:34px}.col{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:14px;color:var(--muted);font-weight:600}.cap b{color:var(--text)}
+.note{font-size:13px;color:var(--muted);line-height:1.55;width:400px}.note b{color:var(--text)}
+.new{outline:2px dashed var(--purple);outline-offset:3px;border-radius:14px}
+.phone{width:400px;height:800px;background:var(--bg);border-radius:44px;border:2px solid #232a3a;padding:22px 18px 0;position:relative;overflow:hidden}
+.card{background:var(--surface);border:1px solid var(--outline);border-radius:22px;margin-bottom:12px}
+.card .hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;font-weight:700;font-size:17px}
+.card .hd span{font-family:var(--mono);font-weight:400;font-size:12px;color:var(--muted)}
+.it{padding:12px 16px;border-top:1px solid var(--outline)}
+.it .t{display:flex;gap:10px;align-items:flex-start;font-size:15px}.it .t b{font-weight:600}
+.it small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+.ic{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;background:var(--tint)}
+.acts{display:flex;gap:6px;margin:9px 0 0 40px;flex-wrap:wrap}
+.chip{border:1px solid var(--outline);border-radius:12px;padding:6px 11px;font-size:13px;white-space:nowrap;color:var(--text)}
+.chip.p{background:var(--primary);color:#0b1020;border-color:var(--primary);font-weight:700}
+.chip.m{color:var(--muted)}
+.k{font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;padding:2px 7px;border-radius:6px;margin-left:auto;white-space:nowrap}
+.k.r{background:#2a1f3d;color:var(--purple)}.k.b{background:#3a2a12;color:var(--amber)}.k.d{background:#16302a;color:var(--green)}.k.j{background:var(--tint);color:var(--primary)}
+.nav{position:absolute;left:0;right:0;bottom:0;height:70px;border-top:1px solid var(--outline);background:#121724;display:flex;justify-content:space-around;align-items:center;font-size:13px;color:var(--muted)}
+.nav b{color:var(--primary)}
+h1{font-size:26px;font-weight:700}.top{display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px}
+.pill{font-family:var(--mono);font-size:12px;color:var(--primary);background:var(--tint);border-radius:999px;padding:4px 10px}
+.lbl{font-family:var(--mono);font-size:11px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;margin:16px 0 6px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface2);border-radius:26px 26px 0 0;border-top:1px solid var(--outline);padding:12px 18px 22px}
+.grab{width:40px;height:4px;border-radius:4px;background:var(--outline);margin:0 auto 14px}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.ai{background:var(--tint);border-radius:14px;padding:11px 13px;font-size:13.5px;line-height:1.5;color:#cdd8f5}.ai .w{font-family:var(--mono);font-size:10.5px;color:var(--primary);letter-spacing:.8px;display:block;margin-bottom:3px}
+.sr{display:flex;align-items:center;justify-content:space-between;padding:12px 2px;border-bottom:1px solid var(--outline);font-size:15px}.sr small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.tog{width:40px;height:24px;border-radius:99px;background:var(--primary);position:relative;flex:none}.tog:after{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.tog.off{background:var(--outline)}.tog.off:after{left:3px;right:auto}
+.tick{width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);flex:none}.tick.on{background:var(--green);border-color:var(--green)}
+.field{background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:9px 12px;font-size:14px;margin-bottom:8px}.field small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px}
+.btns{display:flex;gap:8px;margin-top:12px}.btn{flex:1;text-align:center;padding:12px;border-radius:999px;font-weight:700;font-size:14px;border:1px solid var(--outline)}.btn.p{background:var(--primary);color:#0b1020;border-color:var(--primary)}
+.win{width:1272px;border:1px solid var(--outline);border-radius:12px;overflow:hidden;background:var(--bg);display:flex;height:560px;font-family:"Segoe UI",sans-serif;position:relative}
+.side{width:210px;background:#0b0f18;border-right:1px solid var(--outline);padding:18px 12px}.side div{padding:8px 12px;border-radius:10px;color:var(--muted);font-weight:600;font-size:14px;margin-bottom:2px}.side .on{background:var(--tint);color:var(--primary)}
+.wm{flex:1;padding:22px 26px;overflow:hidden}
+.panel{width:400px;background:var(--surface2);border-left:1px solid var(--outline);padding:20px}
+.bar{height:8px;border-radius:8px;background:var(--outline);overflow:hidden;margin-top:7px}.bar i{display:block;height:100%;border-radius:8px}
+.bub{max-width:82%;padding:10px 13px;border-radius:16px;font-size:14px;line-height:1.45;margin-bottom:8px}.bub.me{margin-left:auto;background:var(--primary);color:#0b1020;border-bottom-right-radius:4px}.bub.ai2{background:var(--surface2);border-bottom-left-radius:4px}
+.wstrip{display:flex;gap:18px}.wcard{flex:1;background:var(--bg);border:1px solid var(--outline);border-radius:12px;padding:18px 20px;font-family:"Segoe UI",sans-serif}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--primary);border-radius:14px;padding:11px 13px;font-size:15px}
+.search .cur{width:2px;height:18px;background:var(--primary)}
+.res{display:flex;gap:10px;align-items:center;padding:11px 2px;border-bottom:1px solid var(--outline);font-size:14.5px}.res small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.res .d{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.res.sel{background:var(--tint);border-radius:12px;padding:11px 10px;border-bottom:0}
+.mapwrap{position:absolute;left:0;right:0;top:0;height:420px}
+.floattop{position:absolute;left:16px;right:16px;top:22px;display:flex;gap:8px;align-items:center}
+.fab{position:absolute;right:16px;top:356px;width:44px;height:44px;border-radius:14px;background:var(--surface2);border:1px solid var(--outline);display:flex;align-items:center;justify-content:center;font-size:18px}
+.seg{display:flex;border:1px solid var(--outline);border-radius:12px;overflow:hidden;font-size:13px}.seg span{flex:1;text-align:center;padding:8px 0;color:var(--muted)}.seg span.on{background:var(--tint);color:var(--primary);font-weight:700}
+.opt{display:flex;gap:12px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--outline)}.opt b{font-size:15px;font-weight:600}.opt small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.foot{position:absolute;left:12px;bottom:6px;font-size:10px;color:var(--faint)}
+
+.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.tchip i{width:8px;height:8px;border-radius:50%;background:var(--purple)}
+.pchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.pchip.on{background:#16302a;border-color:var(--green);color:var(--green)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ta{border:1px solid var(--outline);border-radius:20px;padding:14px 16px;font-size:15px;min-height:70px;margin-top:12px}
+.ta .g{color:var(--green)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+.tool{display:inline-flex;border:1px solid var(--outline);border-radius:10px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.teal{--teal:#5fd3c8}
+.ev{color:#5fd3c8}
+.pinned{position:absolute;left:0;right:0;top:0;background:var(--bg);padding:22px 18px 10px;z-index:3;border-bottom:1px solid var(--outline);box-shadow:0 10px 18px rgba(0,0,0,.45)}
+.sw{display:flex;background:var(--surface);border-radius:999px;padding:4px;margin-top:10px}.sw span{flex:1;text-align:center;padding:9px 0;font-size:14px;font-weight:600;color:var(--muted);border-radius:999px}.sw span.on{background:var(--primary);color:#0b1020}
+.badge{border:1px solid var(--outline);background:var(--tint);color:var(--primary);border-radius:999px;padding:5px 11px;font-size:13px}
+.me{background:var(--primary);color:#0b1020;border-radius:18px 18px 4px 18px;padding:11px 14px;font-size:14px;margin:0 0 10px 60px;line-height:1.45}
+.tw{background:var(--surface);border:1px solid var(--outline);border-radius:18px;padding:11px 14px;font-size:14px;margin:0 50px 10px 0;line-height:1.45}.tw .w{font-family:var(--mono);font-size:10px;color:var(--primary);letter-spacing:1px;display:block;margin-bottom:4px}
+.inp{position:absolute;left:14px;right:70px;bottom:84px;border:1px solid var(--outline);border-radius:999px;padding:12px 16px;color:var(--muted);font-size:14px;background:var(--bg)}
+.mic{position:absolute;right:14px;bottom:84px;width:46px;height:46px;border-radius:50%;background:var(--primary)}
+.meta{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:1px;margin-top:10px}
+.meta .m{margin-left:auto;border:1px solid var(--amber);color:var(--amber);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.meta .n{border:1px solid var(--outline);color:var(--primary);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.arrow{position:absolute;right:6px;top:190px;font-family:var(--mono);font-size:11px;color:var(--purple);writing-mode:vertical-rl}
+.tf{border:1px solid var(--outline);border-radius:14px;padding:10px 13px;font-size:14px;color:var(--muted);margin-top:8px;min-height:58px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}.ans td{padding:9px 10px;border-top:1px solid var(--outline);vertical-align:top;line-height:1.45}.ans th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--muted);padding:6px 10px}
+code{font-family:var(--mono);font-size:12px;color:#cdd8f5;background:var(--tint);padding:1px 5px;border-radius:5px}
+
+.kinds{display:flex;gap:6px;margin-top:12px}.kinds span{flex:1;text-align:center;border:1px solid var(--outline);border-radius:12px;padding:6px 0;font-size:16px}.kinds span small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--muted)}
+.kinds span.on{background:var(--tint);border-color:var(--primary);color:var(--primary)}
+.old .tool{margin-right:4px}
+</style></head><body>
+<div class="h">New task layout v1 · Capture's Task tab laid out like Edit task</div>
+<div class="intro">Today a new task is a text box with small chips along its bottom (Kind, Date, ⏱, ↻, #, 📍) that each open a pop-up. This puts the <b>same rows as Edit task</b> straight on the Task tab, so adding and editing look the same, and the same as New event, priority and note. Everything is visible at once with no pop-ups. Dashed purple = new.</div>
+<div class="row">
+
+<div class="col"><div class="cap"><b>Now</b> · chips under the box</div>
+<div class="phone old">
+ <div class="top" style="margin-top:20px"><h1>Capture</h1><span class="badge">⚡ phone</span></div>
+ <div class="sw"><span class="on">Task</span><span>Read later</span><span>Tower</span></div>
+ <div class="ta" style="min-height:96px">Send CV to Studio North</div>
+ <div class="flow" style="margin-top:10px"><span class="tool">• Task</span><span class="tool">Date</span><span class="tool">⏱</span><span class="tool">↻</span><span class="tool">#</span><span class="tool">📍</span></div>
+ <div class="nav"><span>Deck</span><b>Capture</b><span>Tasks</span><span>Vault</span></div>
+</div>
+<div class="note">Each chip opens its own pop-up. Priority isn't there at all unless you switch the kind to ★.</div></div>
+
+<div class="col"><div class="cap"><b>New</b> · Edit task's rows on the page</div>
+<div class="phone">
+ <div class="top" style="margin-top:20px"><h1>Capture</h1><span class="badge">⚡ phone</span></div>
+ <div class="sw"><span class="on">Task</span><span>Read later</span><span>Tower</span></div>
+ <div class="new" style="padding:2px 2px 8px;margin-top:8px">
+ <div class="kinds"><span class="on">•<small>task</small></span><span style="color:#5fd3c8">○<small>event</small></span><span style="color:var(--amber)">★<small>priority</small></span><span>–<small>note</small></span></div>
+ <div class="ta" style="min-height:52px">Send CV to Studio North <span class="g">#work</span></div>
+ <div class="flow" style="margin-top:12px"><span class="chip p">Today</span><span class="chip">Tomorrow</span><span class="chip">Pick date</span></div>
+ <div class="flow"><span class="chip">5m</span><span class="chip">15m</span><span class="chip p">30m</span><span class="chip">1h</span><span class="chip">2h</span></div>
+ <div class="lbl">Priority</div>
+ <div class="flow"><span class="chip p">None</span><span class="chip">🔺 Highest</span><span class="chip">⏫ High</span><span class="chip">🔼 Medium</span></div>
+ <div class="lbl">Repeat</div>
+ <div class="flow"><span class="chip p">None</span><span class="chip">Daily</span><span class="chip">Weekly</span><span class="chip">↻ Custom</span></div>
+ <div class="lbl">Tag</div>
+ <div class="flow"><span class="tchip"><i style="background:var(--amber)"></i>Work</span><span class="tchip"><i style="background:var(--green)"></i>Personal</span><span class="tchip" style="color:var(--muted)">＋ Tag</span></div>
+ <div class="lbl">Place</div>
+ <div class="flow"><span class="pchip">📍 Tesco Extra</span><span class="pchip">📍 B&amp;Q</span><span class="pchip" style="color:var(--muted)">＋ Place</span></div>
+ <div class="btn p" style="margin-top:14px">Add task</div>
+ </div>
+ <div class="nav"><span>Deck</span><b>Capture</b><span>Tasks</span><span>Vault</span></div>
+</div>
+<div class="note">Same order as Edit task: text, date, length, Priority, Repeat, Tag, Place, then <b>Add task</b>. The kind row at the top replaces the Kind chip: <b>○ ★ –</b> open their sheets as they do now. Typing "fri 15m" still fills the chips. The page scrolls if the keyboard covers it, and "Just added" stays below.</div></div>
+
+<div class="col"><div class="cap"><b>Why on the page, not a sheet</b></div>
+<div class="note" style="margin-top:6px">A sheet would add a tap before every task. On the page, a quick task is still type and tap <b>Add task</b>, with the extra rows there when you want them.<br><br>
+<b>The Quick Task tile, share sheet and widgets</b> stay as they are.<br><br>
+<b>★ Priority</b> becomes the same as picking ⏫ High in the Priority row, so the ★ sheet just opens with High picked, as built in 1.42.</div></div>
+
+</div>
+</body></html>

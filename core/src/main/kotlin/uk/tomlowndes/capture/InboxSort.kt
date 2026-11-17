@@ -23,6 +23,8 @@ enum class InboxSection(val label: String) {
 data class CalendarAsk(
     val id: String, val title: String, val date: LocalDate, val start: String? = null, val end: String? = null,
     val sent: Boolean = false,
+    /** Where and notes, for an event added in the app (events-to-proton-v1). */
+    val location: String? = null, val note: String? = null,
 )
 
 /**
@@ -139,13 +141,15 @@ object InboxSort {
         val o = CAL_TAG.find(l)?.groupValues?.get(1)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return@mapNotNull null
         runCatching {
             CalendarAsk(o.getString("id"), o.getString("title"), LocalDate.parse(o.getString("date")),
-                o.optString("start").takeIf { it.isNotBlank() }, o.optString("end").takeIf { it.isNotBlank() }, l.trim().startsWith("- [x]"))
+                o.optString("start").takeIf { it.isNotBlank() }, o.optString("end").takeIf { it.isNotBlank() }, l.trim().startsWith("- [x]"),
+                o.optString("location").takeIf { it.isNotBlank() }, o.optString("note").takeIf { it.isNotBlank() })
         }.getOrNull()
     }
 
     fun calendarLine(a: CalendarAsk): String {
         val o = JSONObject().put("id", a.id).put("title", a.title).put("date", a.date.toString())
         a.start?.let { o.put("start", it) }; a.end?.let { o.put("end", it) }
+        a.location?.let { o.put("location", it) }; a.note?.let { o.put("note", it) }
         return "- [${if (a.sent) "x" else " "}] 📅 ${a.title} · ${a.date}${a.start?.let { " $it" } ?: ""}${a.end?.let { "–$it" } ?: ""} <!--cal:$o-->"
     }
 

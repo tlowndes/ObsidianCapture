@@ -80,6 +80,7 @@ internal fun TaskLine(
         TickBox(done = faded, onClick = onTick, modifier = Modifier.padding(start = if (edge) 6.dp else 0.dp))
         Text(
             buildAnnotatedString {
+                TaskViews.kindMark(t)?.let { m -> withStyle(SpanStyle(color = if (m == "!") Amber else Purple, fontWeight = FontWeight.Bold)) { append("$m ") } }
                 append(TaskViews.plainText(t))
                 if (t.recurrence != null) append(" ↻")
                 // Up to two tags, coloured like the Tag row: Work amber, Personal green, the rest purple.
@@ -175,6 +176,8 @@ internal fun TaskRow(
         Column(Modifier.weight(1f).combinedClickable(onClick = onOpen, onLongClick = onLongPress)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PriorityFlag(Priority.of(t))
+                // ! idea, ? explore (capture-compact-v3).
+                TaskViews.kindMark(t)?.let { m -> Text(m, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (m == "!") Amber else Purple) }
                 Text(
                     TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null

@@ -18,7 +18,11 @@ object CalendarSync {
     private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences("calendar", Context.MODE_PRIVATE)
 
     /** The Proton calendars as last fetched, then events added in the app (99 - Meta/Events.md) as one more calendar. */
-    fun cached(ctx: Context): List<CalendarCache> = proton(ctx) + appCache(ctx)
+    fun cached(ctx: Context): List<CalendarCache> {
+        val p = proton(ctx)
+        // Once Proton has an event the app sent it (events-to-proton-v1), the app's own copy steps aside.
+        return p + appCache(ctx).map { c -> c.copy(events = AppEvents.withoutCopies(c.events, p.flatMap { it.events })) }
+    }
 
     private fun appCache(ctx: Context): List<CalendarCache> {
         val events = readEvents(AppEvents.CAL_ID, p(ctx).getString("app", null) ?: return emptyList())
@@ -27,7 +31,7 @@ object CalendarSync {
 
     /** Reads Events.md again into the phone's copy. Call off the main thread, after adding or removing an event. */
     fun refreshApp(ctx: Context, vault: Uri) {
-        val events = AppEvents.calendar(appVault(ctx, vault), LocalDate.now().minusDays(1), 8)
+        val events = AppEvents.calendar(appVault(ctx, vault), LocalDate.now().minusDays(1), Upcoming.DAYS + 1L)
         p(ctx).edit().putString("app", eventsJson(events).toString()).apply()
     }
 
@@ -86,13 +90,40 @@ object CalendarSync {
         val today = LocalDate.now()
         val now = System.currentTimeMillis()
         val out = sources.map { s ->
-            runCatching { CalendarCache(s.id, true, now, Ics.events(fetch(s.url), s.id, today, today.plusDays(6))) }
+            runCatching { CalendarCache(s.id, true, now, Ics.events(fetch(s.url), s.id, today, today.plusDays(Upcoming.DAYS - 1L))) }
                 .getOrElse { old[s.id]?.copy(ok = false) ?: CalendarCache(s.id, false, 0, emptyList()) }
         }
         store(ctx, out)
         runCatching { refreshApp(ctx, vault) }
         return cached(ctx)
     }
+
+    private val ranges = java.util.concurrent.ConcurrentHashMap<Pair<LocalDate, LocalDate>, Pair<Long, List<CalEvent>>>()
+
+    /**
+     * Every enabled calendar plus the app's own events from [from] to [to] (calendar-view-v1: Month and Week reach
+     * past the cached two weeks). Kept for half an hour per range; a calendar that can't be fetched falls back to the
+     * cached copy. Call off the main thread.
+     */
+    fun range(ctx: Context, vault: Uri, from: LocalDate, to: LocalDate, fresh: Boolean = false): List<CalEvent> {
+        val key = from to to
+        val now = System.currentTimeMillis()
+        if (!fresh) ranges[key]?.takeIf { now - it.first < EVERY_MS }?.let { return it.second + AppEvents.withoutCopies(appRange(ctx, vault, from, to), it.second) }
+        val sources = CalendarConfig.load(appVault(ctx, vault)).filter { it.enabled }
+        val cached = proton(ctx).associateBy { it.id }
+        val proton = sources.flatMap { s ->
+            runCatching { Ics.events(fetch(s.url), s.id, from, to) }
+                .getOrElse { cached[s.id]?.events.orEmpty().filter { e -> !e.start.toLocalDate().isAfter(to) && !e.end.toLocalDate().isBefore(from) } }
+        }
+        ranges[key] = now to proton
+        return proton + AppEvents.withoutCopies(appRange(ctx, vault, from, to), proton)
+    }
+
+    /** Drops the remembered ranges, so the next [range] reads the app's events again (after an edit). */
+    fun forgetRanges() = ranges.clear()
+
+    private fun appRange(ctx: Context, vault: Uri, from: LocalDate, to: LocalDate): List<CalEvent> =
+        runCatching { AppEvents.calendar(appVault(ctx, vault), from, java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1) }.getOrDefault(emptyList())
 
     /** Checks a pasted link before it's saved. */
     fun test(url: String): Boolean = runCatching { fetch(url) }.isSuccess

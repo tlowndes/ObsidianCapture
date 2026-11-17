@@ -16,13 +16,13 @@ class UpcomingTest {
     }
     private fun task(text: String, due: LocalDate?, extra: String = "") = TaskItem("- [ ] #task $text$extra", text, due)
 
-    @Test fun `seven days with tasks first then events, overdue on today`() {
+    @Test fun `two weeks with tasks first then events, overdue on today`() {
         val days = Upcoming.days(
             listOf(task("Late", today.minusDays(5)), task("Dentist", today), task("Car tax", today.plusDays(3)), task("Someday", null)),
             listOf(ev("Call", 9, 10, 0, 30), ev("Dinner", 10, 19, 0), ev("Birthday", 14, 0, 0, allDay = true)),
             now
         )
-        assertEquals(7, days.size)
+        assertEquals(14, days.size)
         val t = days[0].items
         assertTrue((t[0] as AgendaItem.Task).late)
         assertEquals("Dentist", (t[1] as AgendaItem.Task).task.text)

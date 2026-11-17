@@ -61,4 +61,16 @@ class TaskViewsTest {
         assertEquals("£183.50", TaskViews.money(TaskViews.total(due)))
         assertEquals("£163", TaskViews.money(BigDecimal("163")))
     }
+
+    @Test fun `undated ideas get their own group and marks`() {
+        val today = LocalDate.of(2026, 11, 17)
+        val idea = TaskItem(text = "Stamp card #idea", due = null, raw = "- [ ] #task Stamp card #idea")
+        val dated = TaskItem(text = "Case study #idea", due = today, raw = "- [ ] #task Case study #idea 📅 2026-11-17")
+        val explore = TaskItem(text = "Free ID #explore", due = null, raw = "- [ ] #task Free ID #explore")
+        assertEquals(TaskGroup.IDEAS, TaskViews.groupFor(idea, today))
+        assertEquals(TaskGroup.TODAY, TaskViews.groupFor(dated, today))
+        assertEquals(TaskGroup.LATER, TaskViews.groupFor(explore, today))
+        assertEquals("!", TaskViews.kindMark(idea))
+        assertEquals("?", TaskViews.kindMark(explore))
+    }
 }

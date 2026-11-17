@@ -309,6 +309,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
                     onOpenTriage = { sub = Sub.TRIAGE },
                     onOpenGuardBackups = { settingsBackups = true; settings = true },
+                    onAddOn = { d -> CapturePreset.date = d; prefs.captureMode = 0; tab = Tab.CAPTURE },
                 )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },

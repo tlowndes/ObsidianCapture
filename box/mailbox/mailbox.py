@@ -256,12 +256,17 @@ def ics(ev, organizer, to, now):
     else:
         nxt = (dt.date.fromisoformat(ev["date"]) + dt.timedelta(days=1)).strftime("%Y%m%d")
         when = ["DTSTART;VALUE=DATE:" + day, "DTEND;VALUE=DATE:" + nxt]
-    title = ev["title"].replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+    def esc(s):
+        return s.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+    title = esc(ev["title"])
+    # Events added in the app carry where and notes (events-to-proton-v1).
+    extra = (["LOCATION:" + esc(ev["location"])] if ev.get("location") else [])
+    desc = esc(ev["note"]) if ev.get("note") else "Added from Flight Deck."
     return "\r\n".join([
         "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Flight Deck//Inbox//EN", "METHOD:REQUEST", "BEGIN:VEVENT",
         "UID:flightdeck-%s@flightdeck" % re.sub(r"[^A-Za-z0-9._-]", "", ev["id"])[:60],
         "DTSTAMP:" + now.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), *when, "SUMMARY:" + title,
-        "DESCRIPTION:Added from the Flight Deck inbox.", "ORGANIZER;CN=Flight Deck:mailto:" + organizer,
+        *extra, "DESCRIPTION:" + desc, "ORGANIZER;CN=Flight Deck:mailto:" + organizer,
         "ATTENDEE;CN=Tom;RSVP=TRUE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:" + to,
         "SEQUENCE:0", "STATUS:CONFIRMED", "TRANSP:TRANSPARENT", "END:VEVENT", "END:VCALENDAR", ""])
 

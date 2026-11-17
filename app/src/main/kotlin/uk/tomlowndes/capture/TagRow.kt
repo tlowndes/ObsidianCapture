@@ -1,5 +1,7 @@
 package uk.tomlowndes.capture
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -108,14 +110,13 @@ internal fun TagChip(tag: String, selected: Boolean, onClick: () -> Unit, onLong
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TagRow(data: TagData, on: List<String>, onToggle: (String) -> Unit) {
+internal fun TagRow(data: TagData, on: List<String>, compact: Boolean = false, onToggle: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var adding by remember { mutableStateOf(false) }
-    Column(Modifier.padding(top = 14.dp)) {
-        GroupLabel("Tag")
-        FlowRow(
-            Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+    Column(Modifier.padding(top = if (compact) 8.dp else 14.dp)) {
+        if (compact) MiniLabel("Tag") else GroupLabel("Tag")
+        // Compact (capture-compact-v3): one line that scrolls sideways.
+        val chips: @Composable () -> Unit = {
             Tags.row(data.pinned, on).forEach { tag ->
                 val pinned = tag in data.pinned
                 TagChip(tag, tag in on, onClick = { onToggle(tag) },
@@ -127,7 +128,11 @@ internal fun TagRow(data: TagData, on: List<String>, onToggle: (String) -> Unit)
                     .clickable { adding = true }.padding(horizontal = 12.dp, vertical = 7.dp)
             )
         }
-        Text("Tap to add, tap again to remove · more than one is fine", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+        if (compact) Row(Modifier.padding(top = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
+        else FlowRow(
+            Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) { chips() }
+        if (!compact) Text("Tap to add, tap again to remove · more than one is fine", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
     }
     if (adding) AddTagSheet(
         data.known.filter { it.first !in Tags.BUILT_IN },

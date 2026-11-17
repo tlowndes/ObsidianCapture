@@ -26,7 +26,7 @@ data class AgendaDay(val date: LocalDate, val allDay: List<CalEvent>, val items:
 
 /** The Upcoming view on the Tasks tab: dated tasks and calendar events for the next [DAYS] days. */
 object Upcoming {
-    const val DAYS = 7
+    const val DAYS = 14
     /** Free gaps are only looked for inside this window, and only on today. */
     val DAY_START: LocalTime = LocalTime.of(9, 0)
     val DAY_END: LocalTime = LocalTime.of(18, 0)

@@ -1,5 +1,8 @@
 package uk.tomlowndes.capture
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -68,7 +71,7 @@ internal fun placeChipLabel(text: String, places: List<Place>): String {
 @Composable
 internal fun PlaceRow(
     vault: Uri?, text: String, onText: (String) -> Unit, label: Boolean = true,
-    title: String = "Place", hint: String? = "Nudges you when you get there · tap again to remove",
+    title: String = "Place", hint: String? = "Nudges you when you get there · tap again to remove", compact: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -98,16 +101,18 @@ internal fun PlaceRow(
         }
     }
 
-    Column(Modifier.padding(top = 14.dp)) {
-        if (label) GroupLabel(title)
-        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.padding(top = if (compact) 8.dp else 14.dp)) {
+        if (label) { if (compact) MiniLabel(title) else GroupLabel(title) }
+        val chips: @Composable () -> Unit = {
             places.forEach { p -> PlaceChip("📍 ${p.label}", p.tag in on) { onText(Errands.toggle(text, p.tag)) } }
             on.filter { t -> places.none { it.tag == t } }.forEach { t ->
                 PlaceChip("$t · set up", false, muted = true) { setUpTag = t; adding = true }
             }
             PlaceChip("＋ Place", false, muted = true) { setUpTag = ""; adding = true }
         }
-        if (hint != null) Text(hint, fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+        if (compact) Row(Modifier.padding(top = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
+        else FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
+        if (hint != null && !compact) Text(hint, fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
     }
 
     if (adding) AddPlaceSheet(
