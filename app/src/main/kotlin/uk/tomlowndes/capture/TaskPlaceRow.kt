@@ -66,7 +66,10 @@ internal fun placeChipLabel(text: String, places: List<Place>): String {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PlaceRow(vault: Uri?, text: String, onText: (String) -> Unit, label: Boolean = true) {
+internal fun PlaceRow(
+    vault: Uri?, text: String, onText: (String) -> Unit, label: Boolean = true,
+    title: String = "Place", hint: String? = "Nudges you when you get there · tap again to remove",
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val (places, reload) = rememberPlaces(vault)
@@ -96,7 +99,7 @@ internal fun PlaceRow(vault: Uri?, text: String, onText: (String) -> Unit, label
     }
 
     Column(Modifier.padding(top = 14.dp)) {
-        if (label) GroupLabel("Place")
+        if (label) GroupLabel(title)
         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             places.forEach { p -> PlaceChip("📍 ${p.label}", p.tag in on) { onText(Errands.toggle(text, p.tag)) } }
             on.filter { t -> places.none { it.tag == t } }.forEach { t ->
@@ -104,7 +107,7 @@ internal fun PlaceRow(vault: Uri?, text: String, onText: (String) -> Unit, label
             }
             PlaceChip("＋ Place", false, muted = true) { setUpTag = ""; adding = true }
         }
-        Text("Nudges you when you get there · tap again to remove", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+        if (hint != null) Text(hint, fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
     }
 
     if (adding) AddPlaceSheet(
