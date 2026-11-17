@@ -459,7 +459,7 @@ private fun ToolChip(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 /** Task and Read later, as Capture had them before Flight Deck: one field, due chips for tasks, Just added. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: SnackbarHostState, onQueued: () -> Unit = {}) {
     val ctx = LocalContext.current
@@ -478,6 +478,7 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
     var kindPick by remember { mutableStateOf(LogKind.TASK) }
     // ○ ★ – open their own sheet, laid out like Edit task (tower-bar-events-v1).
     var kindSheet by remember { mutableStateOf<LogKind?>(null) }
+    var priority by remember { mutableStateOf(Priority.NONE) }
     val today0 = LocalDate.now()
     val entry = if (link) null else RapidLog.parse(text, today0, kindPick)
     val kind = entry?.kind ?: LogKind.TASK
@@ -576,6 +577,9 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         val star = if (entry?.kind == LogKind.PRIORITY) " ⏫" else ""
         val wasTags = picked.filter { it !in typedTags }
         val wasTyped = typedTags
+        val wasPriority = priority
+        fun taskLine() = (Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""))
+            .let { if (wasPriority != Priority.NONE) Priority.with(it, wasPriority) else it }
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching {
@@ -588,7 +592,7 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                             val v = appVault(ctx, uri)
                             People.find(People.list(v), who)?.also { p -> People.addGift(v, p, idea) }
                         }
-                        if (gift == null) VaultWriter(ctx, uri).addTask(Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString())
+                        if (gift == null) VaultWriter(ctx, uri).addTask(taskLine(), wasDue?.toString())
                         true
                     }
                 }
@@ -599,15 +603,15 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
                 history.add(0, Added(link, if (link) value else Tags.strip(value).ifBlank { value },
                     (if (link) (if (full) "Read later · full page" else "Read later · link only")
                     else "Task" + (wasDue?.let { " · due ${dueLabel(it)}" } ?: "") + (wasMin?.let { " · ${TaskRules.minutesLabel(it)}" } ?: "") +
-                        (wasRule?.let { " · ↻ $it" } ?: "")) + tagNote))
-                text = ""; due = null; minutes = null; repeat = null; picked = emptyList(); kindPick = LogKind.TASK
+                        (wasRule?.let { " · ↻ $it" } ?: "") + (if (wasPriority != Priority.NONE) " · ${wasPriority.mark}" else "")) + tagNote))
+                text = ""; due = null; minutes = null; repeat = null; picked = emptyList(); kindPick = LogKind.TASK; priority = Priority.NONE
                 snack.showSnackbar(if (!link) "Task added" else if (full) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)")
             }.onFailure {
                 if (link) {
                     val url = if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(value)) value else "https://$value"
                     PhoneOutbox.keepLink(ctx, url, wasTags)
                 } else {
-                    PhoneOutbox.keepTask(ctx, Tags.withTags(value, wasTags) + (wasMin?.let { " ⏱ ${it}m" } ?: "") + star + (wasRule?.let { " 🔁 $it" } ?: ""), wasDue?.toString())
+                    PhoneOutbox.keepTask(ctx, taskLine(), wasDue?.toString())
                 }
                 onQueued()
                 snack.showSnackbar("Couldn't save that. It's kept on the phone and will be tried again.")
@@ -615,8 +619,62 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
         }
     }
 
-    // The text box is the hero (tidy-v1): kind, date, time, repeat and tags sit as chips along its bottom edge.
     val canSend = text.isNotBlank() && !busy
+    // new-task-layout-v1: a new task gets Edit task's rows right on the page; ○ ★ – open their sheets.
+    if (!link) {
+        KindChips(kind) { k ->
+            text = RapidLog.mark(text).second
+            if (k == LogKind.TASK) kindPick = LogKind.TASK else kindSheet = k
+        }
+        OutlinedTextField(
+            value = text, onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+            placeholder = { Text("What needs doing? Try \"fri 15m\"") }, minLines = 2,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            colors = fieldColors()
+        )
+        if (entry != null && text.isNotBlank()) {
+            val bits = listOfNotNull(
+                "${entry.kind.mark} ${entry.kind.label}",
+                entry.due?.takeIf { due == null }?.let { dueChip(it) },
+                entry.minutes?.takeIf { minutes == null }?.let { TaskRules.minutesLabel(it) },
+            ) + Tags.inText(text)
+            Text("→ " + bits.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Green,
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+        }
+        val today = LocalDate.now()
+        val custom = due != null && due != today && due != today.plusDays(1)
+        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppChip(due == today, { due = if (due == today) null else today }, { Text("Today") })
+            AppChip(due == today.plusDays(1), { due = if (due == today.plusDays(1)) null else today.plusDays(1) }, { Text("Tomorrow") })
+            AppChip(custom, { picking = true }, { Text(if (custom) dueLabel(due!!) else "Pick date") })
+        }
+        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ESTIMATES.forEach { m -> AppChip(minutes == m, { minutes = if (minutes == m) null else m }, { Text(TaskRules.minutesLabel(m)) }) }
+        }
+        Text("PRIORITY", fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp, color = Muted, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Priority.CHOICES.forEach { p ->
+                AppChip(priority == p, { priority = p }, {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PriorityFlag(p)
+                        Text(if (p == Priority.NONE) "None" else p.title)
+                    }
+                })
+            }
+        }
+        RepeatPicker(repeat, due ?: entry?.due, inlineCustom = true) { repeat = it }
+        TagRow(tagData, onTags, ::toggleTag)
+        PlaceRow(vault, text, { text = it })
+        Text(
+            "Add task", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(CircleShape)
+                .background(if (canSend) Primary else Primary.copy(alpha = 0.4f))
+                .clickable(enabled = canSend) { submit() }.padding(vertical = 14.dp)
+        )
+    } else {
+    // Read later: the text box is the hero (tidy-v1), with tags as a chip along its bottom edge.
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surface1)
             .border(1.5.dp, if (text.isNotBlank()) Primary else Outline, RoundedCornerShape(20.dp))
@@ -657,14 +715,6 @@ private fun QuickAdd(vault: Uri?, prefs: AppPrefs, link: Boolean, snack: Snackba
             ) { Text("↑", color = OnPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         }
     }
-    if (entry != null && text.isNotBlank()) {
-        val bits = listOfNotNull(
-            "${entry.kind.mark} ${entry.kind.label}",
-            entry.due?.takeIf { due == null }?.let { dueChip(it) },
-            entry.minutes?.takeIf { minutes == null }?.let { TaskRules.minutesLabel(it) },
-        ) + Tags.inText(text)
-        Text("→ " + bits.joinToString(" · "), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Green,
-            modifier = Modifier.padding(top = 8.dp, start = 4.dp))
     }
     if (sheet != null) ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Bg) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
