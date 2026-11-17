@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Events to Proton v1</title><style>
+:root{--bg:#0f131c;--surface:#161b27;--surface2:#1e2534;--outline:#2a3245;--primary:#7aa2ff;--tint:#1b2440;--text:#e8ecf5;--muted:#8a93a8;--faint:#5d667c;--purple:#b39dff;--red:#ff8a80;--green:#5fd39a;--amber:#f5c06a;--mono:"JetBrains Mono",Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{background:#07090e;font-family:Roboto,"Segoe UI",sans-serif;color:var(--text);padding:36px 44px;width:1760px}
+.h{font-size:22px;font-weight:700;margin-bottom:6px}.intro{font-size:14px;color:var(--muted);margin-bottom:26px;max-width:1200px;line-height:1.5}.intro b{color:var(--text)}
+.row{display:flex;gap:34px;align-items:flex-start;margin-bottom:34px}.col{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:14px;color:var(--muted);font-weight:600}.cap b{color:var(--text)}
+.note{font-size:13px;color:var(--muted);line-height:1.55;width:400px}.note b{color:var(--text)}
+.new{outline:2px dashed var(--purple);outline-offset:3px;border-radius:14px}
+.phone{width:400px;height:800px;background:var(--bg);border-radius:44px;border:2px solid #232a3a;padding:22px 18px 0;position:relative;overflow:hidden}
+.card{background:var(--surface);border:1px solid var(--outline);border-radius:22px;margin-bottom:12px}
+.card .hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;font-weight:700;font-size:17px}
+.card .hd span{font-family:var(--mono);font-weight:400;font-size:12px;color:var(--muted)}
+.it{padding:12px 16px;border-top:1px solid var(--outline)}
+.it .t{display:flex;gap:10px;align-items:flex-start;font-size:15px}.it .t b{font-weight:600}
+.it small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+.ic{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;background:var(--tint)}
+.acts{display:flex;gap:6px;margin:9px 0 0 40px;flex-wrap:wrap}
+.chip{border:1px solid var(--outline);border-radius:12px;padding:6px 11px;font-size:13px;white-space:nowrap;color:var(--text)}
+.chip.p{background:var(--primary);color:#0b1020;border-color:var(--primary);font-weight:700}
+.chip.m{color:var(--muted)}
+.k{font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;padding:2px 7px;border-radius:6px;margin-left:auto;white-space:nowrap}
+.k.r{background:#2a1f3d;color:var(--purple)}.k.b{background:#3a2a12;color:var(--amber)}.k.d{background:#16302a;color:var(--green)}.k.j{background:var(--tint);color:var(--primary)}
+.nav{position:absolute;left:0;right:0;bottom:0;height:70px;border-top:1px solid var(--outline);background:#121724;display:flex;justify-content:space-around;align-items:center;font-size:13px;color:var(--muted)}
+.nav b{color:var(--primary)}
+h1{font-size:26px;font-weight:700}.top{display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px}
+.pill{font-family:var(--mono);font-size:12px;color:var(--primary);background:var(--tint);border-radius:999px;padding:4px 10px}
+.lbl{font-family:var(--mono);font-size:11px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;margin:16px 0 6px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface2);border-radius:26px 26px 0 0;border-top:1px solid var(--outline);padding:12px 18px 22px}
+.grab{width:40px;height:4px;border-radius:4px;background:var(--outline);margin:0 auto 14px}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.ai{background:var(--tint);border-radius:14px;padding:11px 13px;font-size:13.5px;line-height:1.5;color:#cdd8f5}.ai .w{font-family:var(--mono);font-size:10.5px;color:var(--primary);letter-spacing:.8px;display:block;margin-bottom:3px}
+.sr{display:flex;align-items:center;justify-content:space-between;padding:12px 2px;border-bottom:1px solid var(--outline);font-size:15px}.sr small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.tog{width:40px;height:24px;border-radius:99px;background:var(--primary);position:relative;flex:none}.tog:after{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.tog.off{background:var(--outline)}.tog.off:after{left:3px;right:auto}
+.tick{width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);flex:none}.tick.on{background:var(--green);border-color:var(--green)}
+.field{background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:9px 12px;font-size:14px;margin-bottom:8px}.field small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px}
+.btns{display:flex;gap:8px;margin-top:12px}.btn{flex:1;text-align:center;padding:12px;border-radius:999px;font-weight:700;font-size:14px;border:1px solid var(--outline)}.btn.p{background:var(--primary);color:#0b1020;border-color:var(--primary)}
+.win{width:1272px;border:1px solid var(--outline);border-radius:12px;overflow:hidden;background:var(--bg);display:flex;height:560px;font-family:"Segoe UI",sans-serif;position:relative}
+.side{width:210px;background:#0b0f18;border-right:1px solid var(--outline);padding:18px 12px}.side div{padding:8px 12px;border-radius:10px;color:var(--muted);font-weight:600;font-size:14px;margin-bottom:2px}.side .on{background:var(--tint);color:var(--primary)}
+.wm{flex:1;padding:22px 26px;overflow:hidden}
+.panel{width:400px;background:var(--surface2);border-left:1px solid var(--outline);padding:20px}
+.bar{height:8px;border-radius:8px;background:var(--outline);overflow:hidden;margin-top:7px}.bar i{display:block;height:100%;border-radius:8px}
+.bub{max-width:82%;padding:10px 13px;border-radius:16px;font-size:14px;line-height:1.45;margin-bottom:8px}.bub.me{margin-left:auto;background:var(--primary);color:#0b1020;border-bottom-right-radius:4px}.bub.ai2{background:var(--surface2);border-bottom-left-radius:4px}
+.wstrip{display:flex;gap:18px}.wcard{flex:1;background:var(--bg);border:1px solid var(--outline);border-radius:12px;padding:18px 20px;font-family:"Segoe UI",sans-serif}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--primary);border-radius:14px;padding:11px 13px;font-size:15px}
+.search .cur{width:2px;height:18px;background:var(--primary)}
+.res{display:flex;gap:10px;align-items:center;padding:11px 2px;border-bottom:1px solid var(--outline);font-size:14.5px}.res small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.res .d{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.res.sel{background:var(--tint);border-radius:12px;padding:11px 10px;border-bottom:0}
+.mapwrap{position:absolute;left:0;right:0;top:0;height:420px}
+.floattop{position:absolute;left:16px;right:16px;top:22px;display:flex;gap:8px;align-items:center}
+.fab{position:absolute;right:16px;top:356px;width:44px;height:44px;border-radius:14px;background:var(--surface2);border:1px solid var(--outline);display:flex;align-items:center;justify-content:center;font-size:18px}
+.seg{display:flex;border:1px solid var(--outline);border-radius:12px;overflow:hidden;font-size:13px}.seg span{flex:1;text-align:center;padding:8px 0;color:var(--muted)}.seg span.on{background:var(--tint);color:var(--primary);font-weight:700}
+.opt{display:flex;gap:12px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--outline)}.opt b{font-size:15px;font-weight:600}.opt small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.foot{position:absolute;left:12px;bottom:6px;font-size:10px;color:var(--faint)}
+
+.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.tchip i{width:8px;height:8px;border-radius:50%;background:var(--purple)}
+.pchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--outline);border-radius:12px;padding:7px 12px;font-size:14px}
+.pchip.on{background:#16302a;border-color:var(--green);color:var(--green)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ta{border:1px solid var(--outline);border-radius:20px;padding:14px 16px;font-size:15px;min-height:70px;margin-top:12px}
+.ta .g{color:var(--green)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+.tool{display:inline-flex;border:1px solid var(--outline);border-radius:10px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.teal{--teal:#5fd3c8}
+.ev{color:#5fd3c8}
+.pinned{position:absolute;left:0;right:0;top:0;background:var(--bg);padding:22px 18px 10px;z-index:3;border-bottom:1px solid var(--outline);box-shadow:0 10px 18px rgba(0,0,0,.45)}
+.sw{display:flex;background:var(--surface);border-radius:999px;padding:4px;margin-top:10px}.sw span{flex:1;text-align:center;padding:9px 0;font-size:14px;font-weight:600;color:var(--muted);border-radius:999px}.sw span.on{background:var(--primary);color:#0b1020}
+.badge{border:1px solid var(--outline);background:var(--tint);color:var(--primary);border-radius:999px;padding:5px 11px;font-size:13px}
+.me{background:var(--primary);color:#0b1020;border-radius:18px 18px 4px 18px;padding:11px 14px;font-size:14px;margin:0 0 10px 60px;line-height:1.45}
+.tw{background:var(--surface);border:1px solid var(--outline);border-radius:18px;padding:11px 14px;font-size:14px;margin:0 50px 10px 0;line-height:1.45}.tw .w{font-family:var(--mono);font-size:10px;color:var(--primary);letter-spacing:1px;display:block;margin-bottom:4px}
+.inp{position:absolute;left:14px;right:70px;bottom:84px;border:1px solid var(--outline);border-radius:999px;padding:12px 16px;color:var(--muted);font-size:14px;background:var(--bg)}
+.mic{position:absolute;right:14px;bottom:84px;width:46px;height:46px;border-radius:50%;background:var(--primary)}
+.meta{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:1px;margin-top:10px}
+.meta .m{margin-left:auto;border:1px solid var(--amber);color:var(--amber);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.meta .n{border:1px solid var(--outline);color:var(--primary);border-radius:999px;padding:3px 9px;font-family:Roboto,sans-serif;letter-spacing:0;font-size:12px}
+.arrow{position:absolute;right:6px;top:190px;font-family:var(--mono);font-size:11px;color:var(--purple);writing-mode:vertical-rl}
+.tf{border:1px solid var(--outline);border-radius:14px;padding:10px 13px;font-size:14px;color:var(--muted);margin-top:8px;min-height:58px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}.ans td{padding:9px 10px;border-top:1px solid var(--outline);vertical-align:top;line-height:1.45}.ans th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--muted);padding:6px 10px}
+code{font-family:var(--mono);font-size:12px;color:#cdd8f5;background:var(--tint);padding:1px 5px;border-radius:5px}
+
+.kinds{display:flex;gap:6px;margin-top:10px}.kinds span{flex:1;text-align:center;border:1px solid var(--outline);border-radius:11px;padding:4px 0;font-size:15px;line-height:1.1}.kinds span small{display:block;font-family:var(--mono);font-size:9px;color:var(--muted)}
+.kinds span.on{background:var(--tint);border-color:var(--primary);color:var(--primary)}
+.box{border:1.5px solid var(--primary);border-radius:16px;padding:10px 13px;font-size:15px;margin-top:8px;min-height:50px}
+.rows{margin-top:6px}
+.r{display:flex;align-items:center;gap:8px;height:38px;border-bottom:1px solid #1d2332;overflow:hidden}
+.r b{font-family:var(--mono);font-weight:400;font-size:10px;letter-spacing:.8px;color:var(--muted);width:62px;flex:none;text-transform:uppercase}
+.r .c{display:flex;gap:5px;white-space:nowrap}
+.c span{border:1px solid var(--outline);border-radius:10px;padding:4px 9px;font-size:12.5px}
+.c span.p{background:var(--primary);color:#0b1020;border-color:var(--primary);font-weight:700}
+.c span.gr{background:#16302a;border-color:var(--green);color:var(--green)}
+.c span.m{color:var(--muted)}
+.c .fld{border:1px solid var(--outline);border-radius:10px;padding:4px 9px;font-size:12.5px;color:var(--muted);width:228px}
+.add{margin-top:10px;text-align:center;padding:11px;border-radius:999px;font-weight:700;font-size:14px;background:var(--primary);color:#0b1020}
+.just{position:absolute;left:18px;right:18px;bottom:82px;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px}
+
+.hd2{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);margin:9px 0 4px}
+.cc{display:flex;gap:5px;white-space:nowrap;overflow:hidden}
+.cc span{border:1px solid var(--outline);border-radius:10px;padding:4px 9px;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
+.cc span.p{background:var(--tint);border-color:var(--primary);color:var(--primary);font-weight:600}
+.cc span.gr{background:#16302a;border-color:var(--green);color:var(--green)}
+.cc span.m{color:var(--muted)}
+.cc .fld{color:var(--muted);flex:1}
+.fl{font-family:var(--mono);font-size:9.5px;font-weight:700;border-radius:5px;padding:1px 4px}
+.f3{background:#3a1717;color:#ff6b6b}.f2{background:#3a2412;color:#ff9f43}.f1{background:#3a2f17;color:var(--amber)}.fd{background:#17223a;color:var(--primary)}.fdd{background:#20242e;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+.trow{display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--outline);font-size:13.5px}
+.trow .bx{width:18px;height:18px;border-radius:5px;border:2px solid var(--muted);flex:none}
+.trow small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+.mk{font-family:var(--mono);font-weight:700;font-size:12px;width:16px;text-align:center;flex:none}
+.filt{display:flex;gap:6px;margin:10px 0}.filt span{border:1px solid var(--outline);border-radius:999px;padding:4px 11px;font-size:12.5px;color:var(--muted)}.filt span.p{background:var(--tint);border-color:var(--primary);color:var(--primary)}
+
+.sw{display:flex;background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:3px;margin-bottom:10px}
+.sw div{flex:1;text-align:center;padding:7px 0;font-size:13px;color:var(--muted);border-radius:9px}.sw .on{background:var(--tint);color:var(--primary);font-weight:600}
+.room .hd{padding:12px 14px}.room .hd .rs{font-family:Roboto,sans-serif;font-size:12.5px;color:var(--primary);border:1px solid var(--outline);border-radius:10px;padding:4px 9px;margin-left:8px}
+.job{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--outline);font-size:14.5px}
+.job.d span.n{color:var(--muted);text-decoration:line-through}
+.job small{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.mb{width:46px;height:5px;border-radius:5px;background:var(--surface2);overflow:hidden;flex:none}.mb i{display:block;height:100%}
+.prog{height:4px;border-radius:4px;background:var(--surface2);margin:0 14px 10px;overflow:hidden}.prog i{display:block;height:100%;background:var(--green)}
+.cap2{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:4px}
+.toast{position:absolute;left:16px;right:16px;bottom:84px;background:#263048;border-radius:12px;padding:11px 14px;font-size:13.5px;display:flex;justify-content:space-between}
+.toast b{color:var(--primary)}
+.kr{display:flex;gap:6px;margin-bottom:8px}.kr div{flex:1;border:1px solid var(--outline);border-radius:11px;text-align:center;padding:4px 0;font-size:15px;font-weight:700}.kr div small{display:block;font-size:9.5px;font-family:var(--mono);color:var(--muted);font-weight:400}
+.kr .on{background:var(--tint);border-color:var(--primary);color:var(--primary)}
+.box{border:1px solid var(--outline);border-radius:16px;padding:14px;font-size:15px;margin-bottom:6px}
+.ml{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);margin:8px 0 4px}
+.cr{display:flex;gap:5px;flex-wrap:nowrap}.cr .chip{padding:5px 10px}.cr .chip.on{background:var(--tint);border-color:var(--primary);color:var(--primary);font-weight:600}
+</style></head><body>
+<div class="h">Events to Proton Calendar · v1</div>
+<div class="intro">When you add an event, a switch sends it to <b>Proton Calendar</b> as well. It goes through the email route you already use for deliveries: the box emails you an invite, you tap Yes.</div>
+<div class="row">
+<div class="col"><div class="cap"><b>1 · New event</b></div><div class="phone"><div class="top"><h1>Capture</h1><span class="pill">📱 Phone</span></div><div class="sw"><div class="on">Task</div><div>Read later</div><div>Tower</div></div><div class="kr"><div>•<small>task</small></div><div class="on">○<small>event</small></div><div>!<small>idea</small></div><div>?<small>explore</small></div></div><div class="box">Haircut</div>
+<div class="ml">DATE</div><div class="cr"><span class="chip">Today</span><span class="chip">Tomorrow</span><span class="chip on">Tue 24 Nov</span></div>
+<div class="ml">TIME · LENGTH</div><div class="cr"><span class="chip">All day</span><span class="chip on">10:00</span><span class="chip">30m</span><span class="chip on">1h</span></div>
+<div class="ml">LOCATION</div><div class="field" style="margin:0">📍 Barbers</div>
+<div class="ml">NOTES</div><div class="field" style="margin:0;color:var(--muted)">Anything to remember</div>
+<div class="new" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--outline);border-radius:14px;padding:11px 13px"><div style="font-size:14.5px">Add to Proton Calendar<small style="display:block;color:var(--muted);font-size:12px;margin-top:2px">Sends you an invite. Tap Yes in Proton Mail.</small></div><span class="tog"></span></div>
+<div class="btns"><div class="btn p">Add event</div></div>
+<div class="nav"><span>Deck</span><b>Capture</b><span>Tasks</span><span>Vault</span><span>More</span></div></div></div>
+<div class="col"><div class="cap"><b>2 · Tap the event later</b></div><div class="phone"><div style="opacity:.35"><div class="top"><h1>Capture</h1><span class="pill">📱 Phone</span></div><div class="sw"><div class="on">Task</div><div>Read later</div><div>Tower</div></div></div><div class="dim"></div>
+<div class="sheet"><div class="grab"></div>
+<div style="font-size:12px;font-family:var(--mono);color:#5fd3c8;letter-spacing:.8px">○ EVENT · EVENTS</div>
+<div style="font-size:20px;font-weight:700;margin:4px 0 2px">Haircut</div>
+<div style="color:var(--muted);font-size:14px">Tue 24 Nov · 10:00 – 11:00</div>
+<div class="field" style="margin-top:12px"><small>Location</small>📍 Barbers</div>
+<div class="new" style="display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:10px 12px;margin-bottom:8px"><span>Proton Calendar</span><span style="font-family:var(--mono);font-size:12px;color:var(--amber)">Invite on its way…</span></div>
+<div class="btns"><div class="btn">Delete</div><div class="btn">Move</div><div class="btn p">Edit</div></div>
+<div style="font-size:11.5px;color:var(--muted);margin-top:10px">Later reads <b style="color:var(--green)">In Proton Calendar ✓</b>. For events not sent yet, this row is a button: <b style="color:var(--primary)">Add to Proton</b>.</div></div></div></div>
+<div class="col" style="width:420px;gap:14px">
+<div class="card" style="padding:16px"><div style="font-weight:700;margin-bottom:8px">How it works</div><div style="font-size:13.5px;line-height:1.6;color:var(--muted)">
+1. The app adds a line to <b style="color:var(--text)">99 - Meta/Inbox/calendar-out.md</b> (the same queue the Inbox uses for deliveries).<br>
+2. The Oracle box (Proton Bridge) emails you a calendar invite within a few minutes, then ticks the line.<br>
+3. You tap <b style="color:var(--text)">Yes</b> in Proton Mail and it's in Proton Calendar.<br>
+4. Once Proton has it, the app hides its own copy so it doesn't show twice.</div></div>
+<div class="card" style="padding:16px"><div style="font-weight:700;margin-bottom:8px">Box update</div><div style="font-size:13.5px;line-height:1.6;color:var(--muted)">The box script already sends these invites. It needs one small change so the invite carries the <b style="color:var(--text)">location and notes</b> too. I'd give you a paste-in prompt for the box.</div></div>
+<div class="card" style="padding:16px"><div style="font-weight:700;margin-bottom:8px">Why not direct?</div><div style="font-size:13.5px;line-height:1.6;color:var(--muted)">Proton Calendar has no way for other apps to add events (no API or CalDAV), and Bridge only does mail. An emailed invite is the only route that works.</div></div>
+<div class="card" style="padding:16px"><div style="font-weight:700;margin-bottom:8px">Settings</div><div style="font-size:13.5px;line-height:1.6;color:var(--muted)">Settings › Calendars: <b style="color:var(--text)">Add new events to Proton</b> on/off. This sets the switch's starting position.</div></div>
+</div>
+</div></body></html>
