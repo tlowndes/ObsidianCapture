@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -137,6 +138,9 @@ fun TasksScreen(
     var addingBill by remember { mutableStateOf(false) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
     var fitting by remember { mutableStateOf<AgendaItem.Gap?>(null) }
+    // Energy reshuffle (energy-reshuffle-v1): the sheet, and today's level once a reshuffle is saved.
+    var reshuffling by remember { mutableStateOf(false) }
+    var reshuffled by remember { mutableStateOf(prefs.reshuffleLevel) }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var sources by remember { mutableStateOf<List<CalendarSource>>(emptyList()) }
     var travel by remember { mutableStateOf<TravelLine?>(null) }
@@ -316,6 +320,33 @@ fun TasksScreen(
         }
     }
 
+    /** Energy reshuffle: gives each task its new due date, sets today's energy to match, with one Undo for them all. */
+    fun reshuffle(level: Reshuffle.Level, moves: List<Reshuffle.Move>) {
+        reshuffling = false
+        prefs.reshuffleLevel = level; reshuffled = level
+        prefs.energy = when (level) { Reshuffle.Level.REST, Reshuffle.Level.LOW -> Energy.LOW; Reshuffle.Level.HALF -> Energy.MED; Reshuffle.Level.FULL -> Energy.HIGH }
+        val uri = vault ?: return
+        if (moves.isEmpty()) return
+        scope.launch {
+            val done = mutableListOf<Pair<TaskItem, String>>()
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val w = VaultWriter(ctx, uri)
+                    moves.forEach { m -> done += m.task to w.editTask(m.task, m.task.text, m.to, m.task.recurrence, Deck.minutes(m.task)) }
+                }
+            }
+            reload()
+            r.onFailure { snack.showSnackbar("Moved ${done.size} of ${moves.size}: ${it.message}") }
+            if (done.isEmpty()) return@launch
+            val msg = "Moved ${done.size} task" + (if (done.size == 1) "" else "s") + " to later days"
+            if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                withContext(Dispatchers.IO) { runCatching { val w = VaultWriter(ctx, uri); done.asReversed().forEach { (t, newRaw) -> w.restoreTask(t, null, newRaw) } } }
+                prefs.reshuffleLevel = null; reshuffled = null
+                reload()
+            }
+        }
+    }
+
     /** Drag to a free gap (drag-to-slot-v1): due [date] at [start] for its estimate, with Undo. */
     fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) {
         val uri = vault ?: return
@@ -426,8 +457,17 @@ fun TasksScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Tasks", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-            IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
-                Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // ⚡ Reshuffle (energy-reshuffle-v1) on Upcoming; after a reshuffle it shows today's level.
+                if (upcoming) Text(
+                    "⚡ " + (reshuffled?.label ?: "Reshuffle"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Amber,
+                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(PrimaryTint)
+                        .border(1.dp, Color(0xFF4A3B1E), RoundedCornerShape(999.dp)).clickable { reshuffling = true }
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+                IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                    Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
+                }
             }
         }
         val todayCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.TODAY }
@@ -535,10 +575,14 @@ fun TasksScreen(
                 BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }, { addingBill = true }) { b -> complete(b.task) }
             }
             UpcomingList(
-                days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
+                days = Upcoming.days(shown, events, now, Upcoming.LIST_DAYS), next = Upcoming.nextUp(events, now), now = now,
                 colours = (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), names = sources.associate { it.id to it.name } + (AppEvents.CAL_ID to AppEvents.NAME),
                 travel = travel, onFit = { fitting = it },
                 top = billsTop,
+                // One week on the list (energy-reshuffle-v1); the second week is a line that opens Month.
+                bottom = Upcoming.later(shown, events, today).takeIf { it.first + it.second > 0 }?.let { (e, t) ->
+                    { LaterLine(e, t) { pickedDay = today.plusDays(Upcoming.LIST_DAYS.toLong()); month = java.time.YearMonth.from(pickedDay); mode = UpcomingMode.MONTH; prefs.upcomingMode = mode.name } }
+                },
                 onDrop = { t, d -> if (d.start != null) plan(t, d.date, d.start) else move(t, d.date) },
             ) { item, lifted ->
                 val t = item.task
@@ -671,6 +715,10 @@ fun TasksScreen(
         )
     }
 
+    if (reshuffling) ReshuffleSheet(
+        tasks.filter { it.due != null }, prefs.reshuffleUsual, reshuffled ?: Reshuffle.Level.HALF,
+        onMove = { l, m -> reshuffle(l, m) }, onDismiss = { reshuffling = false }
+    )
     rescheduling?.let { t ->
         RescheduleSheet(t, tasks, cal.flatMap { it.events }, onMove = { d -> rescheduling = null; move(t, d) }, onDismiss = { rescheduling = null })
     }

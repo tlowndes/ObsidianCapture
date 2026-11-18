@@ -154,6 +154,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         else Energy.MED
         set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
 
+    /** Energy reshuffle (energy-reshuffle-v1): actions on a 100% day, set in Settings › Tasks. */
+    var reshuffleUsual: Int
+        get() = p.getInt("reshuffle_usual", Reshuffle.USUAL)
+        set(v) { p.edit().putInt("reshuffle_usual", v.coerceIn(1, 30)).apply() }
+    /** Today's reshuffle level, once one is saved. Null on other days, so it resets each morning like [energy]. */
+    var reshuffleLevel: Reshuffle.Level?
+        get() = if (p.getString("reshuffle_day", null) == java.time.LocalDate.now().toString())
+            Reshuffle.Level.values().firstOrNull { it.name == p.getString("reshuffle_level", null) } else null
+        set(v) { p.edit().putString("reshuffle_level", v?.name).putString("reshuffle_day", java.time.LocalDate.now().toString()).apply() }
+
     /** Weather card: Morning / Afternoon / Evening strip, shown after a tap on the card. */
     var weatherStrip: Boolean
         get() = p.getBoolean("weather_strip", false)

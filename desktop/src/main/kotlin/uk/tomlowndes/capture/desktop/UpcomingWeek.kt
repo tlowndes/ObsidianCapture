@@ -147,7 +147,7 @@ fun UpcomingWeek(
                 }
             }
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                (0 until Upcoming.DAYS).forEach { i ->
+                (0 until Upcoming.LIST_DAYS).forEach { i ->
                     val day = today.plusDays(i.toLong())
                     val isToday = i == 0
                     val shape = RoundedCornerShape(14.dp)

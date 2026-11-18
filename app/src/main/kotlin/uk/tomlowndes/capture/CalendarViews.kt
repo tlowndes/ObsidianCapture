@@ -56,7 +56,7 @@ import java.util.Locale
  * Proton calendars, the app's own events (teal ○) and dated tasks show together.
  */
 
-internal enum class UpcomingMode(val label: String) { LIST("2 weeks"), DAY("Day"), WEEK("Week"), MONTH("Month") }
+internal enum class UpcomingMode(val label: String) { LIST("7 days"), DAY("Day"), WEEK("Week"), MONTH("Month") }
 
 @Composable
 internal fun UpcomingModes(mode: UpcomingMode, onPick: (UpcomingMode) -> Unit) {
