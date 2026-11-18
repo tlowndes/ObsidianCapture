@@ -250,6 +250,20 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
                 }
             }
             HorizontalDivider(color = Outline)
+            // Energy reshuffle (energy-reshuffle-v1): what 100% means.
+            var usual by remember { mutableStateOf(prefs.reshuffleUsual) }
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                SettingRow("Usual day", "Actions that fit at 100% on ⚡ Reshuffle") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("−", fontSize = 20.sp, color = if (usual > 1) Primary else Outline,
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = usual > 1) { usual -= 1; prefs.reshuffleUsual = usual }.padding(horizontal = 10.dp))
+                        Text("$usual", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("+", fontSize = 20.sp, color = if (usual < 30) Primary else Outline,
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = usual < 30) { usual += 1; prefs.reshuffleUsual = usual }.padding(horizontal = 10.dp))
+                    }
+                }
+            }
+            HorizontalDivider(color = Outline)
             // Quick Task guard (quick-task-guard-v1).
             Box(Modifier.clickable { page = SettingsPage.BACKUPS }.padding(horizontal = 14.dp)) {
                 SettingRow("Quick Task backups", if (prefs.quickGuard) "Watching for odd changes" else "Off") {

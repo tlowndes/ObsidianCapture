@@ -105,6 +105,7 @@ internal fun UpcomingList(
     days: List<AgendaDay>, next: CalEvent?, now: LocalDateTime, colours: Map<String, Color>, names: Map<String, String>,
     travel: TravelLine?, onFit: (AgendaItem.Gap) -> Unit,
     top: (@Composable () -> Unit)? = null,
+    bottom: (@Composable () -> Unit)? = null,
     onDrop: (TaskItem, SlotDrop) -> Unit = { _, _ -> },
     taskRow: @Composable (AgendaItem.Task, lifted: Boolean) -> Unit,
 ) {
@@ -181,6 +182,7 @@ internal fun UpcomingList(
                 }
             }
         }
+        if (bottom != null) item(key = "bottom") { bottom() }
     }
     // The task under your finger, with where it would land.
     drag.task?.let { t ->
@@ -393,3 +395,20 @@ internal fun FitTaskSheet(gap: AgendaItem.Gap, tasks: List<TaskItem>, onPick: (T
 }
 
 private val DropTint = Color(0xFF16203A)
+
+/** Under the one-week list: what's in the week after, and a link to Month (energy-reshuffle-v1). */
+@Composable
+internal fun LaterLine(events: Int, tasks: Int, onOpen: () -> Unit) {
+    val what = listOfNotNull(
+        events.takeIf { it > 0 }?.let { "$it event" + if (it == 1) "" else "s" },
+        tasks.takeIf { it > 0 }?.let { "$it task" + if (it == 1) "" else "s" },
+    ).joinToString(", ")
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(14.dp)).border(1.dp, Outline, RoundedCornerShape(14.dp))
+            .clickable(onClick = onOpen).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Later · $what", fontSize = 13.sp, color = Muted, modifier = Modifier.weight(1f))
+        Text("Month ›", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary)
+    }
+}

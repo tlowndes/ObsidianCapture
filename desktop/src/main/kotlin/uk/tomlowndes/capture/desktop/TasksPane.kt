@@ -253,6 +253,20 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
         anchor = t.raw
     }
     val sel = SelectState(selecting, selected, ::select)
+    // Energy reshuffle (energy-reshuffle-v1): each task to its own new day, one Undo for them all.
+    var reshuffling by remember { mutableStateOf(false) }
+    fun reshuffle(moves: List<uk.tomlowndes.capture.Reshuffle.Move>) = scope.launch {
+        reshuffling = false
+        val undos = state.io("Couldn't move the tasks") {
+            val w = state.writer()!!
+            moves.mapNotNull { m -> runCatching { val raw = w.rescheduleTask(m.task, m.to); m.task to raw }.getOrNull() }
+        } ?: return@launch
+        reload()
+        if (undos.isEmpty()) { state.say("Couldn't move the tasks"); return@launch }
+        state.offerUndo("Moved ${plural(undos.size)} to later days" + if (undos.size < moves.size) " · ${moves.size - undos.size} failed" else "") {
+            state.io { val w = state.writer()!!; undos.asReversed().forEach { (t, raw) -> runCatching { w.restoreTask(t, null, raw) } } }; reload()
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
@@ -265,7 +279,10 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
                 }
                 Sub(
                     if (tasks == null) "Reading the vault…"
-                    else if (upcoming) "Next 7 days"
+                    else if (upcoming) "Next 7 days" + uk.tomlowndes.capture.Upcoming.later(shown, calendar.second, today).let { (e, t) ->
+                        listOfNotNull(e.takeIf { it > 0 }?.let { "$it event" + if (it == 1) "" else "s" }, t.takeIf { it > 0 }?.let { "$it task" + if (it == 1) "" else "s" })
+                            .takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = " · later: ") ?: ""
+                    }
                     else if (tag != null) "${shown.size} open · ${if (Tags.kind(tag) == uk.tomlowndes.capture.TagKind.OTHER) "tagged $tag" else Tags.label(tag).lowercase() + " side"}"
                     else "Whole vault · ${all.size} open",
                     Modifier.padding(top = 2.dp)
@@ -287,6 +304,7 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
         if (upcoming) {
             val bills = TaskViews.billsMonth(all, done, today)
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
+                Chip("⚡ Reshuffle", small = true, color = Amber) { reshuffling = true }
                 Chip("＋ Add bill", small = true, color = Amber) { addingBill = true }
                 if (!bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
@@ -372,6 +390,7 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp))
     }
     }
+    if (reshuffling) ReshuffleDialog(all.filter { it.due != null }, state.prefs.reshuffleUsual, onMove = { reshuffle(it) }, onDismiss = { reshuffling = false })
     bulkDate?.let { items -> PickDateDialog(LocalDate.now().plusDays(1), onPick = { d -> bulkDate = null; if (d != null) bulkDue(items, d) }, onDismiss = { bulkDate = null }) }
     bulkFlag?.let { items -> BulkPriorityDialog(items.size, onPick = { p -> bulkFlag = null; bulkPriority(items, p) }, onDismiss = { bulkFlag = null }) }
     bulkTagFor?.let { items -> BulkTagDialog(items.size, pinned, onPick = { tag -> bulkTagFor = null; bulkTag(items, tag) }, onDismiss = { bulkTagFor = null }) }

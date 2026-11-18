@@ -26,7 +26,10 @@ data class AgendaDay(val date: LocalDate, val allDay: List<CalEvent>, val items:
 
 /** The Upcoming view on the Tasks tab: dated tasks and calendar events for the next [DAYS] days. */
 object Upcoming {
+    /** Calendars and app events are read this far ahead, so next week's events are known. */
     const val DAYS = 14
+    /** The Upcoming list itself shows one week (energy-reshuffle-v1); the rest is a "Later" line. */
+    const val LIST_DAYS = 7
     /** Free gaps are only looked for inside this window, and only on today. */
     val DAY_START: LocalTime = LocalTime.of(9, 0)
     val DAY_END: LocalTime = LocalTime.of(18, 0)
@@ -51,6 +54,15 @@ object Upcoming {
             val timeline = if (i == 0) withGaps(timed, now, planned) else blocks(timed, planned, d).map { it.third }
             AgendaDay(d, allDay, late + due + timeline)
         }
+    }
+
+    /** After the one-week list and inside [DAYS]: (events, tasks) for the "Later" line. */
+    fun later(tasks: List<TaskItem>, events: List<CalEvent>, today: LocalDate): Pair<Int, Int> {
+        val from = today.plusDays(LIST_DAYS.toLong())
+        val to = today.plusDays(DAYS - 1L)
+        val ev = events.filter { e -> !e.start.toLocalDate().isBefore(from) && !e.start.toLocalDate().isAfter(to) }.size
+        val ts = tasks.count { it.due != null && !it.due.isBefore(from) && !it.due.isAfter(to) }
+        return ev to ts
     }
 
     /** Events and planned tasks on [d] as (start, end, item), in time order. */

@@ -57,6 +57,11 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         uk.tomlowndes.capture.ClaudeCap.ownUsd = uk.tomlowndes.capture.ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
     }
 
+    /** Energy reshuffle (energy-reshuffle-v1): actions that fit on a 100% day. */
+    var reshuffleUsual: Int
+        get() = p.getInt("reshuffle_usual", uk.tomlowndes.capture.Reshuffle.USUAL)
+        set(v) { p.putInt("reshuffle_usual", v.coerceIn(1, 30)); p.flush() }
+
     /** Steps open under their task (true) or in a side panel (false). */
     var subtasksInline: Boolean
         get() = p.getBoolean("subtasks_inline", true)

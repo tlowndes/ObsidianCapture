@@ -109,6 +109,14 @@ private fun GeneralPage(state: AppState) {
     Setting("Subtasks open", "Where a task's steps show when you click its steps") {
         Pill(listOf("Under task", "Side panel"), if (inline) 0 else 1, Modifier.width(240.dp)) { inline = it == 0; p.subtasksInline = inline }
     }
+    var usual by remember { mutableStateOf(p.reshuffleUsual) }
+    Setting("Usual day", "Actions that fit at 100% on ⚡ Reshuffle") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Chip("−", small = true) { if (usual > 1) { usual -= 1; p.reshuffleUsual = usual } }
+            Text("$usual", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextMain)
+            Chip("+", small = true) { if (usual < 30) { usual += 1; p.reshuffleUsual = usual } }
+        }
+    }
 }
 
 @Composable
