@@ -59,6 +59,7 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.DID_I -> Green
     HangarTool.LAUNCH_PAD -> Amber
     HangarTool.HEADS_UP -> Primary
+    HangarTool.NIGHT_PAD -> Violet
     HangarTool.TICKET_RAIL -> Paper
 }
 
@@ -79,6 +80,8 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
     var trip by remember { mutableStateOf<Trip?>(null) }
     var rail by remember { mutableStateOf<RailStatus?>(null) }
+    /** Tomorrow's trip and tonight's Night Pad list, when Night Pad is added. */
+    var night by remember { mutableStateOf<Pair<Trip, List<NightItem>>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
 
     fun save(t: List<HangarTool>) {
@@ -94,6 +97,10 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             did = withContext(Dispatchers.IO) { runCatching { DidI.today(appVault(ctx, uri)) }.getOrNull() }
         if (tools?.contains(HangarTool.LAUNCH_PAD) == true)
             trip = withContext(Dispatchers.IO) { runCatching { TripLoader.load(ctx, appVault(ctx, uri)) }.getOrNull() }
+        if (tools?.contains(HangarTool.NIGHT_PAD) == true)
+            night = withContext(Dispatchers.IO) {
+                runCatching { val v = appVault(ctx, uri); NightLoader.load(ctx, v).let { t -> t to NightPad.items(LaunchPad.load(v), t) } }.getOrNull()
+            }
         if (tools?.contains(HangarTool.TICKET_RAIL) == true)
             rail = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri) }.getOrNull() }
     }
@@ -114,7 +121,10 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                 val next = did?.let { DidI.nextOpen(it) }
                 val leave = trip?.takeIf { HangarTool.LAUNCH_PAD in list }?.let { t -> LaunchPad.leaveBy(t)?.let { t to it } }
                     ?.takeIf { (_, by) -> java.time.Duration.between(java.time.LocalDateTime.now(), by).toMinutes() in -15..30 }
-                Text(if (next != null || leave != null) "1 thing needs you" else "All clear", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
+                val ticks = prefs.nightTicks
+                val tonight = night?.takeIf { HangarTool.NIGHT_PAD in list && leave == null && NightPad.nudge(java.time.LocalDateTime.now()) }
+                    ?.let { (t, items) -> t to items.count { it.item.name !in ticks } }?.takeIf { it.second > 0 }
+                Text(if (next != null || leave != null || tonight != null) "1 thing needs you" else "All clear", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
                 RightNow(next, onYes = { s ->
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     scope.launch {
@@ -131,12 +141,13 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                         }
                     }
                 }, onOpen = { onOpen(HangarTool.DID_I) }, hasDid = HangarTool.DID_I in list,
-                    leave = leave, onLaunch = { onOpen(HangarTool.LAUNCH_PAD) })
+                    leave = leave, onLaunch = { onOpen(HangarTool.LAUNCH_PAD) },
+                    night = tonight, onNight = { onOpen(HangarTool.NIGHT_PAD) })
                 val out = list.filter { it.out }
                 if (out.isNotEmpty()) {
                     GroupLabel("Getting out")
                     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        out.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail)) { if (t.ready) onOpen(t) } }
+                        out.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night)) { if (t.ready) onOpen(t) } }
                     }
                 }
                 // Ticket Rail (ticket-rail-v1): its own group, since it lives at the desk.
@@ -144,7 +155,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                 if (desk.isNotEmpty()) {
                     Box(Modifier.padding(top = 16.dp)) { GroupLabel("At the desk") }
                     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        desk.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail)) { if (t.ready) onOpen(t) } }
+                        desk.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night)) { if (t.ready) onOpen(t) } }
                     }
                 }
                 val more = Hangar.available(list)
@@ -156,8 +167,17 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
 }
 
 /** Status line and the right-hand label for a tool's tile. */
-private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null): Pair<String, String> = when {
+private fun statusOf(
+    t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null,
+    night: Pair<Trip, List<NightItem>>? = null,
+): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
+    t == HangarTool.NIGHT_PAD && night == null -> "Loading…" to ""
+    t == HangarTool.NIGHT_PAD -> {
+        val (nt, items) = night!!
+        val done = items.count { it.item.name in prefs.nightTicks }
+        (if (nt.title == null) "Nothing tomorrow · just charge up" else "Charge, bag, clothes for ${nt.title}") to "$done/${items.size}"
+    }
     t == HangarTool.LAUNCH_PAD -> {
         val by = trip?.let { LaunchPad.leaveBy(it) }
         if (trip?.title != null && by != null) "${trip.title} · leave by ${by.format(HM)}" to "${prefs.launchTicks.size} packed"
@@ -184,7 +204,26 @@ private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: A
 private fun RightNow(
     next: DidStatus?, hasDid: Boolean, onYes: (DidStatus) -> Unit, onOpen: () -> Unit,
     leave: Pair<Trip, java.time.LocalDateTime>? = null, onLaunch: () -> Unit = {},
+    night: Pair<Trip, Int>? = null, onNight: () -> Unit = {},
 ) {
+    // After 19:00, packing for tomorrow comes before an open check (and after leaving soon, which is never at night).
+    if (night != null && leave == null) {
+        val (trip, left) = night
+        Column(
+            Modifier.fillMaxWidth().padding(bottom = 16.dp).clip(RoundedCornerShape(18.dp)).background(VioletTint)
+                .border(1.dp, Violet.copy(alpha = 0.4f), RoundedCornerShape(18.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("RIGHT NOW", fontSize = 11.sp, letterSpacing = 1.2.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+            Text(if (trip.title == null) "Charge up for tomorrow" else "Pack for tomorrow", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Violet)
+            Text(listOfNotNull(trip.title?.let { n -> trip.start?.let { "$n at ${it.format(HM)}" } ?: n },
+                trip.rainChance.takeIf { it >= LaunchPad.RAIN_AT }?.let { "rain likely" }, if (left == 1) "1 thing" else "$left things").joinToString(" · "),
+                color = Muted, fontSize = 13.sp)
+            Text("Open Night Pad", color = Color(0xFF141230), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                .clip(CircleShape).background(Violet).clickable(onClick = onNight).padding(vertical = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        return
+    }
     // Leaving soon beats an open check: Launch Pad shows the Did I? checks too.
     if (leave != null) {
         val (trip, by) = leave
@@ -287,7 +326,7 @@ internal fun pinShortcut(ctx: Context, t: HangarTool) {
     val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
     if (!sm.isRequestPinShortcutSupported) return
     val intent = Intent(ctx, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
-        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; HangarTool.TICKET_RAIL -> "RAIL"; else -> "HANGAR" })
+        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; HangarTool.NIGHT_PAD -> "NIGHT_PAD"; HangarTool.TICKET_RAIL -> "RAIL"; else -> "HANGAR" })
     val info = ShortcutInfo.Builder(ctx, "hangar-${t.id}")
         .setShortLabel(t.title).setIcon(Icon.createWithResource(ctx, R.mipmap.ic_launcher)).setIntent(intent).build()
     runCatching { sm.requestPinShortcut(info, null) }

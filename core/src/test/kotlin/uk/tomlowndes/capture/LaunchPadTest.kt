@@ -21,7 +21,7 @@ class LaunchPadTest {
     @Test fun `the starter kit reads always items and rules`() {
         val k = LaunchPad.kit(LaunchPad.STARTER)
         assertEquals(listOf("Keys", "Wallet", "Phone", "Headphones"), k.always.map { it.name })
-        assertEquals(5, k.rules.size)
+        assertEquals(5, k.rules.count { it.group == KitGroup.BAG })
         assertEquals(listOf("Gym bag", "Towel"), k.rules.first { it.kind == KitRule.Kind.EVENT }.items.map { it.name })
     }
 
@@ -67,6 +67,31 @@ class LaunchPadTest {
         assertEquals(listOf(5, 1), plan.map { it.minutes })
         assertTrue(plan.all { it.target.kind == HeadsTarget.Kind.LEAVE })
         assertEquals("1 min · time to go", HeadsUp.words(plan.last()).first)
+    }
+
+    @Test fun `night pad lists charge, bag and wear for tomorrow`() {
+        val k = LaunchPad.kit(LaunchPad.STARTER)
+        assertEquals(listOf("Phone", "Headphones"), k.charge.map { it.name })
+        val night = NightPad.items(k, trip(rain = 70))
+        assertEquals(listOf("Phone", "Headphones", "Umbrella", "Gym bag", "Towel", "Waterproof"), night.map { it.item.name })
+        assertEquals(KitGroup.WEAR, night.last().group)
+        assertEquals(listOf(KitGroup.CHARGE, KitGroup.CHARGE), NightPad.items(k, Trip(null, null, null, null, null, 90, 0)).map { it.group })
+        // Launch Pad's morning list doesn't pick up Charge or Wear rules.
+        assertTrue(LaunchPad.itemsFor(k, trip(rain = 70)).none { it.name == "Waterproof" })
+        assertEquals(LocalDateTime.of(2026, 11, 20, 8, 13), NightPad.wakeAt(trip()))
+    }
+
+    @Test fun `older kits get the night sections once`() {
+        val old = "# Launch Pad kit\n\n## Always\n- 🔑 Keys\n"
+        val up = NightPad.upgrade(old)!!
+        assertTrue(up.contains("## Charge") && up.contains("## Wear"))
+        assertNull(NightPad.upgrade(up))
+        val events = listOf(
+            CalEvent("a", "Late", day.plusDays(1).withHour(14), day.plusDays(1).withHour(15), false),
+            CalEvent("b", "Gym", day.plusDays(1).withHour(9), day.plusDays(1).withHour(10), false),
+            CalEvent("c", "Today", day.withHour(18), day.withHour(19), false),
+        )
+        assertEquals("Gym", NightPad.firstTomorrow(events, day)?.title)
     }
 
     @Test fun `stages and quiet hours parse`() {

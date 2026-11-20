@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Night Pad: "Set alarm" opens the clock app with the time filled in -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Launch Pad: tap the phone on a tag by the door -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
@@ -60,7 +62,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
-            <!-- flightdeck://launch, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1);
+            <!-- flightdeck://launch, ://night, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1);
                  flightdeck://clear/<id> from a printed ticket's QR (ticket-rail-v1). MainActivity.readOpenRequest routes by host. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />

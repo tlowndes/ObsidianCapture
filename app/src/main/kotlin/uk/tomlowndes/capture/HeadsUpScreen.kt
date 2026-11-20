@@ -144,6 +144,7 @@ private fun Settings(prefs: AppPrefs, onChanged: () -> Unit) {
     var events by remember { mutableStateOf(prefs.headsEvents) }
     var focus by remember { mutableStateOf(prefs.headsFocus) }
     var quiet by remember { mutableStateOf(prefs.headsQuiet) }
+    var night by remember { mutableStateOf(prefs.headsNight) }
     var stages by remember { mutableStateOf(HeadsUp.parseStages(prefs.headsStages)) }
     val next = prefs.headsNext.takeIf { it > 0 }?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it), ZoneId.systemDefault()) }
     Text(if (!prefs.headsOn) "Off. Add Heads Up in Hangar to turn it on." else next?.let { "Next buzz ${it.format(HM)}" } ?: "On. Nothing to warn you about yet today.",
@@ -155,6 +156,8 @@ private fun Settings(prefs: AppPrefs, onChanged: () -> Unit) {
         Toggle("Calendar events", events) { events = it; prefs.headsEvents = it; onChanged() }
         HorizontalDivider(color = Outline)
         Toggle("Focus ending", focus) { focus = it; prefs.headsFocus = it; onChanged() }
+        HorizontalDivider(color = Outline)
+        Toggle("Night Pad at 21:00", night) { night = it; prefs.headsNight = it; onChanged() }
     }
     GroupLabel("Timing")
     Row(Modifier.padding(top = 6.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

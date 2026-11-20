@@ -171,6 +171,28 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("launch_skip", null)
         set(v) { p.edit().putString("launch_skip", v).apply() }
 
+    /**
+     * Night Pad: what's ticked tonight, kept against tomorrow's date. [nightBag] is the bag part, which
+     * [packedLastNight] hands to the next morning's Launch Pad.
+     */
+    private val nightFor get() = p.getString("night_for", null)
+    var nightTicks: Set<String>
+        get() = if (nightFor == java.time.LocalDate.now().plusDays(1).toString()) p.getStringSet("night_ticks", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("night_ticks", v).putString("night_for", java.time.LocalDate.now().plusDays(1).toString()).apply() }
+    var nightBag: Set<String>
+        get() = if (nightFor == java.time.LocalDate.now().plusDays(1).toString()) p.getStringSet("night_bag", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("night_bag", v).putString("night_for", java.time.LocalDate.now().plusDays(1).toString()).apply() }
+    val packedLastNight: Set<String>
+        get() = if (nightFor == java.time.LocalDate.now().toString()) p.getStringSet("night_bag", null).orEmpty() else emptySet()
+    /** Minutes Night Pad allows to get ready before the leave-by time, for the alarm it suggests. */
+    var nightReady: Int
+        get() = p.getInt("night_ready", NightPad.READY_MINUTES)
+        set(v) { p.edit().putInt("night_ready", v.coerceIn(15, 180)).apply() }
+    /** Heads Up's 21:00 Night Pad nudge (off until switched on). */
+    var headsNight: Boolean
+        get() = p.getBoolean("heads_night", false)
+        set(v) { p.edit().putBoolean("heads_night", v).apply() }
+
     /** Heads Up: on once added in Hangar, what buzzes, the stages ("10,5,1"), quiet hours and the next buzz. */
     var headsOn: Boolean
         get() = p.getBoolean("heads_on", false)
