@@ -8,12 +8,21 @@ import java.util.Locale
 /** One thing to take: `- 🔑 Keys`. [reason] says why it was added today ("rain", "gym"), null for Always. */
 data class KitItem(val emoji: String, val name: String, val reason: String? = null)
 
-/** A "When" rule: `- rain · ☂️ Umbrella` or `- event gym · 🎒 Gym bag, 🧴 Towel`. */
-data class KitRule(val kind: Kind, val arg: String, val items: List<KitItem>) {
+/** Where a kit item goes: in the bag (Launch Pad and Night Pad), on charge, or to wear (Night Pad only). */
+enum class KitGroup { BAG, CHARGE, WEAR }
+
+/**
+ * A rule: `- rain · ☂️ Umbrella` or `- event gym · 🎒 Gym bag, 🧴 Towel`. Rules under When fill the bag; rules
+ * under Charge or Wear add to those groups.
+ */
+data class KitRule(val kind: Kind, val arg: String, val items: List<KitItem>, val group: KitGroup = KitGroup.BAG) {
     enum class Kind { RAIN, COLD, EVENT, LONG }
 }
 
-data class Kit(val always: List<KitItem>, val rules: List<KitRule>)
+data class Kit(
+    val always: List<KitItem>, val rules: List<KitRule>,
+    val charge: List<KitItem> = emptyList(), val wear: List<KitItem> = emptyList(),
+)
 
 /** What Launch Pad knows about the trip: the next event today, the travel line if there is one, and the weather. */
 data class Trip(
@@ -37,6 +46,7 @@ object LaunchPad {
 
         Always takes these. Under When, each line is a rule, a ·, then what to add.
         Rules: rain, cold, event <word in the title>, long <hours>.
+        Night Pad uses Charge and Wear the evening before. Both take plain items and rules.
 
         ## Always
         - 🔑 Keys
@@ -50,7 +60,7 @@ object LaunchPad {
         - event gym · 🎒 Gym bag, 🧴 Towel
         - event interview · 📁 Portfolio, 📄 CV
         - long 4 · 🔌 Charger, 💊 Meds
-    """.trimIndent() + "\n"
+    """.trimIndent() + "\n" + NightPad.SECTIONS
 
     private val ITEM = Regex("^\\s*[-*]\\s+(?!\\[)(.+?)\\s*$")
 
@@ -65,16 +75,22 @@ object LaunchPad {
     fun kit(text: String): Kit {
         val always = mutableListOf<KitItem>()
         val rules = mutableListOf<KitRule>()
+        val charge = mutableListOf<KitItem>()
+        val wear = mutableListOf<KitItem>()
         var section = ""
         text.split("\n").forEach { line ->
             if (line.startsWith("## ")) { section = line.removePrefix("## ").trim().lowercase(Locale.UK); return@forEach }
             val body = ITEM.matchEntire(line)?.groupValues?.get(1) ?: return@forEach
+            val group = when (section) { "charge" -> KitGroup.CHARGE; "wear" -> KitGroup.WEAR; else -> KitGroup.BAG }
             when (section) {
                 "always" -> item(body)?.let(always::add)
                 "when" -> rule(body)?.let(rules::add)
+                "charge", "wear" ->
+                    if (body.contains("·")) rule(body)?.let { rules += it.copy(group = group) }
+                    else item(body)?.let { if (group == KitGroup.CHARGE) charge += it else wear += it }
             }
         }
-        return Kit(always, rules)
+        return Kit(always, rules, charge, wear)
     }
 
     fun rule(body: String): KitRule? {
@@ -95,7 +111,7 @@ object LaunchPad {
         return if (items.isEmpty()) null else KitRule(kind, arg, items)
     }
 
-    private fun applies(r: KitRule, t: Trip): Boolean = when (r.kind) {
+    internal fun applies(r: KitRule, t: Trip): Boolean = when (r.kind) {
         KitRule.Kind.RAIN -> t.rainChance >= RAIN_AT
         KitRule.Kind.COLD -> (t.low ?: 99) <= (r.arg.toIntOrNull() ?: 5)
         KitRule.Kind.EVENT -> t.title?.lowercase(Locale.UK)?.contains(r.arg) == true
@@ -107,7 +123,7 @@ object LaunchPad {
 
     /** Today's list: Always first, then whatever the rules add. No item appears twice. */
     fun itemsFor(kit: Kit, trip: Trip): List<KitItem> =
-        (kit.always + kit.rules.filter { applies(it, trip) }.flatMap { it.items }).distinctBy { it.name.lowercase(Locale.UK) }
+        (kit.always + kit.rules.filter { it.group == KitGroup.BAG && applies(it, trip) }.flatMap { it.items }).distinctBy { it.name.lowercase(Locale.UK) }
 
     /** Running late keeps only the Always items, so you can get out the door. */
     fun essentials(items: List<KitItem>) = items.filter { it.reason == null }
@@ -128,7 +144,10 @@ object LaunchPad {
             v.mkdirs(FlightNotes.DIR)
             VaultIo.write(v, v.create(FlightNotes.DIR, nameOf(KIT).removeSuffix(".md"), "md"), STARTER)
         }
-        return kit(VaultIo.read(v, KIT))
+        val text = VaultIo.read(v, KIT)
+        // Kits made before Night Pad get its Charge and Wear sections once.
+        NightPad.upgrade(text)?.let { up -> VaultIo.edit(v, KIT) { lines -> lines.clear(); lines.addAll(up.split("\n")) }; return kit(up) }
+        return kit(text)
     }
 
     /** The next timed event today that hasn't started, preferring one with a place (it has a leave-by). */
@@ -139,7 +158,7 @@ object LaunchPad {
 
 /** Something Heads Up warns you about. */
 data class HeadsTarget(val kind: Kind, val label: String, val at: LocalDateTime) {
-    enum class Kind { LEAVE, EVENT, FOCUS }
+    enum class Kind { LEAVE, EVENT, FOCUS, NIGHT }
 }
 
 /** One buzz: [minutes] before [target]. */
@@ -187,6 +206,59 @@ object HeadsUp {
                 (if (m >= 10) "Start wrapping up" else "Time to switch")
             HeadsTarget.Kind.FOCUS -> (if (m > 1) "$m min left in Focus" else "Focus ends in 1 min") to
                 (if (m >= 5) "Note where you are, so it's easy to pick up" else t.label)
+            HeadsTarget.Kind.NIGHT -> "☾ Pack for tomorrow" to "${t.label} · open Night Pad"
         }
     }
+}
+
+/** One line on the Night Pad pass. */
+data class NightItem(val group: KitGroup, val item: KitItem)
+
+/**
+ * Night Pad (hangar-phase2): the evening version of Launch Pad. It reads tomorrow's first event and forecast and
+ * lists what to charge, pack and lay out tonight. Bag ticks carry over, so Launch Pad starts with them done.
+ */
+object NightPad {
+    /** Added to the starter kit, and once to kits made before Night Pad. */
+    val SECTIONS = """
+
+        ## Charge
+        - 📱 Phone
+        - 🎧 Headphones
+
+        ## Wear
+        - rain · 🧥 Waterproof
+        - cold · 🧣 Warm coat
+    """.trimIndent() + "\n"
+
+    /** From this hour, Hangar's Right now card shows Night Pad. */
+    const val FROM_HOUR = 19
+    const val READY_MINUTES = 60
+
+    fun upgrade(text: String): String? =
+        if (text.lines().any { it.trim().lowercase(Locale.UK).let { l -> l == "## charge" || l == "## wear" } }) null
+        else text.trimEnd() + "\n" + SECTIONS
+
+    /** Tonight's list. With nothing planned tomorrow it's only the Charge group. */
+    fun items(kit: Kit, trip: Trip): List<NightItem> {
+        fun ruled(g: KitGroup) = kit.rules.filter { it.group == g && LaunchPad.applies(it, trip) }.flatMap { it.items }
+        val out = (kit.charge + ruled(KitGroup.CHARGE)).map { NightItem(KitGroup.CHARGE, it) }.toMutableList()
+        if (trip.title != null) {
+            out += ruled(KitGroup.BAG).map { NightItem(KitGroup.BAG, it) }
+            out += (kit.wear + ruled(KitGroup.WEAR)).map { NightItem(KitGroup.WEAR, it) }
+        }
+        return out.distinctBy { it.item.name.lowercase(Locale.UK) }
+    }
+
+    /** Tomorrow's first timed event. */
+    fun firstTomorrow(events: List<CalEvent>, now: LocalDateTime): CalEvent? {
+        val day = now.toLocalDate().plusDays(1)
+        return events.filter { !it.allDay && it.start.toLocalDate() == day }.minByOrNull { it.start }
+    }
+
+    /** The alarm that leaves [readyMinutes] to get ready before the leave-by time. */
+    fun wakeAt(trip: Trip, readyMinutes: Int = READY_MINUTES): LocalDateTime? =
+        LaunchPad.leaveBy(trip)?.minusMinutes(readyMinutes.toLong())
+
+    fun nudge(now: LocalDateTime) = now.hour >= FROM_HOUR
 }

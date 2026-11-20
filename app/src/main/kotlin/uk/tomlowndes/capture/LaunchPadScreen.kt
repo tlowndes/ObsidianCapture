@@ -58,6 +58,7 @@ import java.util.Locale
 private val PassInk = Color(0xFF0D1630)
 private val PassRule = Color(0xFFB7BFD2)
 private val PassAmber = Color(0xFFB26B00)
+private val PassViolet = Color(0xFF5B45C9)
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
 /** Today's trip, read from the cached calendars, the travel line and the weather. Call off the main thread. */
@@ -89,7 +90,9 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
     var trip by remember { mutableStateOf<Trip?>(null) }
     var kit by remember { mutableStateOf<Kit?>(null) }
     var did by remember { mutableStateOf<List<DidStatus>>(emptyList()) }
-    var ticked by remember { mutableStateOf(prefs.launchTicks) }
+    // Bag items ticked in Night Pad last night start done, marked ☾.
+    val night = remember { prefs.packedLastNight }
+    var ticked by remember { mutableStateOf(prefs.launchTicks + night) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var showKit by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
@@ -140,7 +143,10 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
                     Text(if (m <= 0) "Time to go" else "$m min until you leave", color = Amber, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
                 }
-                TripPass(t, items, ticked, did, onTick = ::tick, onStamp = ::stamp)
+                val fromNight = items.count { it.name in night }
+                if (fromNight > 0 && !late) Text("☾ $fromNight packed last night · ${items.count { it.name !in ticked }} to go", color = Violet, fontSize = 13.sp,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+                TripPass(t, items, ticked, did, onTick = ::tick, onStamp = ::stamp, night = night)
                 Spacer(Modifier.height(14.dp))
                 when {
                     nextItem != null -> Big("Next: ${nextItem.name.lowercase(Locale.UK)}", Amber) { tick(nextItem.name) }
@@ -149,10 +155,10 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     if (t.start != null) Text("Not going", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
-                        prefs.launchSkip = t.start.toString(); ticked = emptySet(); prefs.launchTicks = ticked; reload++
+                        prefs.launchSkip = t.start.toString(); ticked = night; prefs.launchTicks = ticked; reload++
                     }.padding(vertical = 8.dp)) else Spacer(Modifier)
-                    if (ticked.isNotEmpty()) Text("Start again", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
-                        ticked = emptySet(); prefs.launchTicks = ticked
+                    if ((ticked - night).isNotEmpty()) Text("Start again", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
+                        ticked = night; prefs.launchTicks = ticked
                     }.padding(vertical = 8.dp))
                 }
                 Text("Tip: write flightdeck://launch to an NFC tag (any NFC writer app does it) and stick it by the door. Tapping it opens this screen.",
@@ -178,7 +184,10 @@ private fun LateBanner(timing: Timing, trimmed: Int) {
 }
 
 @Composable
-private fun TripPass(t: Trip, items: List<KitItem>, ticked: Set<String>, did: List<DidStatus>, onTick: (String) -> Unit, onStamp: (DidCheck) -> Unit) {
+private fun TripPass(
+    t: Trip, items: List<KitItem>, ticked: Set<String>, did: List<DidStatus>, onTick: (String) -> Unit, onStamp: (DidCheck) -> Unit,
+    night: Set<String> = emptySet(),
+) {
     val by = LaunchPad.leaveBy(t)
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(TextMain).padding(16.dp),
@@ -199,7 +208,8 @@ private fun TripPass(t: Trip, items: List<KitItem>, ticked: Set<String>, did: Li
             val done = i.name in ticked
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(enabled = !done) { onTick(i.name) }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${i.emoji}  ${i.name.uppercase(Locale.UK)}", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontSize = 14.sp, fontFamily = FontFamily.Monospace)
-                if (i.reason != null) Text("  ${i.reason}", color = PassAmber, fontSize = 10.sp)
+                if (i.name in night) Text("  ☾ last night", color = PassViolet, fontSize = 10.sp)
+                else if (i.reason != null) Text("  ${i.reason}", color = PassAmber, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 Text(if (done) "✓" else "—", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             }
@@ -221,17 +231,32 @@ private fun TripPass(t: Trip, items: List<KitItem>, ticked: Set<String>, did: Li
 }
 
 @Composable
-private fun KitView(k: Kit) {
-    Text("Always, plus extras when a rule applies. Edit the note in Obsidian: ${LaunchPad.KIT}", color = Muted, fontSize = 13.sp,
+internal fun KitView(k: Kit, night: Boolean = false) {
+    Text(if (night) "Charge and Wear are for the night before; bag extras come from the When rules. Edit the note in Obsidian: ${LaunchPad.KIT}"
+        else "Always, plus extras when a rule applies. Edit the note in Obsidian: ${LaunchPad.KIT}", color = Muted, fontSize = 13.sp,
         modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
-    GroupLabel("Always")
-    ListCard(Modifier.padding(top = 6.dp)) {
-        Text(k.always.joinToString(" · ") { "${it.emoji} ${it.name}" }.ifEmpty { "Nothing yet" }, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+    if (night) {
+        GroupLabel("Charge")
+        ListCard(Modifier.padding(top = 6.dp)) {
+            Text(k.charge.joinToString(" · ") { "${it.emoji} ${it.name}" }.ifEmpty { "Nothing yet" }, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+        }
+        if (k.wear.isNotEmpty()) {
+            GroupLabel("Wear")
+            ListCard(Modifier.padding(top = 6.dp)) {
+                Text(k.wear.joinToString(" · ") { "${it.emoji} ${it.name}" }, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+            }
+        }
+    } else {
+        GroupLabel("Always")
+        ListCard(Modifier.padding(top = 6.dp)) {
+            Text(k.always.joinToString(" · ") { "${it.emoji} ${it.name}" }.ifEmpty { "Nothing yet" }, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+        }
     }
     GroupLabel("When…")
+    val rules = if (night) k.rules else k.rules.filter { it.group == KitGroup.BAG }
     ListCard(Modifier.padding(top = 6.dp)) {
-        if (k.rules.isEmpty()) Text("No rules yet", color = Muted, modifier = Modifier.padding(16.dp))
-        k.rules.forEachIndexed { i, r ->
+        if (rules.isEmpty()) Text("No rules yet", color = Muted, modifier = Modifier.padding(16.dp))
+        rules.forEachIndexed { i, r ->
             if (i > 0) HorizontalDivider(color = Outline)
             val head = when (r.kind) {
                 KitRule.Kind.RAIN -> "Rain over ${LaunchPad.RAIN_AT}%"
@@ -240,7 +265,8 @@ private fun KitView(k: Kit) {
                 KitRule.Kind.LONG -> "Out ${r.arg.ifEmpty { "4" }} hours or more"
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp)) {
-                Text(head, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                val where = when (r.group) { KitGroup.BAG -> ""; KitGroup.CHARGE -> " · charge"; KitGroup.WEAR -> " · wear" }
+                Text(head + if (night) where else "", fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(r.items.joinToString(", ") { it.name }, color = Muted, fontSize = 13.sp, textAlign = TextAlign.End)
             }
         }
@@ -248,6 +274,6 @@ private fun KitView(k: Kit) {
 }
 
 @Composable
-private fun Big(label: String, bg: Color, onClick: () -> Unit) =
+internal fun Big(label: String, bg: Color, onClick: () -> Unit) =
     Text(label, color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1,
         modifier = Modifier.fillMaxWidth().clip(CircleShape).background(bg).clickable(onClick = onClick).padding(vertical = 15.dp))

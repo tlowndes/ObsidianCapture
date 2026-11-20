@@ -146,6 +146,8 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     DID_I("didi", "Did I?", "✓", "Stop wondering if you locked the door", true),
     LAUNCH_PAD("launch", "Launch Pad", "↗", "A checklist when you head out", true),
     HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", true),
+    /** The evening version of Launch Pad (hangar-phase2). */
+    NIGHT_PAD("night", "Night Pad", "☾", "Get tomorrow's bag ready tonight", true),
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
     TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true);
 

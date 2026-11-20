@@ -65,7 +65,8 @@ object HeadsAlarms {
         if (!prefs.headsOn) { prefs.headsNext = 0; return }
         val plan = HeadsUp.plan(targets(app, prefs), LocalDateTime.now(), HeadsUp.parseStages(prefs.headsStages),
             quietFrom = if (prefs.headsQuiet) java.time.LocalTime.of(21, 0) else java.time.LocalTime.MIDNIGHT,
-            quietTo = if (prefs.headsQuiet) java.time.LocalTime.of(7, 0) else java.time.LocalTime.MIDNIGHT).take(MAX)
+            quietTo = if (prefs.headsQuiet) java.time.LocalTime.of(7, 0) else java.time.LocalTime.MIDNIGHT)
+            .let { p -> (p + listOfNotNull(nightNudge(app, prefs))).sortedBy { it.at } }.take(MAX)
         val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
         plan.forEachIndexed { i, a ->
             val at = a.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -73,6 +74,16 @@ object HeadsAlarms {
             if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi) else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
         prefs.headsNext = plan.firstOrNull()?.at?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0
+    }
+
+    /** The one 21:00 Night Pad buzz, when it's switched on and Night Pad is in Hangar. Soft, so it uses the 10-minute channel. */
+    private fun nightNudge(ctx: Context, prefs: AppPrefs, now: LocalDateTime = LocalDateTime.now()): HeadsAlert? {
+        if (!prefs.headsNight || Hangar.parse(prefs.hangarTools)?.contains(HangarTool.NIGHT_PAD) != true) return null
+        val today = now.toLocalDate().atTime(21, 0)
+        val at = if (now.isBefore(today)) today else today.plusDays(1)
+        val uri = prefs.vault
+        val label = uri?.let { u -> runCatching { NightPad.firstTomorrow(TripLoader.events(ctx, appVault(ctx, u)), at)?.title }.getOrNull() } ?: "Charge up"
+        return HeadsAlert(at, 10, HeadsTarget(HeadsTarget.Kind.NIGHT, label, at))
     }
 
     fun changed(ctx: Context) { val app = ctx.applicationContext; scope.launch { runCatching { reschedule(app) } } }
@@ -101,7 +112,7 @@ object HeadsAlarms {
                 enableVibration(true); vibrationPattern = pattern; setSound(null, null)
             })
         }
-        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK" }
+        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD" }
         val open = Intent(ctx, MainActivity::class.java).putExtra("tab", tab).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val icon = when { minutes >= 10 -> "◔"; minutes > 1 -> "◑"; else -> "●" }
