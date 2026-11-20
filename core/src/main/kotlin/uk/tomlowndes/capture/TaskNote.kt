@@ -77,7 +77,8 @@ object TaskNote {
 
     /** What ticking [raw] on [today] produces; nothing in the note changes yet. */
     fun completion(raw: String, today: LocalDate, recurring: Boolean): Completion {
-        val next = if (recurring) TaskRules.nextOccurrence(raw, today) else null
+        // A repeat's next occurrence is a new task: it doesn't inherit the printed ticket's 🆔 (ticket-rail-v1).
+        val next = if (recurring) TaskRules.nextOccurrence(raw, today)?.let { TicketRail.withoutId(it) } else null
         val ticked = raw.replaceFirst("- [ ]", "- [x]")
         val done = if (ticked.contains("✅")) ticked else ticked.trimEnd() + " ✅ $today"
         return Completion(done, next)

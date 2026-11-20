@@ -217,6 +217,13 @@ class VaultWriter(
         return updated
     }
 
+    /** Ticket Rail: puts `🆔 [id]` on the task's line once its ticket has printed. Returns the new line. */
+    fun giveTicketId(t: TaskItem, id: String): String {
+        val updated = TicketRail.withId(t.raw, id)
+        if (updated != t.raw) edit(noteOf(t)) { TaskNote.replace(it, t.raw, updated) }
+        return updated
+    }
+
     /** Removes the task. Returns where it was, for [restoreTask]. In Quick Task its subtasks stay, moved up a level. */
     fun deleteTask(t: TaskItem): Removed {
         var out = Removed(-1)

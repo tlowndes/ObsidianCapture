@@ -152,6 +152,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("hangar_tools", null)
         set(v) { p.edit().putString("hangar_tools", v).apply() }
 
+    /** Ticket Rail: print the morning's task tickets on the end of the Daily Slip. */
+    var ticketsWithSlip: Boolean
+        get() = p.getBoolean("tickets_with_slip", true)
+        set(v) { p.edit().putBoolean("tickets_with_slip", v).apply() }
+
     /** The Did I? check the Quick Settings tile stamps; blank means the first check. */
     var didTile: String
         get() = p.getString("did_tile", "Door") ?: "Door"

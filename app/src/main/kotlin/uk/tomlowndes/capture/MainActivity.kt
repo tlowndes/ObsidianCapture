@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readOpenRequest(i: Intent?) {
+        if (i?.getStringExtra("tab") == "RAIL") { openRequest = Tab.DECK to "rail"; return }
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
         if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
@@ -143,8 +144,11 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "HEADS_UP") { openRequest = Tab.DECK to "heads"; return }
         if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
         // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
-        if (i?.data?.scheme == "flightdeck") {
+        // flightdeck://clear/<id>: a Ticket Rail ticket read by the phone's own camera (ticket-rail-v1).
+        if (i?.data?.scheme == TicketRail.SCHEME) {
             when (i.data?.host) {
+                "clear" -> { TicketInbox.pending = TicketRail.parseLink(i.data.toString()); openRequest = Tab.DECK to "rail" }
+                "rail" -> openRequest = Tab.DECK to "rail"
                 "launch" -> openRequest = Tab.DECK to "launch"
                 "did" -> openRequest = Tab.DECK to "didi"
                 "hangar" -> openRequest = Tab.DECK to "hangar"
@@ -203,6 +207,7 @@ private fun subFor(slot: String?) = when (slot) {
     "didi" -> Sub.DID_I
     "launch" -> Sub.LAUNCH_PAD
     "heads", "heads_switch" -> Sub.HEADS_UP
+    "rail" -> Sub.TICKET_RAIL
     else -> null
 }
 
@@ -306,12 +311,14 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         HangarTool.DID_I -> sub = Sub.DID_I
                         HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
                         HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+                        HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
                         else -> {}
                     }
                 }) { sub = null }
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
+                sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }

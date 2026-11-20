@@ -59,6 +59,7 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.DID_I -> Green
     HangarTool.LAUNCH_PAD -> Amber
     HangarTool.HEADS_UP -> Primary
+    HangarTool.TICKET_RAIL -> Paper
 }
 
 internal val GreenTint = Color(0xFF0D2A1D)
@@ -77,6 +78,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
     var editing by remember { mutableStateOf(false) }
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
     var trip by remember { mutableStateOf<Trip?>(null) }
+    var rail by remember { mutableStateOf<RailStatus?>(null) }
     var reload by remember { mutableIntStateOf(0) }
 
     fun save(t: List<HangarTool>) {
@@ -92,6 +94,8 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             did = withContext(Dispatchers.IO) { runCatching { DidI.today(appVault(ctx, uri)) }.getOrNull() }
         if (tools?.contains(HangarTool.LAUNCH_PAD) == true)
             trip = withContext(Dispatchers.IO) { runCatching { TripLoader.load(ctx, appVault(ctx, uri)) }.getOrNull() }
+        if (tools?.contains(HangarTool.TICKET_RAIL) == true)
+            rail = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri) }.getOrNull() }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -128,9 +132,20 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                     }
                 }, onOpen = { onOpen(HangarTool.DID_I) }, hasDid = HangarTool.DID_I in list,
                     leave = leave, onLaunch = { onOpen(HangarTool.LAUNCH_PAD) })
-                GroupLabel("Getting out")
-                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    list.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs)) { if (t.ready) onOpen(t) } }
+                val out = list.filter { it.out }
+                if (out.isNotEmpty()) {
+                    GroupLabel("Getting out")
+                    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        out.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail)) { if (t.ready) onOpen(t) } }
+                    }
+                }
+                // Ticket Rail (ticket-rail-v1): its own group, since it lives at the desk.
+                val desk = list.filter { !it.out }
+                if (desk.isNotEmpty()) {
+                    Box(Modifier.padding(top = 16.dp)) { GroupLabel("At the desk") }
+                    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        desk.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail)) { if (t.ready) onOpen(t) } }
+                    }
                 }
                 val more = Hangar.available(list)
                 if (more.isNotEmpty()) Text("＋ Add a tool", color = Primary, fontSize = 14.sp,
@@ -141,7 +156,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
 }
 
 /** Status line and the right-hand label for a tool's tile. */
-private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs): Pair<String, String> = when {
+private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
     t == HangarTool.LAUNCH_PAD -> {
         val by = trip?.let { LaunchPad.leaveBy(it) }
@@ -153,6 +168,8 @@ private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: A
             ?.let { java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), java.time.ZoneId.systemDefault()) }
         when { !prefs.headsOn -> "Off" to ""; next != null -> "Next buzz ${next.format(HM)}" to "on"; else -> "On · nothing to warn you about yet" to "on" }
     }
+    t == HangarTool.TICKET_RAIL && rail == null -> "Loading…" to ""
+    t == HangarTool.TICKET_RAIL -> rail!!.line() to "${rail.onRail} on the rail"
     t == HangarTool.DID_I && did == null -> "Loading…" to ""
     t == HangarTool.DID_I -> {
         val s = did.orEmpty()
@@ -270,8 +287,25 @@ internal fun pinShortcut(ctx: Context, t: HangarTool) {
     val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
     if (!sm.isRequestPinShortcutSupported) return
     val intent = Intent(ctx, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
-        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; else -> "HANGAR" })
+        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; HangarTool.TICKET_RAIL -> "RAIL"; else -> "HANGAR" })
     val info = ShortcutInfo.Builder(ctx, "hangar-${t.id}")
         .setShortLabel(t.title).setIcon(Icon.createWithResource(ctx, R.mipmap.ic_launcher)).setIntent(intent).build()
     runCatching { sm.requestPinShortcut(info, null) }
+}
+
+/** Ticket Rail's line in Hangar: what's hanging, what's cleared, and whether the morning run is still to print. */
+internal data class RailStatus(val onRail: Int, val cleared: Int, val toPrint: Int) {
+    fun line(): String = when {
+        toPrint > 0 -> "Morning run ready · $toPrint to print"
+        cleared > 0 -> "$cleared cleared today"
+        onRail > 0 -> "Scan a ticket when it's done"
+        else -> "Nothing on the rail"
+    }
+
+    companion object {
+        fun load(ctx: Context, vault: Uri, today: LocalDate = LocalDate.now()): RailStatus {
+            val l = VaultWriter(ctx, vault).listTaskLists()
+            return RailStatus(TicketRail.onRail(l.open).size, TicketRail.clearedOn(l.done, today).size, TicketRail.morningRun(l.open, today).size)
+        }
+    }
 }

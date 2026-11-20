@@ -264,12 +264,21 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         if (!SlipPrinter.bluetoothOn(ctx)) { status = "Bluetooth is off. Switch it on and try again."; return }
         busy = true; status = "Connecting to ${pr.name}…"
         scope.launch {
+            // Ticket Rail (ticket-rail-v1): today's Daily Slip brings the morning's task tickets with it.
+            val app = AppPrefs(ctx)
+            val withTickets = mode == SlipMode.DAILY && day == today && vault != null && app.ticketsWithSlip &&
+                Hangar.parse(app.hangarTools)?.contains(HangarTool.TICKET_RAIL) == true
+            var tickets = 0
             val r = runCatching {
-                val job = withContext(Dispatchers.Default) { SlipRender.job(bmp) }
-                withContext(Dispatchers.IO) { SlipPrinter.print(ctx, pr, job) { pc -> status = "Printing on ${pr.name} · $pc%" } }
+                val run = if (withTickets) runCatching { TicketPrint.morning(ctx, vault!!, today) }.getOrDefault(emptyList()) else emptyList()
+                if (run.isNotEmpty()) tickets = TicketPrint.print(ctx, vault!!, run, before = bmp) { status = it }
+                else {
+                    val job = withContext(Dispatchers.Default) { SlipRender.job(bmp) }
+                    withContext(Dispatchers.IO) { SlipPrinter.print(ctx, pr, job) { pc -> status = "Printing on ${pr.name} · $pc%" } }
+                }
             }
             busy = false
-            status = r.fold({ "Printed on ${pr.name}." }, { it.message ?: "Printing failed" })
+            status = r.fold({ if (tickets > 0) "Printed on ${pr.name}, with $tickets ticket${if (tickets == 1) "" else "s"} for the rail." else "Printed on ${pr.name}." }, { it.message ?: "Printing failed" })
             if (r.isFailure) snack.showSnackbar(status!!)
         }
     }

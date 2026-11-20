@@ -14,7 +14,7 @@ android {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
         targetSdk = 35
-        versionCode = 46
+        versionCode = 47
         versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
@@ -43,6 +43,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Gemini Nano on the phone (Pixel 9/10 and others with AICore), for the on-phone Jarvis brain.
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    // Ticket Rail: Google's ready-made QR scanner (Play services, no camera permission needed).
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.glance:glance-appwidget:1.2.0")

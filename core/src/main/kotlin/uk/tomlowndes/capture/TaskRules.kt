@@ -27,19 +27,20 @@ object TaskRules {
     val DUE = Regex("📅\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val SCHEDULED = Regex("⏳\\s*(\\d{4}-\\d{2}-\\d{2})")
     private val START = Regex("🛫\\s*(\\d{4}-\\d{2}-\\d{2})")
-    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))")
+    private val RECUR = Regex("🔁\\s*(.*?)(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🆔|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))")
     private val NOISE = Regex(
-        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))|⏱\\s*\\d+\\s*m(?:in)?\\b|[🔺⏫🔼🔽⏬]|\\[\\w+:: [^\\]]*\\]|#task(?![\\w/])"
+        "(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}|🔁\\s*.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🆔|⏱|🔺|⏫|🔼|🔽|⏬|\\[|$))|⏱\\s*\\d+\\s*m(?:in)?\\b|[🔺⏫🔼🔽⏬]|🆔\\s*[\\w-]+|\\[\\w+:: [^\\]]*\\]|#task(?![\\w/])"
     )
     private val MINUTES = Regex("⏱\\s*(\\d+)\\s*m(?:in)?\\b")
     private val CHECKBOX = Regex("^(\\s*- \\[[^\\]]*\\])\\s*")
     /** Markers on a task line, in the order they should be told apart. Recurrence stops at the next marker. */
     private val PIECE = Regex(
         "📅\\s*\\d{4}-\\d{2}-\\d{2}" +
-            "|🔁\\s*\\S.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|⏱|🔺|⏫|🔼|🔽|⏬|\\[|#task(?![\\w/])|$))" +
+            "|🔁\\s*\\S.*?(?=\\s*(?:📅|⏳|🛫|✅|➕|❌|🆔|⏱|🔺|⏫|🔼|🔽|⏬|\\[|#task(?![\\w/])|$))" +
             "|⏱\\s*\\d+\\s*m(?:in)?\\b" +
             "|(?:⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}" +
             "|[🔺⏫🔼🔽⏬]" +
+            "|🆔\\s*[\\w-]+" +
             "|\\[\\w+:: [^\\]]*\\]" +
             "|#task(?![\\w/])"
     )
