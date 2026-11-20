@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN, SENSORY }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -174,6 +174,7 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "REFILL") { openRequest = Tab.DECK to "refill"; return }
         if (i?.getStringExtra("tab") == "WAITING") { openRequest = Tab.DECK to "waiting"; return }
         if (i?.getStringExtra("tab") == "ERRAND_RUN") { openRequest = Tab.DECK to "run"; return }
+        if (i?.getStringExtra("tab") == "SENSORY") { openRequest = Tab.DECK to "sensory"; return }
         if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
         // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
         // flightdeck://clear/<id>: a Ticket Rail ticket read by the phone's own camera (ticket-rail-v1).
@@ -183,7 +184,7 @@ class MainActivity : ComponentActivity() {
                 "rail" -> openRequest = Tab.DECK to "rail"
                 "launch" -> openRequest = Tab.DECK to "launch"
                 "night" -> openRequest = Tab.DECK to "night"
-                "pass", "seen", "returns", "cool", "refill", "waiting", "run" -> openRequest = Tab.DECK to i.data?.host
+                "pass", "seen", "returns", "cool", "refill", "waiting", "run", "sensory" -> openRequest = Tab.DECK to i.data?.host
                 "did" -> openRequest = Tab.DECK to "didi"
                 "hangar" -> openRequest = Tab.DECK to "hangar"
                 "heads" -> openRequest = Tab.DECK to "heads"
@@ -250,6 +251,7 @@ private fun subFor(slot: String?) = when (slot) {
     "refill" -> Sub.REFILL
     "waiting" -> Sub.WAITING
     "run" -> Sub.ERRAND_RUN
+    "sensory" -> Sub.SENSORY
     else -> null
 }
 
@@ -362,6 +364,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         HangarTool.REFILL -> sub = Sub.REFILL
                         HangarTool.WAITING -> sub = Sub.WAITING
                         HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
+                        HangarTool.SENSORY -> sub = Sub.SENSORY
                         else -> {}
                     }
                 }) { sub = null }
@@ -376,6 +379,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.WAITING -> WaitingScreen(vault, snack, onOpenArticle = { openArticle = it; sub = null; tab = Tab.READ }) { sub = Sub.HANGAR }
                 sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.HANGAR }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
+                sub == Sub.SENSORY -> SensoryScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }

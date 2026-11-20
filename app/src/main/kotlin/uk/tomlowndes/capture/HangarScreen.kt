@@ -68,6 +68,7 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.WAITING -> Sand
     HangarTool.ERRAND_RUN -> Orange
     HangarTool.TICKET_RAIL -> Paper
+    HangarTool.SENSORY -> Ember
 }
 
 internal val GreenTint = Color(0xFF0D2A1D)
@@ -109,6 +110,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
     var trip by remember { mutableStateOf<Trip?>(null) }
     var rail by remember { mutableStateOf<RailStatus?>(null) }
+    var sensory by remember { mutableStateOf<List<SensoryChange>?>(null) }
     /** Tomorrow's trip and tonight's Night Pad list, when Night Pad is added. */
     var night by remember { mutableStateOf<Pair<Trip, List<NightItem>>?>(null) }
     var finding by remember { mutableStateOf<FindStatus?>(null) }
@@ -122,6 +124,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
         if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
         // Cool-off checks prices in the background, and its and Refill's buzzes are planned with Heads Up's.
         CoolPrices.keep(ctx, HangarTool.COOL_OFF in t)
+        SensorySync.keep(ctx, HangarTool.SENSORY in t && SensoryHa.setup(ctx) != null)
         HeadsAlarms.changed(ctx)
     }
 
@@ -171,6 +174,8 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             }
         if (tools?.contains(HangarTool.TICKET_RAIL) == true)
             rail = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri) }.getOrNull() }
+        if (tools?.contains(HangarTool.SENSORY) == true)
+            sensory = withContext(Dispatchers.IO) { runCatching { Sensory.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -224,7 +229,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                     if (rows.isNotEmpty()) {
                         Box(Modifier.padding(top = if (gi == 0) 0.dp else 16.dp)) { GroupLabel(g) }
                         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            rows.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night, finding, day)) { if (t.ready) onOpen(t) } }
+                            rows.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night, finding, day, sensory)) { if (t.ready) onOpen(t) } }
                         }
                     }
                 }
@@ -240,8 +245,11 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
 private fun statusOf(
     t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null,
     night: Pair<Trip, List<NightItem>>? = null, finding: FindStatus? = null, day: DayStatus? = null,
+    sensory: List<SensoryChange>? = null,
 ): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
+    t == HangarTool.SENSORY && sensory == null -> "Loading…" to ""
+    t == HangarTool.SENSORY -> sensoryLine(sensory!!)
     t.group == "Day to day" && day == null -> "Loading…" to ""
     t == HangarTool.COOL_OFF -> day!!.cools.let { cs ->
         val now = java.time.LocalDateTime.now()
@@ -468,7 +476,7 @@ internal fun pinShortcut(ctx: Context, t: HangarTool) {
     val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
     if (!sm.isRequestPinShortcutSupported) return
     val intent = Intent(ctx, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
-        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; HangarTool.NIGHT_PAD -> "NIGHT_PAD"; HangarTool.POCKET_PASS -> "POCKET_PASS"; HangarTool.LAST_SEEN -> "LAST_SEEN"; HangarTool.RETURN_RADAR -> "RETURN_RADAR"; HangarTool.COOL_OFF -> "COOL_OFF"; HangarTool.REFILL -> "REFILL"; HangarTool.WAITING -> "WAITING"; HangarTool.ERRAND_RUN -> "ERRAND_RUN"; HangarTool.TICKET_RAIL -> "RAIL"; else -> "HANGAR" })
+        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; HangarTool.NIGHT_PAD -> "NIGHT_PAD"; HangarTool.POCKET_PASS -> "POCKET_PASS"; HangarTool.LAST_SEEN -> "LAST_SEEN"; HangarTool.RETURN_RADAR -> "RETURN_RADAR"; HangarTool.COOL_OFF -> "COOL_OFF"; HangarTool.REFILL -> "REFILL"; HangarTool.WAITING -> "WAITING"; HangarTool.ERRAND_RUN -> "ERRAND_RUN"; HangarTool.TICKET_RAIL -> "RAIL"; HangarTool.SENSORY -> "SENSORY"; else -> "HANGAR" })
     val info = ShortcutInfo.Builder(ctx, "hangar-${t.id}")
         .setShortLabel(t.title).setIcon(Icon.createWithResource(ctx, R.mipmap.ic_launcher)).setIntent(intent).build()
     runCatching { sm.requestPinShortcut(info, null) }

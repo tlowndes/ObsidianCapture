@@ -325,6 +325,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("piholegotchi_address", "").orEmpty()
         set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
 
+    /** Home Assistant for Sensory Dial: `homeassistant.local:8123` or an https address. The token is in [SecretStore]. */
+    var haAddress: String
+        get() = p.getString("ha_address", "").orEmpty()
+        set(v) { p.edit().putString("ha_address", v.trim()).apply() }
+
     /**
      * The assistant's name, shown and spoken in the app. Blank becomes Tower.
      * Kept separate from the jarvis_* keys so an update does not drop the address, token or chats.
