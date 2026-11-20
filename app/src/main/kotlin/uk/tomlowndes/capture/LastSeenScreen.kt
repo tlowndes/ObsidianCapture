@@ -131,7 +131,7 @@ fun LastSeenScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                         val path = v.create(LastSeen.PHOTOS, LastSeen.photoName(at).removeSuffix(".jpg"), "jpg")
                         v.writeBytes(path, shrunkJpeg(ctx, Uri.fromFile(f), 1600))
                         f.delete()
-                        LastSeen.add(v, Seen(at, emoji, what, note, place?.third, place?.first, place?.second, nameOf(path)))
+                        LastSeen.add(v, Seen(at, emoji, what, note, place?.third, place?.first, place?.second, path.substringAfterLast('/')))
                     }
                 }.onSuccess { reload++; snack.showSnackbar("$what saved") }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
             }

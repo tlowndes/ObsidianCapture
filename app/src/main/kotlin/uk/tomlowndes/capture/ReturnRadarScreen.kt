@@ -118,7 +118,7 @@ fun ReturnRadarScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit)
             val path = v.create(LastSeen.PHOTOS, "Receipt " + LastSeen.photoName(LocalDateTime.now()).removeSuffix(".jpg"), "jpg")
             v.writeBytes(path, shrunkJpeg(ctx, Uri.fromFile(f), 1600))
             f.delete()
-            Returns.update(v, r, r.copy(step = ReturnStep.DROPPED, receipt = nameOf(path)))
+            Returns.update(v, r, r.copy(step = ReturnStep.DROPPED, receipt = path.substringAfterLast('/')))
         }
     }
 
