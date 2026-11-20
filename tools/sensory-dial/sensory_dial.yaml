@@ -1,0 +1,163 @@
+# Sensory Dial: one level, three scenes. Turning it down dims the lights, starts brown noise and quietens the phone.
+#
+# Copy this file to your Home Assistant config as packages/sensory_dial.yaml (see README.md), then change the
+# four lines marked CHANGE ME. Flight Deck sets input_select.sensory_level from its Sensory Dial screen and
+# reads its history for the vault log; the STYRBAR remote steps it up and down.
+
+input_select:
+  sensory_level:
+    name: Sensory level
+    icon: mdi:knob
+    options:
+      - Normal
+      - Low
+      - Shelter
+
+input_text:
+  # The media_player that plays the brown noise, e.g. media_player.office_speaker. Leave blank for no noise.
+  sensory_speaker:
+    name: Sensory speaker
+    max: 100
+
+light:
+  # The lights that count as "the room". CHANGE ME: your lights' entity ids.
+  - platform: group
+    name: Sensory room
+    unique_id: sensory_room
+    entities:
+      - light.desk_lamp
+
+script:
+  sensory_noise:
+    alias: Sensory Dial · brown noise
+    mode: restart
+    fields:
+      volume:
+        description: 0 stops it, otherwise 0.0 to 1.0
+    sequence:
+      - variables:
+          speaker: "{{ states('input_text.sensory_speaker') }}"
+      - condition: template
+        value_template: "{{ speaker.startswith('media_player.') }}"
+      - if: "{{ volume | float(0) == 0 }}"
+        then:
+          - action: media_player.media_stop
+            target: { entity_id: "{{ speaker }}" }
+            continue_on_error: true
+        else:
+          - action: media_player.volume_set
+            target: { entity_id: "{{ speaker }}" }
+            data: { volume_level: "{{ volume }}" }
+            continue_on_error: true
+          - action: media_player.play_media
+            target: { entity_id: "{{ speaker }}" }
+            data:
+              # CHANGE ME if your file has another name: put it in HA's media folder (/media).
+              media_content_id: media-source://media_source/local/brown-noise.mp3
+              media_content_type: music
+          - action: media_player.repeat_set
+            target: { entity_id: "{{ speaker }}" }
+            data: { repeat: one }
+            continue_on_error: true
+
+  sensory_phone:
+    alias: Sensory Dial · phone Do Not Disturb
+    mode: queued
+    fields:
+      command:
+        description: off, priority_only or total_silence
+    sequence:
+      # CHANGE ME: your phone's notify action from the HA companion app (Settings › Devices › your phone).
+      - action: notify.mobile_app_phone
+        data:
+          message: command_dnd
+          data: { command: "{{ command }}" }
+        continue_on_error: true
+
+automation:
+  - id: sensory_dial_apply
+    alias: Sensory Dial · apply the level
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: input_select.sensory_level
+        not_to: [unknown, unavailable]
+    actions:
+      # Leaving Normal: remember the room as it was, so Normal puts it back.
+      - if: "{{ trigger.from_state.state == 'Normal' }}"
+        then:
+          - action: scene.create
+            data: { scene_id: sensory_before, snapshot_entities: [light.sensory_room] }
+      - choose:
+          - conditions: "{{ trigger.to_state.state == 'Low' }}"
+            sequence:
+              - action: light.turn_on
+                target: { entity_id: light.sensory_room }
+                data: { brightness_pct: 40, color_temp_kelvin: 2700, transition: 3 }
+              - action: script.sensory_noise
+                data: { volume: 0.25 }
+              - action: script.sensory_phone
+                data: { command: priority_only }
+          - conditions: "{{ trigger.to_state.state == 'Shelter' }}"
+            sequence:
+              - action: light.turn_on
+                target: { entity_id: light.sensory_room }
+                data: { brightness_pct: 10, color_temp_kelvin: 2200, transition: 3 }
+              - action: script.sensory_noise
+                data: { volume: 0.45 }
+              - action: script.sensory_phone
+                data: { command: total_silence }
+        default:
+          # Back to Normal, slowly.
+          - action: scene.turn_on
+            target: { entity_id: scene.sensory_before }
+            data: { transition: 10 }
+            continue_on_error: true
+          - action: script.sensory_noise
+            data: { volume: 0 }
+          - action: script.sensory_phone
+            data: { command: "off" }
+
+  # The IKEA STYRBAR through ZHA. Down = one level lower, up = one level higher, hold down = Shelter,
+  # left or right = Normal. Using Zigbee2MQTT instead? Delete this one and use the one below.
+  - id: sensory_dial_styrbar_zha
+    alias: Sensory Dial · STYRBAR (ZHA)
+    mode: queued
+    triggers:
+      - trigger: event
+        event_type: zha_event
+        event_data:
+          # CHANGE ME: the remote's IEEE address (Settings › Devices › Sensory remote › Zigbee info).
+          device_ieee: "00:00:00:00:00:00:00:00"
+    actions:
+      - variables:
+          cmd: "{{ trigger.event.data.command }}"
+      - choose:
+          - conditions: "{{ cmd == 'off' }}"
+            sequence: [{ action: input_select.select_next, target: { entity_id: input_select.sensory_level }, data: { cycle: false } }]
+          - conditions: "{{ cmd == 'on' }}"
+            sequence: [{ action: input_select.select_previous, target: { entity_id: input_select.sensory_level }, data: { cycle: false } }]
+          - conditions: "{{ cmd == 'move' }}"
+            sequence: [{ action: input_select.select_option, target: { entity_id: input_select.sensory_level }, data: { option: Shelter } }]
+          - conditions: "{{ cmd == 'press' }}"
+            sequence: [{ action: input_select.select_option, target: { entity_id: input_select.sensory_level }, data: { option: Normal } }]
+
+  # The same through Zigbee2MQTT, with the remote named "Sensory remote" there.
+  # - id: sensory_dial_styrbar_z2m
+  #   alias: Sensory Dial · STYRBAR (Zigbee2MQTT)
+  #   mode: queued
+  #   triggers:
+  #     - trigger: mqtt
+  #       topic: zigbee2mqtt/Sensory remote/action
+  #   actions:
+  #     - variables:
+  #         a: "{{ trigger.payload }}"
+  #     - choose:
+  #         - conditions: "{{ a == 'off' }}"
+  #           sequence: [{ action: input_select.select_next, target: { entity_id: input_select.sensory_level }, data: { cycle: false } }]
+  #         - conditions: "{{ a == 'on' }}"
+  #           sequence: [{ action: input_select.select_previous, target: { entity_id: input_select.sensory_level }, data: { cycle: false } }]
+  #         - conditions: "{{ a == 'brightness_move_down' }}"
+  #           sequence: [{ action: input_select.select_option, target: { entity_id: input_select.sensory_level }, data: { option: Shelter } }]
+  #         - conditions: "{{ a in ['arrow_left_click', 'arrow_right_click'] }}"
+  #           sequence: [{ action: input_select.select_option, target: { entity_id: input_select.sensory_level }, data: { option: Normal } }]

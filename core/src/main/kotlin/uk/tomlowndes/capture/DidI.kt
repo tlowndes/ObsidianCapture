@@ -158,11 +158,13 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     WAITING("waiting", "Waiting Mode", "⧗", "Something better than scrolling in a queue", true),
     ERRAND_RUN("run", "Errand Run", "⇢", "Every errand stop in one run, nearest first", true),
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
-    TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true);
+    TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true),
+    /** At the desk too: turns the room down through Home Assistant (sensory-dial-v1). */
+    SENSORY("sensory", "Sensory Dial", "◐", "Turn the room down in one move: lights, noise and calls", true);
 
     /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
-        TICKET_RAIL -> "At the desk"
+        TICKET_RAIL, SENSORY -> "At the desk"
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
         COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
         else -> "Getting out"

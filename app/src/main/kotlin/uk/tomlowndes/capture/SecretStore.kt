@@ -11,7 +11,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Tokens (GitHub, Jarvis, Claude), encrypted with a key that lives in the Android Keystore and never leaves the phone.
+ * Tokens (GitHub, Jarvis, Claude, Home Assistant), encrypted with a key that lives in the Android Keystore and never leaves the phone.
  * Only the encrypted bytes are kept in the app's preferences.
  */
 class SecretStore(ctx: Context) {
@@ -36,6 +36,13 @@ class SecretStore(ctx: Context) {
         get() = p.getString(JARVIS_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
         set(v) {
             if (v.isNullOrBlank()) p.edit().remove(JARVIS_KEY).apply() else p.edit().putString(JARVIS_KEY, encrypt(v.trim())).apply()
+        }
+
+    /** Home Assistant long-lived access token for Sensory Dial. Encrypted like the others. */
+    var haToken: String?
+        get() = p.getString(HA_KEY, null)?.let { runCatching { decrypt(it) }.getOrNull() }
+        set(v) {
+            if (v.isNullOrBlank()) p.edit().remove(HA_KEY).apply() else p.edit().putString(HA_KEY, encrypt(v.trim())).apply()
         }
 
     private fun key(): SecretKey {
@@ -67,6 +74,7 @@ class SecretStore(ctx: Context) {
         const val CLAUDE_KEY = "claude_key"
         const val GH_KEY = "github_token"
         const val JARVIS_KEY = "jarvis_token"
+        const val HA_KEY = "ha_token"
         const val ALIAS = "flight-deck-claude"
         const val TRANSFORM = "AES/GCM/NoPadding"
     }
