@@ -4,6 +4,13 @@
     <!-- In-app updater: hands the downloaded APK to Android's installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Heads Up: the 1-minute buzz has to land on time (hangar-phase1) -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Launch Pad: tap the phone on a tag by the door -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Daily Slip: finds and prints to a Bluetooth LE pocket printer. Android 10 and 11 need location to scan. -->
@@ -52,6 +59,18 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
+            </intent-filter>
+            <!-- flightdeck://launch, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1) -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="flightdeck" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="flightdeck" />
             </intent-filter>
         </activity>
         <!-- Health Connect: why Flight Deck reads sleep and steps (body-people-errands-v1). -->
@@ -154,5 +173,7 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+        <!-- Heads Up buzzes and their "5 more min" -->
+        <receiver android:name=".HeadsUpReceiver" android:exported="false" />
     </application>
 </manifest>

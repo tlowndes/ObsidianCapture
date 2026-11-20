@@ -76,14 +76,22 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
     var tools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
     var editing by remember { mutableStateOf(false) }
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
+    var trip by remember { mutableStateOf<Trip?>(null) }
     var reload by remember { mutableIntStateOf(0) }
 
-    fun save(t: List<HangarTool>) { tools = t; prefs.hangarTools = Hangar.format(t) }
+    fun save(t: List<HangarTool>) {
+        tools = t; prefs.hangarTools = Hangar.format(t)
+        // Heads Up only buzzes while it's in Hangar.
+        val heads = HangarTool.HEADS_UP in t
+        if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
+    }
 
     LaunchedEffect(vault, tools, reload) {
         val uri = vault ?: return@LaunchedEffect
         if (tools?.contains(HangarTool.DID_I) == true)
             did = withContext(Dispatchers.IO) { runCatching { DidI.today(appVault(ctx, uri)) }.getOrNull() }
+        if (tools?.contains(HangarTool.LAUNCH_PAD) == true)
+            trip = withContext(Dispatchers.IO) { runCatching { TripLoader.load(ctx, appVault(ctx, uri)) }.getOrNull() }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -100,7 +108,9 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             editing -> EditList(ctx, list, onSave = ::save)
             else -> {
                 val next = did?.let { DidI.nextOpen(it) }
-                Text(if (next != null) "1 thing needs you" else "All clear", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
+                val leave = trip?.takeIf { HangarTool.LAUNCH_PAD in list }?.let { t -> LaunchPad.leaveBy(t)?.let { t to it } }
+                    ?.takeIf { (_, by) -> java.time.Duration.between(java.time.LocalDateTime.now(), by).toMinutes() in -15..30 }
+                Text(if (next != null || leave != null) "1 thing needs you" else "All clear", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
                 RightNow(next, onYes = { s ->
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     scope.launch {
@@ -116,10 +126,11 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                             DidWidgets.changed(ctx)
                         }
                     }
-                }, onOpen = { onOpen(HangarTool.DID_I) }, hasDid = HangarTool.DID_I in list)
+                }, onOpen = { onOpen(HangarTool.DID_I) }, hasDid = HangarTool.DID_I in list,
+                    leave = leave, onLaunch = { onOpen(HangarTool.LAUNCH_PAD) })
                 GroupLabel("Getting out")
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    list.forEach { t -> ToolTile(t, statusOf(t, did)) { if (t.ready) onOpen(t) } }
+                    list.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs)) { if (t.ready) onOpen(t) } }
                 }
                 val more = Hangar.available(list)
                 if (more.isNotEmpty()) Text("＋ Add a tool", color = Primary, fontSize = 14.sp,
@@ -130,8 +141,18 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
 }
 
 /** Status line and the right-hand label for a tool's tile. */
-private fun statusOf(t: HangarTool, did: List<DidStatus>?): Pair<String, String> = when {
+private fun statusOf(t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
+    t == HangarTool.LAUNCH_PAD -> {
+        val by = trip?.let { LaunchPad.leaveBy(it) }
+        if (trip?.title != null && by != null) "${trip.title} · leave by ${by.format(HM)}" to "${prefs.launchTicks.size} packed"
+        else "Nothing planned · everyday list" to ""
+    }
+    t == HangarTool.HEADS_UP -> {
+        val next = prefs.headsNext.takeIf { it > System.currentTimeMillis() }
+            ?.let { java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), java.time.ZoneId.systemDefault()) }
+        when { !prefs.headsOn -> "Off" to ""; next != null -> "Next buzz ${next.format(HM)}" to "on"; else -> "On · nothing to warn you about yet" to "on" }
+    }
     t == HangarTool.DID_I && did == null -> "Loading…" to ""
     t == HangarTool.DID_I -> {
         val s = did.orEmpty()
@@ -143,7 +164,25 @@ private fun statusOf(t: HangarTool, did: List<DidStatus>?): Pair<String, String>
 }
 
 @Composable
-private fun RightNow(next: DidStatus?, hasDid: Boolean, onYes: (DidStatus) -> Unit, onOpen: () -> Unit) {
+private fun RightNow(
+    next: DidStatus?, hasDid: Boolean, onYes: (DidStatus) -> Unit, onOpen: () -> Unit,
+    leave: Pair<Trip, java.time.LocalDateTime>? = null, onLaunch: () -> Unit = {},
+) {
+    // Leaving soon beats an open check: Launch Pad shows the Did I? checks too.
+    if (leave != null) {
+        val (trip, by) = leave
+        Column(
+            Modifier.fillMaxWidth().padding(bottom = 16.dp).clip(RoundedCornerShape(18.dp)).background(Surface1)
+                .border(1.dp, Amber.copy(alpha = 0.45f), RoundedCornerShape(18.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("RIGHT NOW", fontSize = 11.sp, letterSpacing = 1.2.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+            Text("Leave for ${trip.title ?: "your next thing"} by ${by.format(HM)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Amber)
+            Text("Open Launch Pad", color = OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                .clip(CircleShape).background(Amber).clickable(onClick = onLaunch).padding(vertical = 10.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        return
+    }
     Column(
         Modifier.fillMaxWidth().padding(bottom = 16.dp).clip(RoundedCornerShape(18.dp))
             .background(if (next != null) GreenTint else Surface1).border(1.dp, if (next != null) Green.copy(alpha = 0.35f) else Outline, RoundedCornerShape(18.dp))
@@ -231,7 +270,7 @@ internal fun pinShortcut(ctx: Context, t: HangarTool) {
     val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
     if (!sm.isRequestPinShortcutSupported) return
     val intent = Intent(ctx, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
-        .putExtra("tab", if (t == HangarTool.DID_I) "DID_I" else "HANGAR")
+        .putExtra("tab", when (t) { HangarTool.DID_I -> "DID_I"; HangarTool.LAUNCH_PAD -> "LAUNCH_PAD"; HangarTool.HEADS_UP -> "HEADS_UP"; else -> "HANGAR" })
     val info = ShortcutInfo.Builder(ctx, "hangar-${t.id}")
         .setShortLabel(t.title).setIcon(Icon.createWithResource(ctx, R.mipmap.ic_launcher)).setIntent(intent).build()
     runCatching { sm.requestPinShortcut(info, null) }
