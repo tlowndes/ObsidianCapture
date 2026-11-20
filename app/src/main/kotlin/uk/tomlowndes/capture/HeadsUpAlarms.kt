@@ -62,9 +62,9 @@ object HeadsAlarms {
         val prefs = AppPrefs(app)
         val am = app.getSystemService(AlarmManager::class.java) ?: return
         repeat(MAX) { i -> pending(app, i, null)?.let { am.cancel(it) } }
-        val returns = returnBuzzes(app, prefs)
+        // Return Radar, Cool-off and Refill buzzes don't need Heads Up in Hangar.
+        val returns = (returnBuzzes(app, prefs) + coolBuzzes(app, prefs) + refillBuzzes(app, prefs)).sortedBy { it.at }
         if (!prefs.headsOn) {
-            // Return Radar's buzzes don't need Heads Up in Hangar.
             prefs.headsNext = 0
             schedule(app, am, returns.take(MAX))
             return
@@ -95,6 +95,28 @@ object HeadsAlarms {
             val due = r.by.atTime(9, 0)
             HeadsAlert(at, if (at.isBefore(due)) 10 else 5, HeadsTarget(HeadsTarget.Kind.RETURN, r.item, due))
         }
+    }
+
+    private fun has(prefs: AppPrefs, t: HangarTool) = Hangar.parse(prefs.hangarTools)?.contains(t) == true
+
+    /** Cool-off (hangar-phase3): one buzz when each wait is up, moved to 09:00 if it ends overnight. */
+    private fun coolBuzzes(ctx: Context, prefs: AppPrefs, now: LocalDateTime = LocalDateTime.now()): List<HeadsAlert> {
+        if (!has(prefs, HangarTool.COOL_OFF)) return emptyList()
+        val uri = prefs.vault ?: return emptyList()
+        val cs = runCatching { CoolOff.load(appVault(ctx, uri)) }.getOrNull() ?: return emptyList()
+        return CoolOff.buzzes(cs, now).map { (at, c) -> HeadsAlert(at, 10, HeadsTarget(HeadsTarget.Kind.COOL, c.what, at)) }
+    }
+
+    /** Refill (hangar-phase3): 09:00 on the reorder day, a week before a med runs out, until it's marked ordered. */
+    private fun refillBuzzes(ctx: Context, prefs: AppPrefs, now: LocalDateTime = LocalDateTime.now()): List<HeadsAlert> {
+        if (!has(prefs, HangarTool.REFILL)) return emptyList()
+        val uri = prefs.vault ?: return emptyList()
+        return runCatching {
+            val v = appVault(ctx, uri)
+            val meds = Refill.load(v)
+            val stamps = Refill.stamps(v, meds, now.toLocalDate())
+            meds.mapNotNull { m -> Refill.buzz(m, Refill.left(m, stamps), now)?.let { HeadsAlert(it, 10, HeadsTarget(HeadsTarget.Kind.REFILL, m.name, it)) } }
+        }.getOrDefault(emptyList())
     }
 
     /** The one 21:00 Night Pad buzz, when it's switched on and Night Pad is in Hangar. Soft, so it uses the 10-minute channel. */
@@ -133,7 +155,8 @@ object HeadsAlarms {
                 enableVibration(true); vibrationPattern = pattern; setSound(null, null)
             })
         }
-        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD"; HeadsTarget.Kind.RETURN -> "RETURN_RADAR" }
+        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD"; HeadsTarget.Kind.RETURN -> "RETURN_RADAR"
+            HeadsTarget.Kind.COOL, HeadsTarget.Kind.PRICE -> "COOL_OFF"; HeadsTarget.Kind.REFILL -> "REFILL" }
         val open = Intent(ctx, MainActivity::class.java).putExtra("tab", tab).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val icon = when { minutes >= 10 -> "◔"; minutes > 1 -> "◑"; else -> "●" }

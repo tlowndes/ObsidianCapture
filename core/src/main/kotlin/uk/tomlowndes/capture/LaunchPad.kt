@@ -158,7 +158,7 @@ object LaunchPad {
 
 /** Something Heads Up warns you about. */
 data class HeadsTarget(val kind: Kind, val label: String, val at: LocalDateTime) {
-    enum class Kind { LEAVE, EVENT, FOCUS, NIGHT, RETURN }
+    enum class Kind { LEAVE, EVENT, FOCUS, NIGHT, RETURN, COOL, REFILL, PRICE }
 }
 
 /** One buzz: [minutes] before [target]. */
@@ -210,6 +210,9 @@ object HeadsUp {
             // Return Radar: 10 is the 3-days-before buzz, anything less is the morning it's due.
             HeadsTarget.Kind.RETURN -> if (m >= 10) "↩ ${t.label} goes back in 3 days" to "Pack it today, so it's ready"
                 else "↩ Return ${t.label} today" to "Last day to send it back"
+            HeadsTarget.Kind.COOL -> "❄ ${t.label}: still want it?" to "The wait's up · open Cool-off"
+            HeadsTarget.Kind.REFILL -> "✚ Reorder ${t.label}" to "About a week left · open Refill"
+            HeadsTarget.Kind.PRICE -> "📉 ${t.label}" to "Price drop while it cools · open Cool-off"
         }
     }
 }
