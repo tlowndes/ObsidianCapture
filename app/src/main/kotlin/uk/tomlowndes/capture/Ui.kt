@@ -63,6 +63,10 @@ internal val AmberTint = Color(0xFF3A2F17)
 /** Night Pad (hangar-phase2): violet, so night and morning passes look different at a glance. */
 internal val Violet = Color(0xFFB9A2FF)
 internal val VioletTint = Color(0xFF1A1838)
+/** Finding things (hangar-phase2): Pocket Pass is Teal, Last Seen coral and Return Radar pink. */
+internal val Coral = Color(0xFFFF9E7A)
+internal val Pink = Color(0xFFFF8AC0)
+internal val PinkTint = Color(0xFF2A1622)
 internal val NextBg = Color(0xFF1A2238)
 internal val NextBorder = Color(0xFF2D3D66)
 internal val OverdueLine = Color(0xFF5A2D33)

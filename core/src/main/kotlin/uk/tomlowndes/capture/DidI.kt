@@ -148,11 +148,22 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", true),
     /** The evening version of Launch Pad (hangar-phase2). */
     NIGHT_PAD("night", "Night Pad", "☾", "Get tomorrow's bag ready tonight", true),
+    /** Finding things (hangar-phase2). */
+    POCKET_PASS("pass", "Pocket Pass", "⌗", "The codes you always hunt for, one tap to copy", true),
+    LAST_SEEN("seen", "Last Seen", "⌖", "Snap where you put something, find it later", true),
+    RETURN_RADAR("returns", "Return Radar", "↩", "Return-by dates for parcels, with buzzes", true),
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
     TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true);
 
-    /** Tools for getting out the door; the rest sit "At the desk". */
-    val out get() = this != TICKET_RAIL
+    /** Hangar's group for the tool: Getting out, Finding things, or At the desk. */
+    val group get() = when (this) {
+        TICKET_RAIL -> "At the desk"
+        POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
+        else -> "Getting out"
+    }
+
+    /** Tools for getting out the door. */
+    val out get() = group == "Getting out"
 
     companion object {
         fun byId(id: String) = values().firstOrNull { it.id == id.trim() }

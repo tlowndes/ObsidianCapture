@@ -25,7 +25,8 @@ object NoteIndex {
     const val MAX_TEXT = 40_000
 
     /** Dot folders (.obsidian, .trash, .git) never show. */
-    fun skip(path: String) = nameOf(path).startsWith(".")
+    /** Hidden files, and Pocket Pass, whose codes shouldn't turn up in search or reach Claude. */
+    fun skip(path: String) = nameOf(path).startsWith(".") || path == PocketPass.NOTE
 
     /** Just the paths and dates: quick, so the folders can show before the text is read. */
     fun paths(v: Vault): List<NoteInfo> = v.notes(::skip).map { NoteInfo(it.path, it.modified) }

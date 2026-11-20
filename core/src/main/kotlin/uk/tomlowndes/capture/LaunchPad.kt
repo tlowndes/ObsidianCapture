@@ -158,7 +158,7 @@ object LaunchPad {
 
 /** Something Heads Up warns you about. */
 data class HeadsTarget(val kind: Kind, val label: String, val at: LocalDateTime) {
-    enum class Kind { LEAVE, EVENT, FOCUS, NIGHT }
+    enum class Kind { LEAVE, EVENT, FOCUS, NIGHT, RETURN }
 }
 
 /** One buzz: [minutes] before [target]. */
@@ -207,6 +207,9 @@ object HeadsUp {
             HeadsTarget.Kind.FOCUS -> (if (m > 1) "$m min left in Focus" else "Focus ends in 1 min") to
                 (if (m >= 5) "Note where you are, so it's easy to pick up" else t.label)
             HeadsTarget.Kind.NIGHT -> "☾ Pack for tomorrow" to "${t.label} · open Night Pad"
+            // Return Radar: 10 is the 3-days-before buzz, anything less is the morning it's due.
+            HeadsTarget.Kind.RETURN -> if (m >= 10) "↩ ${t.label} goes back in 3 days" to "Pack it today, so it's ready"
+                else "↩ Return ${t.label} today" to "Last day to send it back"
         }
     }
 }
