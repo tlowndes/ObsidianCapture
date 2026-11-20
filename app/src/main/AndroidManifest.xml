@@ -64,7 +64,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
-            <!-- flightdeck://launch, ://night, ://pass, ://seen, ://returns, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1);
+            <!-- flightdeck://launch, ://night, ://pass, ://seen, ://returns, ://cool, ://refill, ://waiting, ://run, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1);
                  flightdeck://clear/<id> from a printed ticket's QR (ticket-rail-v1). MainActivity.readOpenRequest routes by host. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
@@ -78,6 +78,23 @@
                 <data android:scheme="flightdeck" />
             </intent-filter>
         </activity>
+        <!-- "Cool-off" in the share sheet: a shop page shared here waits 48 hours before you buy (hangar-phase3). -->
+        <activity-alias android:name=".CoolOffShare" android:exported="true" android:targetActivity=".MainActivity"
+            android:label="Cool-off" android:icon="@mipmap/ic_launcher">
+            <intent-filter android:label="Cool-off">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+        <!-- Waiting Mode's Quick Settings tile (hangar-phase3). -->
+        <service android:name=".WaitingTile" android:exported="true" android:label="Waiting Mode" android:icon="@drawable/ic_notify"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
         <!-- Health Connect: why Flight Deck reads sleep and steps (body-people-errands-v1). -->
         <activity android:name=".HealthRationaleActivity" android:exported="true">
             <intent-filter>

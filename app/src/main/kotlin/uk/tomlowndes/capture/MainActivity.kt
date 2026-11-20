@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND && sharedImage(intent)) {
             // An image goes to Snap anything (snap-anything-v1).
+        } else if (intent?.action == Intent.ACTION_SEND && sharedCool(intent)) {
+            // A shop page shared to "Cool-off" goes to Cool-off's add sheet (hangar-phase3).
         } else if (intent?.action == Intent.ACTION_SEND && sharedOrder(intent)) {
             // An order or delivery email goes to Return Radar's add sheet (hangar-phase2).
         } else if (intent?.action == Intent.ACTION_SEND && sharedJob(intent)) {
@@ -96,9 +98,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == Intent.ACTION_SEND && sharedImage(intent)) return
+        if (intent.action == Intent.ACTION_SEND && sharedCool(intent)) return
         if (intent.action == Intent.ACTION_SEND && sharedOrder(intent)) return
         if (intent.action == Intent.ACTION_SEND && sharedJob(intent)) return
         if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /** A page shared to the "Cool-off" share target opens Cool-off's add sheet with the link, name and any price filled in. */
+    private fun sharedCool(i: Intent): Boolean {
+        if (i.component?.className?.endsWith(".CoolOffShare") != true) return false
+        CoolInbox.pending = CoolOff.fromShare(i.getStringExtra(Intent.EXTRA_TEXT).orEmpty(), i.getStringExtra(Intent.EXTRA_SUBJECT), java.time.LocalDateTime.now())
+        openRequest = Tab.DECK to "cool"
+        return true
     }
 
     /** A shared order or delivery email opens Return Radar with it filled in, when Return Radar is in Hangar. */
@@ -158,6 +169,11 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "POCKET_PASS") { openRequest = Tab.DECK to "pass"; return }
         if (i?.getStringExtra("tab") == "LAST_SEEN") { openRequest = Tab.DECK to "seen"; return }
         if (i?.getStringExtra("tab") == "RETURN_RADAR") { openRequest = Tab.DECK to "returns"; return }
+        // Day to day (hangar-phase3): Cool-off and Refill buzzes, the Waiting Mode tile and pinned shortcuts.
+        if (i?.getStringExtra("tab") == "COOL_OFF") { openRequest = Tab.DECK to "cool"; return }
+        if (i?.getStringExtra("tab") == "REFILL") { openRequest = Tab.DECK to "refill"; return }
+        if (i?.getStringExtra("tab") == "WAITING") { openRequest = Tab.DECK to "waiting"; return }
+        if (i?.getStringExtra("tab") == "ERRAND_RUN") { openRequest = Tab.DECK to "run"; return }
         if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
         // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
         // flightdeck://clear/<id>: a Ticket Rail ticket read by the phone's own camera (ticket-rail-v1).
@@ -167,7 +183,7 @@ class MainActivity : ComponentActivity() {
                 "rail" -> openRequest = Tab.DECK to "rail"
                 "launch" -> openRequest = Tab.DECK to "launch"
                 "night" -> openRequest = Tab.DECK to "night"
-                "pass", "seen", "returns" -> openRequest = Tab.DECK to i.data?.host
+                "pass", "seen", "returns", "cool", "refill", "waiting", "run" -> openRequest = Tab.DECK to i.data?.host
                 "did" -> openRequest = Tab.DECK to "didi"
                 "hangar" -> openRequest = Tab.DECK to "hangar"
                 "heads" -> openRequest = Tab.DECK to "heads"
@@ -230,6 +246,10 @@ private fun subFor(slot: String?) = when (slot) {
     "pass" -> Sub.POCKET_PASS
     "seen" -> Sub.LAST_SEEN
     "returns" -> Sub.RETURN_RADAR
+    "cool" -> Sub.COOL_OFF
+    "refill" -> Sub.REFILL
+    "waiting" -> Sub.WAITING
+    "run" -> Sub.ERRAND_RUN
     else -> null
 }
 
@@ -338,6 +358,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
                         HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
                         HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
+                        HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
+                        HangarTool.REFILL -> sub = Sub.REFILL
+                        HangarTool.WAITING -> sub = Sub.WAITING
+                        HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
                         else -> {}
                     }
                 }) { sub = null }
@@ -347,6 +371,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.POCKET_PASS -> PocketPassScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAST_SEEN -> LastSeenScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.RETURN_RADAR -> ReturnRadarScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.COOL_OFF -> CoolOffScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.REFILL -> RefillScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.WAITING -> WaitingScreen(vault, snack, onOpenArticle = { openArticle = it; sub = null; tab = Tab.READ }) { sub = Sub.HANGAR }
+                sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.HANGAR }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }

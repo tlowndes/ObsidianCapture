@@ -152,13 +152,19 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     POCKET_PASS("pass", "Pocket Pass", "⌗", "The codes you always hunt for, one tap to copy", true),
     LAST_SEEN("seen", "Last Seen", "⌖", "Snap where you put something, find it later", true),
     RETURN_RADAR("returns", "Return Radar", "↩", "Return-by dates for parcels, with buzzes", true),
+    /** Day to day (hangar-phase3). */
+    COOL_OFF("cool", "Cool-off", "❄", "Wait 48 hours before you buy, and watch the price", true),
+    REFILL("refill", "Refill", "✚", "Reorder meds a week before they run out", true),
+    WAITING("waiting", "Waiting Mode", "⧗", "Something better than scrolling in a queue", true),
+    ERRAND_RUN("run", "Errand Run", "⇢", "Every errand stop in one run, nearest first", true),
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
     TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true);
 
-    /** Hangar's group for the tool: Getting out, Finding things, or At the desk. */
+    /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
         TICKET_RAIL -> "At the desk"
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
+        COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
         else -> "Getting out"
     }
 
