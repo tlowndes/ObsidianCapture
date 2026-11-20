@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Flight Deck icon: open Hangar or Did I? straight away. Drag one out to pin it. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="did" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_did">
+        <intent android:action="android.intent.action.VIEW"
+            android:targetPackage="uk.tomlowndes.capture" android:targetClass="uk.tomlowndes.capture.MainActivity">
+            <extra android:name="tab" android:value="DID_I" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="hangar" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_hangar">
+        <intent android:action="android.intent.action.VIEW"
+            android:targetPackage="uk.tomlowndes.capture" android:targetClass="uk.tomlowndes.capture.MainActivity">
+            <extra android:name="tab" android:value="HANGAR" />
+        </intent>
+    </shortcut>
+</shortcuts>

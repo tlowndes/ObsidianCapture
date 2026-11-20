@@ -39,6 +39,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Long-press shortcuts: Hangar and Did I? (hangar-phase1) -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <!-- Share any link from Chrome, Reddit, YouTube etc. straight into the vault -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
@@ -107,6 +109,20 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/capture_widget_info" />
         </receiver>
+        <!-- Did I? (hangar-phase1): tick checks from the home screen, and a Quick Settings tile -->
+        <receiver android:name=".DidWidgetReceiver" android:exported="true" android:label="Did I?">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/did_widget_info" />
+        </receiver>
+        <service android:name=".DidTileService" android:exported="true" android:label="Did I?"
+            android:icon="@drawable/ic_notify" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
         <receiver android:name=".NextStepWidgetReceiver" android:exported="true" android:label="Next step">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

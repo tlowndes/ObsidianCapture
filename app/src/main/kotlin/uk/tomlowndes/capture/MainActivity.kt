@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -135,6 +135,9 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
         if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
+        // Hangar and Did I? from the app shortcuts, pinned shortcuts and the Did I? widget.
+        if (i?.getStringExtra("tab") == "HANGAR") { openRequest = Tab.DECK to "hangar"; return }
+        if (i?.getStringExtra("tab") == "DID_I") { openRequest = Tab.DECK to "didi"; return }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -182,6 +185,8 @@ private fun subFor(slot: String?) = when (slot) {
     "jobs" -> Sub.JOBS
     "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
+    "hangar" -> Sub.HANGAR
+    "didi" -> Sub.DID_I
     else -> null
 }
 
@@ -276,6 +281,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
             when {
+                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t -> if (t == HangarTool.DID_I) sub = Sub.DID_I }) { sub = null }
+                sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
