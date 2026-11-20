@@ -79,6 +79,17 @@ class FindingTest {
         assertNull(Returns.line("- [ ] No date · Shop"))
     }
 
+    @Test fun `order emails fill in a return`() {
+        val mail = "Hi Tom,\nYour order has been delivered.\n\nChelsea Boots in Black\nSize: 9\nQty: 1\n\nFree 28-day returns.\nOrder number 123"
+        assertTrue(ReturnMail.looksLikeOrder(mail))
+        assertEquals(ReturnGuess("Chelsea Boots in Black", "ASOS", 28), ReturnMail.guess(mail, "Your ASOS order is here"))
+        assertEquals(30, ReturnMail.guess("You can return items within 30 days of your order from Studio Shop").windowDays)
+        assertEquals("Studio Shop", ReturnMail.guess("Thanks for your order from Studio Shop").shop)
+        assertTrue(!ReturnMail.looksLikeOrder("See you at the gym later"))
+        // "Next" only counts as a shop on its own, not inside another word.
+        assertEquals("", ReturnMail.guess("Your order: nextdoor lamp").shop)
+    }
+
     @Test fun `returns are kept in the note`() {
         val v = FileVault(tmp.root)
         val r = Return("Boots", "ASOS", today.plusDays(1))

@@ -64,6 +64,11 @@ import java.util.Locale
 
 private val DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 
+/** An order email shared into Flight Deck, waiting for Return Radar's add sheet. */
+internal object ReturnInbox {
+    @Volatile var pending: ReturnGuess? = null
+}
+
 /**
  * Return Radar (hangar-phase2): parcels to send back, soonest first, counted down in days. Three taps take a
  * return through Packed, Dropped off (with a photo of the receipt) and Refund in. Buzzes come from Heads Up's alarms.
@@ -75,7 +80,9 @@ fun ReturnRadarScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit)
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var returns by remember { mutableStateOf<List<Return>?>(null) }
-    var adding by remember { mutableStateOf(false) }
+    // A shared order email opens the add sheet with what it could read filled in.
+    var guess by remember { mutableStateOf(ReturnInbox.pending.also { ReturnInbox.pending = null }) }
+    var adding by remember { mutableStateOf(guess != null) }
     var deleting by remember { mutableStateOf<Return?>(null) }
     var dropping by remember { mutableStateOf<Return?>(null) }
     var cameraFile by remember { mutableStateOf<File?>(null) }
@@ -162,7 +169,7 @@ fun ReturnRadarScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit)
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel", color = Muted) } }
         )
     }
-    if (adding) AddReturnDialog(onDismiss = { adding = false }) { r -> adding = false; save { v -> Returns.add(v, r) } }
+    if (adding) AddReturnDialog(guess, onDismiss = { adding = false; guess = null }) { r -> adding = false; guess = null; save { v -> Returns.add(v, r) } }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -209,19 +216,19 @@ private fun ReturnCard(r: Return, today: LocalDate, onLong: () -> Unit, onStep: 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddReturnDialog(onDismiss: () -> Unit, onAdd: (Return) -> Unit) {
+private fun AddReturnDialog(guess: ReturnGuess?, onDismiss: () -> Unit, onAdd: (Return) -> Unit) {
     val ctx = LocalContext.current
-    var item by remember { mutableStateOf("") }
-    var shop by remember { mutableStateOf("") }
+    var item by remember { mutableStateOf(guess?.item.orEmpty()) }
+    var shop by remember { mutableStateOf(guess?.shop.orEmpty()) }
     var arrived by remember { mutableStateOf(LocalDate.now()) }
-    var window by remember { mutableStateOf<Int?>(30) }
+    var window by remember { mutableStateOf<Int?>(guess?.windowDays ?: 30) }
     var exact by remember { mutableStateOf<LocalDate?>(null) }
     fun pick(d: LocalDate, set: (LocalDate) -> Unit) =
         DatePickerDialog(ctx, { _, y, m, day -> set(LocalDate.of(y, m + 1, day)) }, d.year, d.monthValue - 1, d.dayOfMonth).show()
     val by = exact ?: window?.let { Returns.byFor(arrived, it) }
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = Surface1,
-        title = { Text("What's going back?") },
+        title = { Text(if (guess != null) "From that email" else "What's going back?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(item, { item = it.replace("·", "") }, singleLine = true, colors = fieldColors(), placeholder = { Text("Item, e.g. Boots") })
@@ -229,7 +236,7 @@ private fun AddReturnDialog(onDismiss: () -> Unit, onAdd: (Return) -> Unit) {
                 Text("Arrived ${if (arrived == LocalDate.now()) "today" else arrived.format(DAY)}  ✎", color = TextMain, fontSize = 14.sp,
                     modifier = Modifier.clickable { pick(arrived) { arrived = it; exact = null } }.padding(vertical = 6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Returns.WINDOWS.forEach { w -> AppChip(exact == null && window == w, { window = w; exact = null }, { Text("$w days") }) }
+                    (Returns.WINDOWS + listOfNotNull(guess?.windowDays)).distinct().sorted().forEach { w -> AppChip(exact == null && window == w, { window = w; exact = null }, { Text("$w days") }) }
                     AppChip(exact != null, { pick(by ?: LocalDate.now()) { exact = it } }, { Text("Date…") })
                 }
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface2).padding(12.dp)) {

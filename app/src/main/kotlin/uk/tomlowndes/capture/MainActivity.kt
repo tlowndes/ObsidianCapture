@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (intent?.action == Intent.ACTION_SEND && sharedImage(intent)) {
             // An image goes to Snap anything (snap-anything-v1).
+        } else if (intent?.action == Intent.ACTION_SEND && sharedOrder(intent)) {
+            // An order or delivery email goes to Return Radar's add sheet (hangar-phase2).
         } else if (intent?.action == Intent.ACTION_SEND && sharedJob(intent)) {
             // A job ad goes to the Job co-pilot (job-copilot-v1).
         } else if (intent?.action == Intent.ACTION_SEND) {
@@ -94,8 +96,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == Intent.ACTION_SEND && sharedImage(intent)) return
+        if (intent.action == Intent.ACTION_SEND && sharedOrder(intent)) return
         if (intent.action == Intent.ACTION_SEND && sharedJob(intent)) return
         if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /** A shared order or delivery email opens Return Radar with it filled in, when Return Radar is in Hangar. */
+    private fun sharedOrder(i: Intent): Boolean {
+        val text = i.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        if (Hangar.parse(prefs.hangarTools)?.contains(HangarTool.RETURN_RADAR) != true || !ReturnMail.looksLikeOrder(text)) return false
+        ReturnInbox.pending = ReturnMail.guess(text, i.getStringExtra(Intent.EXTRA_SUBJECT))
+        openRequest = Tab.DECK to "returns"
+        return true
     }
 
     /** A shared job ad (LinkedIn, Indeed…) opens Jobs with the Save job sheet, when Claude is on. */
@@ -332,7 +344,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.NIGHT_PAD -> NightPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
-                sub == Sub.POCKET_PASS -> PocketPassScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.POCKET_PASS -> PocketPassScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAST_SEEN -> LastSeenScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.RETURN_RADAR -> ReturnRadarScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }

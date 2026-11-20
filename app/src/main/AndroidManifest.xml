@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Pocket Pass: fingerprint before showing a hidden code -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Night Pad: "Set alarm" opens the clock app with the time filled in -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Launch Pad: tap the phone on a tag by the door -->

@@ -188,6 +188,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var nightReady: Int
         get() = p.getInt("night_ready", NightPad.READY_MINUTES)
         set(v) { p.edit().putInt("night_ready", v.coerceIn(15, 180)).apply() }
+    /** Pocket Pass: ask for a fingerprint (or the screen lock) before showing a 🔒 code. */
+    var passLock: Boolean
+        get() = p.getBoolean("pass_lock", false)
+        set(v) { p.edit().putBoolean("pass_lock", v).apply() }
+
     /** Heads Up's 21:00 Night Pad nudge (off until switched on). */
     var headsNight: Boolean
         get() = p.getBoolean("heads_night", false)

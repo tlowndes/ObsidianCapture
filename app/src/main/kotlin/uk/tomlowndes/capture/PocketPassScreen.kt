@@ -5,6 +5,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.hardware.biometrics.BiometricManager
+import android.hardware.biometrics.BiometricPrompt
+import android.os.Build
+import android.os.CancellationSignal
 import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -78,12 +82,30 @@ internal fun copySensitive(ctx: Context, label: String, text: String) {
 }
 
 /**
+ * Asks for a fingerprint, face or the screen lock, then runs [onOk]. Uses the platform prompt, so it works from any
+ * screen without a FragmentActivity.
+ */
+internal fun unlock(ctx: Context, title: String, onOk: () -> Unit, onFail: (String) -> Unit) {
+    val b = BiometricPrompt.Builder(ctx).setTitle(title).setSubtitle("Pocket Pass")
+    if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+    else @Suppress("DEPRECATION") b.setDeviceCredentialAllowed(true)
+    runCatching {
+        b.build().authenticate(CancellationSignal(), ctx.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) = onOk()
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
+                if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED && errorCode != BiometricPrompt.BIOMETRIC_ERROR_CANCELED) onFail(errString?.toString() ?: "Couldn't check it's you")
+            }
+        })
+    }.onFailure { onFail("This phone has no screen lock set up") }
+}
+
+/**
  * Pocket Pass (hangar-phase2): the codes you keep hunting for. Copy copies; tap a code to show it big for reading
  * out or showing someone; a Wi-Fi code shows a join QR. 🔒 codes stay dotted until tapped.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PocketPassScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
+fun PocketPassScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -92,6 +114,12 @@ fun PocketPassScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) 
     var big by remember { mutableStateOf<PassCode?>(null) }
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PassCode?>(null) }
+    var lock by remember { mutableStateOf(prefs.passLock) }
+    /** Shows a 🔒 code, after a fingerprint check when that's switched on. */
+    fun reveal(c: PassCode) {
+        if (!lock) { shown = shown + c; return }
+        unlock(ctx, "Show ${c.name}", onOk = { shown = shown + c }) { msg -> scope.launch { snack.showSnackbar(msg) } }
+    }
     var reload by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(vault, reload) {
@@ -132,13 +160,22 @@ fun PocketPassScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) 
                         rows.forEach { c ->
                             val hide = c.hidden && c !in shown
                             CodeRow(c, hide,
-                                onTap = { if (hide) shown = shown + c else big = c },
+                                onTap = { if (hide) reveal(c) else big = c },
                                 onLong = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); deleting = c },
-                                onAction = { when { hide -> shown = shown + c; c.isWifi -> big = c; else -> copy(c) } })
+                                onAction = { when { hide -> reveal(c); c.isWifi -> big = c; else -> copy(c) } })
                         }
                     }
                 }
-                Text("Tap a code to show it big. Hold one to delete it.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp, bottom = 20.dp))
+                Row(Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(14.dp)).background(Surface1).clickable {
+                    lock = !lock; prefs.passLock = lock
+                }.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Fingerprint for 🔒 codes", fontSize = 14.sp)
+                        Text("Or your screen lock, if there's no fingerprint", color = Muted, fontSize = 12.sp)
+                    }
+                    Switch(lock, { lock = it; prefs.passLock = it }, colors = SwitchDefaults.colors(checkedTrackColor = Teal, checkedThumbColor = Ink))
+                }
+                Text("Tap a code to show it big. Hold one to delete it.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 20.dp))
             }
         }
     }

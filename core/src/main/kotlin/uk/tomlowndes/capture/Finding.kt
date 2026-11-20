@@ -278,3 +278,39 @@ object Returns {
 
     fun remove(v: Vault, r: Return) = rewrite(v, NOTE, load(v).filter { it != r }.map(::format))
 }
+
+/** What an order or delivery email says, as far as it can be read: for Return Radar's add sheet. */
+data class ReturnGuess(val item: String, val shop: String, val windowDays: Int?)
+
+/** Reads shared order emails for Return Radar (hangar-phase2). Guesses only; the add sheet lets you fix them. */
+object ReturnMail {
+    private val SHOPS = listOf(
+        "ASOS", "Amazon", "IKEA", "Uniqlo", "Zara", "H&M", "Next", "John Lewis", "M&S", "Marks & Spencer", "Argos", "Currys",
+        "Boots", "eBay", "Etsy", "Very", "Schuh", "JD Sports", "Nike", "Adidas", "Zalando", "Vinted", "Selfridges", "Mango",
+        "Arket", "COS", "Office", "Decathlon", "Apple", "Lush", "TK Maxx", "Primark", "River Island", "New Look", "Boohoo", "Shein",
+    )
+    private val WINDOW = listOf(
+        Regex("""(\d{1,3})[- ]day (?:free |easy |hassle[- ]free )?returns?""", RegexOption.IGNORE_CASE),
+        Regex("""returns? (?:it |them |items? |your items? )?within (\d{1,3}) days""", RegexOption.IGNORE_CASE),
+        Regex("""(\d{1,3}) days to (?:return|send)""", RegexOption.IGNORE_CASE),
+    )
+    private val ORDER_FROM = Regex("""(?:order|purchase) (?:from|with|at) ([A-Z][\w&'.]*(?: [A-Z][\w&'.]*){0,2})""")
+    private val QTY = Regex("""^\s*(?:qty|quantity|size|colou?r)\b""", RegexOption.IGNORE_CASE)
+
+    fun looksLikeOrder(text: String): Boolean {
+        val t = text.lowercase(Locale.UK)
+        return "order" in t && listOf("delivered", "dispatched", "shipped", "on its way", "order number", "order confirmation", "returns", "your order").any { it in t }
+    }
+
+    fun guess(text: String, subject: String? = null): ReturnGuess {
+        val all = listOfNotNull(subject, text).joinToString("\n")
+        val shop = SHOPS.firstOrNull { s -> Regex("""(?<![\w&])${Regex.escape(s)}(?![\w&])""", RegexOption.IGNORE_CASE).containsMatchIn(all) }
+            ?: ORDER_FROM.find(all)?.groupValues?.get(1)?.trim().orEmpty()
+        val window = WINDOW.firstNotNullOfOrNull { it.find(all)?.groupValues?.get(1)?.toIntOrNull() }?.takeIf { it in 1..365 }
+        val lines = text.lines().map { it.trim() }
+        // The item is usually the line just above its quantity, size or colour.
+        val item = lines.indices.firstOrNull { i -> i > 0 && QTY.containsMatchIn(lines[i]) && lines[i - 1].length in 3..60 && !QTY.containsMatchIn(lines[i - 1]) }
+            ?.let { lines[it - 1] }.orEmpty().replace("·", "").trim()
+        return ReturnGuess(item, shop.replace("·", ""), window)
+    }
+}
