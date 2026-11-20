@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -79,6 +80,7 @@ fun TasksScreen(
     onOpenSettings: () -> Unit = {},
     onOpenTriage: () -> Unit = {},
     onOpenGuardBackups: () -> Unit = {},
+    onAddOn: (LocalDate) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -107,7 +109,9 @@ fun TasksScreen(
     val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var upcoming by remember { mutableStateOf(prefs.tasksUpcoming) }
+    var view by remember { mutableStateOf(if (prefs.tasksChores) TasksView.CHORES else if (prefs.tasksUpcoming) TasksView.UPCOMING else TasksView.LIST) }
+    val upcoming = view == TasksView.UPCOMING
+    val chores = view == TasksView.CHORES
     val swipe = remember { prefs.taskSwipe }
     val swipes = remember { Triple(prefs.swipeRight, prefs.swipeLeft, prefs.swipeLongLeft) }
     // Select mode (multiselect-swipes-v1): long-press a row; the selected lines, by their raw text.
@@ -120,11 +124,23 @@ fun TasksScreen(
     var removingAll by remember { mutableStateOf<List<TaskItem>?>(null) }
     BackHandler(enabled = selecting) { selected.clear() }
     var rescheduling by remember { mutableStateOf<TaskItem?>(null) }
-    var dayView by remember { mutableStateOf(prefs.upcomingDay) }
+    var mode by remember { mutableStateOf(UpcomingMode.values().firstOrNull { it.name == prefs.upcomingMode } ?: if (prefs.upcomingDay) UpcomingMode.DAY else UpcomingMode.LIST) }
+    val dayView = mode == UpcomingMode.DAY
+    // Week and Month (calendar-view-v1): the range on screen, read for itself, plus birthdays from People.
+    var month by remember { mutableStateOf(java.time.YearMonth.now()) }
+    var pickedDay by remember { mutableStateOf(LocalDate.now()) }
+    var weekOf by remember { mutableStateOf(CalendarGrid.weekStart(LocalDate.now())) }
+    var rangeEvents by remember { mutableStateOf<List<CalEvent>>(emptyList()) }
+    var rangeTick by remember { mutableStateOf(0) }
+    var birthdays by remember { mutableStateOf<Map<LocalDate, List<String>>>(emptyMap()) }
+    var openEvent by remember { mutableStateOf<CalEvent?>(null) }
     var billsOpen by remember { mutableStateOf(false) }
     var addingBill by remember { mutableStateOf(false) }
     var breaking by remember { mutableStateOf<TaskItem?>(null) }
     var fitting by remember { mutableStateOf<AgendaItem.Gap?>(null) }
+    // Energy reshuffle (energy-reshuffle-v1): the sheet, and today's level once a reshuffle is saved.
+    var reshuffling by remember { mutableStateOf(false) }
+    var reshuffled by remember { mutableStateOf(prefs.reshuffleLevel) }
     var cal by remember { mutableStateOf(CalendarSync.cached(ctx)) }
     var sources by remember { mutableStateOf<List<CalendarSource>>(emptyList()) }
     var travel by remember { mutableStateOf<TravelLine?>(null) }
@@ -139,6 +155,33 @@ fun TasksScreen(
         if (System.currentTimeMillis() - CalendarSync.lastSync(ctx) > CalendarSync.EVERY_MS)
             cal = withContext(Dispatchers.IO) { runCatching { CalendarSync.sync(ctx, uri) }.getOrDefault(cal) }
         travel = withContext(Dispatchers.IO) { runCatching { TravelFetch.line(ctx, cal.flatMap { it.events }) }.getOrNull() }
+    }
+    val rangeFrom = if (mode == UpcomingMode.MONTH) CalendarGrid.monthDays(month).first() else weekOf
+    val rangeTo = if (mode == UpcomingMode.MONTH) CalendarGrid.monthDays(month).last() else weekOf.plusDays(6)
+    LaunchedEffect(vault, upcoming, mode, rangeFrom, rangeTick) {
+        val uri = vault ?: return@LaunchedEffect
+        if (!upcoming || (mode != UpcomingMode.WEEK && mode != UpcomingMode.MONTH)) return@LaunchedEffect
+        rangeEvents = withContext(Dispatchers.IO) { runCatching { CalendarSync.range(ctx, uri, rangeFrom, rangeTo) }.getOrDefault(rangeEvents) }
+        birthdays = withContext(Dispatchers.IO) { runCatching { CalendarGrid.birthdays(People.list(appVault(ctx, uri)), rangeFrom, rangeTo) }.getOrDefault(emptyMap()) }
+    }
+    /** Changes one of the app's own events, then reads the calendars again. */
+    fun editEvent(e: CalEvent, change: (AppEvent) -> AppEvent?) {
+        val uri = vault ?: return
+        openEvent = null
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val v = appVault(ctx, uri)
+                    val own = AppEvents.load(v).firstOrNull { it.toCal() == e } ?: error("Couldn't find it in Events.md")
+                    AppEvents.remove(v, own)
+                    change(own)?.let { AppEvents.add(v, it) }
+                    CalendarSync.refreshApp(ctx, uri)
+                    CalendarSync.forgetRanges()
+                }
+            }
+            cal = CalendarSync.cached(ctx); rangeTick++
+            r.onFailure { snack.showSnackbar("Couldn't change the event: ${it.message}") }
+        }
     }
 
     /** Quick Task first (quick to read), then the rest of the vault once the scan is done. */
@@ -277,6 +320,33 @@ fun TasksScreen(
         }
     }
 
+    /** Energy reshuffle: gives each task its new due date, sets today's energy to match, with one Undo for them all. */
+    fun reshuffle(level: Reshuffle.Level, moves: List<Reshuffle.Move>) {
+        reshuffling = false
+        prefs.reshuffleLevel = level; reshuffled = level
+        prefs.energy = when (level) { Reshuffle.Level.REST, Reshuffle.Level.LOW -> Energy.LOW; Reshuffle.Level.HALF -> Energy.MED; Reshuffle.Level.FULL -> Energy.HIGH }
+        val uri = vault ?: return
+        if (moves.isEmpty()) return
+        scope.launch {
+            val done = mutableListOf<Pair<TaskItem, String>>()
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val w = VaultWriter(ctx, uri)
+                    moves.forEach { m -> done += m.task to w.editTask(m.task, m.task.text, m.to, m.task.recurrence, Deck.minutes(m.task)) }
+                }
+            }
+            reload()
+            r.onFailure { snack.showSnackbar("Moved ${done.size} of ${moves.size}: ${it.message}") }
+            if (done.isEmpty()) return@launch
+            val msg = "Moved ${done.size} task" + (if (done.size == 1) "" else "s") + " to later days"
+            if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                withContext(Dispatchers.IO) { runCatching { val w = VaultWriter(ctx, uri); done.asReversed().forEach { (t, newRaw) -> w.restoreTask(t, null, newRaw) } } }
+                prefs.reshuffleLevel = null; reshuffled = null
+                reload()
+            }
+        }
+    }
+
     /** Drag to a free gap (drag-to-slot-v1): due [date] at [start] for its estimate, with Undo. */
     fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) {
         val uri = vault ?: return
@@ -387,8 +457,17 @@ fun TasksScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Tasks", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-            IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
-                Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // ⚡ Reshuffle (energy-reshuffle-v1) on Upcoming; after a reshuffle it shows today's level.
+                if (upcoming) Text(
+                    "⚡ " + (reshuffled?.label ?: "Reshuffle"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Amber,
+                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(PrimaryTint)
+                        .border(1.dp, Color(0xFF4A3B1E), RoundedCornerShape(999.dp)).clickable { reshuffling = true }
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+                IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                    Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, "Search", tint = Muted)
+                }
             }
         }
         val todayCount = tasks.count { TaskViews.groupOf(it.due, today) == TaskGroup.TODAY }
@@ -407,7 +486,7 @@ fun TasksScreen(
         val triage = Triage.candidates(tasks, today).size
         // One control row (tidy-v1): List / Upcoming and a Filter button; the chips open in a sheet.
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TasksViewSwitch(upcoming, Modifier.weight(1f)) { upcoming = it; prefs.tasksUpcoming = it; selected.clear() }
+            TasksViewSwitch(view, Modifier.weight(1f)) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; selected.clear() }
             val active: String? = note?.let { VaultTasks.noteName(it) } ?: when (filter) {
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
@@ -415,7 +494,7 @@ fun TasksScreen(
                 TaskFilter.URGENT -> "High+"
                 else -> null
             } ?: tag ?: if (sort == TaskSort.PRIORITY && !upcoming) "priority" else null
-            Row(
+            if (!chores) Row(
                 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, if (active != null) Primary else Outline, RoundedCornerShape(12.dp))
                     .clickable { filtering = true }.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -427,7 +506,14 @@ fun TasksScreen(
                 )
             }
         }
-        if (upcoming) UpcomingModeSwitch(dayView) { dayView = it; prefs.upcomingDay = it }
+        // ! Ideas and ? Explore (capture-compact-v3): one tap to see just those.
+        val ideaCount = tasks.count { TaskViews.IDEA_TAG in TaskViews.tags(it) }
+        val exploreCount = tasks.count { TaskViews.EXPLORE_TAG in TaskViews.tags(it) }
+        if (!upcoming && !chores && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (ideaCount > 0) MiniChip("! Ideas · $ideaCount", tag == TaskViews.IDEA_TAG, Amber) { pickTag(if (tag == TaskViews.IDEA_TAG) null else TaskViews.IDEA_TAG) }
+            if (exploreCount > 0) MiniChip("? Explore · $exploreCount", tag == TaskViews.EXPLORE_TAG, Purple) { pickTag(if (tag == TaskViews.EXPLORE_TAG) null else TaskViews.EXPLORE_TAG) }
+        }
+        if (upcoming) UpcomingModes(mode) { mode = it; prefs.upcomingMode = it.name }
         if (searching) OutlinedTextField(
             query, { query = it }, singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
@@ -471,8 +557,17 @@ fun TasksScreen(
             }
         }
 
-        if (upcoming && dayView) {
-            DayTimeline(shown, cal.flatMap { it.events }, sources.associate { it.id to hexColour(it.colour) }, now) { t, time -> setTime(t, time) }
+        val calColours = sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))
+        if (chores) {
+            ChoreRoomsView(vault, snack)
+        } else if (upcoming && mode == UpcomingMode.MONTH) {
+            MonthView(month, { month = it }, pickedDay, { pickedDay = it }, shown, rangeEvents, birthdays, calColours,
+                onTask = { editing = it }, onEvent = { openEvent = it }, onAdd = onAddOn)
+        } else if (upcoming && mode == UpcomingMode.WEEK) {
+            WeekView(weekOf, { weekOf = it }, shown, rangeEvents, calColours, now, onTask = { editing = it }, onEvent = { openEvent = it },
+                onDay = { pickedDay = it; month = java.time.YearMonth.from(it); mode = UpcomingMode.MONTH; prefs.upcomingMode = mode.name })
+        } else if (upcoming && dayView) {
+            DayTimeline(shown, cal.flatMap { it.events }, (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), now) { t, time -> setTime(t, time) }
         } else if (upcoming) {
             val events = cal.flatMap { it.events }
             val bills = TaskViews.billsMonth(tasks, ticked, today)
@@ -480,10 +575,14 @@ fun TasksScreen(
                 BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }, { addingBill = true }) { b -> complete(b.task) }
             }
             UpcomingList(
-                days = Upcoming.days(shown, events, now), next = Upcoming.nextUp(events, now), now = now,
-                colours = sources.associate { it.id to hexColour(it.colour) }, names = sources.associate { it.id to it.name },
+                days = Upcoming.days(shown, events, now, Upcoming.LIST_DAYS), next = Upcoming.nextUp(events, now), now = now,
+                colours = (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), names = sources.associate { it.id to it.name } + (AppEvents.CAL_ID to AppEvents.NAME),
                 travel = travel, onFit = { fitting = it },
                 top = billsTop,
+                // One week on the list (energy-reshuffle-v1); the second week is a line that opens Month.
+                bottom = Upcoming.later(shown, events, today).takeIf { it.first + it.second > 0 }?.let { (e, t) ->
+                    { LaterLine(e, t) { pickedDay = today.plusDays(Upcoming.LIST_DAYS.toLong()); month = java.time.YearMonth.from(pickedDay); mode = UpcomingMode.MONTH; prefs.upcomingMode = mode.name } }
+                },
                 onDrop = { t, d -> if (d.start != null) plan(t, d.date, d.start) else move(t, d.date) },
             ) { item, lifted ->
                 val t = item.task
@@ -616,6 +715,10 @@ fun TasksScreen(
         )
     }
 
+    if (reshuffling) ReshuffleSheet(
+        tasks.filter { it.due != null }, prefs.reshuffleUsual, reshuffled ?: Reshuffle.Level.HALF,
+        onMove = { l, m -> reshuffle(l, m) }, onDismiss = { reshuffling = false }
+    )
     rescheduling?.let { t ->
         RescheduleSheet(t, tasks, cal.flatMap { it.events }, onMove = { d -> rescheduling = null; move(t, d) }, onDismiss = { rescheduling = null })
     }
@@ -623,9 +726,41 @@ fun TasksScreen(
         FitTaskSheet(g, shown, onPick = { t -> fitting = null; plan(t, g.start.toLocalDate(), g.start.toLocalTime()) }, onDismiss = { fitting = null })
     }
 
+    var asks by remember { mutableStateOf<List<CalendarAsk>>(emptyList()) }
+    LaunchedEffect(openEvent) {
+        val uri = vault ?: return@LaunchedEffect
+        if (openEvent?.calendarId != AppEvents.CAL_ID) return@LaunchedEffect
+        asks = withContext(Dispatchers.IO) { runCatching { InboxSort.calendar(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+    }
+    openEvent?.let { e ->
+        val own = e.calendarId == AppEvents.CAL_ID
+        EventSheet(
+            e, if (own) AppEvents.NAME else sources.firstOrNull { it.id == e.calendarId }?.name ?: "Calendar",
+            (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR)))[e.calendarId] ?: Purple, own,
+            onDismiss = { openEvent = null },
+            onDelete = { editEvent(e) { null } },
+            onMove = { d -> editEvent(e) { it.copy(date = d) } },
+            onSave = { title, place, note -> editEvent(e) { it.copy(title = title, place = place, note = note) } },
+            proton = InboxSort.calendarStatus(asks, AppEvents.askId(e)),
+            onProton = {
+                val uri = vault
+                if (uri != null) scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val v = appVault(ctx, uri)
+                            val own = AppEvents.load(v).firstOrNull { it.toCal() == e } ?: error("Couldn't find it in Events.md")
+                            InboxSort.askCalendar(v, AppEvents.ask(own))
+                            InboxSort.calendar(v)
+                        }
+                    }
+                    r.onSuccess { asks = it }.onFailure { snack.showSnackbar("Couldn't send it: ${it.message}") }
+                }
+            },
+        )
+    }
     editing?.let { t ->
         EditTaskSheet(
-            t, tagData,
+            t, tagData, vault,
             onSave = { text, due, rule, minutes, priority -> editing = null; save(t, text, due, rule, minutes, priority) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null },

@@ -14,7 +14,9 @@ class RapidLogTest {
         assertEquals(LogKind.NOTE, RapidLog.mark("- Monzo wants motion").first)
         assertEquals(LogKind.EVENT, RapidLog.mark("○ Lunch with Mum").first)
         assertEquals(LogKind.PRIORITY, RapidLog.mark("★ Send link").first)
-        assertEquals(LogKind.PRIORITY, RapidLog.mark("! Send link").first)
+        assertEquals(LogKind.PRIORITY, RapidLog.mark("*! Send link").first)
+        assertEquals(LogKind.IDEA, RapidLog.mark("! Stamp card").first)
+        assertEquals(LogKind.EXPLORE, RapidLog.mark("? Free ID forms").first)
         assertEquals(true, RapidLog.mark("× Water plants").third)
         assertNull(RapidLog.mark("Just words").first)
         assertEquals("Book dentist", RapidLog.mark("• Book dentist").second)
@@ -44,6 +46,9 @@ class RapidLogTest {
 
     @Test fun `task text and inbox lines`() {
         assertEquals("Send link ⏱ 10m ⏫", RapidLog.taskText(LogEntry(LogKind.PRIORITY, "Send link", null, 10)))
+        assertEquals("Stamp card #idea", RapidLog.taskText(LogEntry(LogKind.IDEA, "Stamp card")))
+        assertEquals("Free ID #explore ⏱ 30m", RapidLog.taskText(LogEntry(LogKind.EXPLORE, "Free ID", null, 30)))
+        assertEquals("Look at #explore", RapidLog.withKindTag("Look at #explore", LogKind.EXPLORE))
         assertEquals("- ○ Lunch 13:00", RapidLog.inboxLine(LogEntry(LogKind.EVENT, "Lunch 13:00")))
         assertEquals("- An idea", RapidLog.inboxLine(LogEntry(LogKind.NOTE, "An idea")))
     }

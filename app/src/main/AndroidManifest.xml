@@ -4,17 +4,31 @@
     <!-- In-app updater: hands the downloaded APK to Android's installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Heads Up: the 1-minute buzz has to land on time (hangar-phase1) -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Launch Pad: tap the phone on a tag by the door -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Daily Slip: finds and prints to a Bluetooth LE pocket printer. Android 10 and 11 need location to scan. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- Errands by place: a precise fix (and in the background, only if you switch nudges on) to know you're at a place. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
     <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <!-- Without this, Android 11+ hides the Proton Mail app and "Open in Proton" falls back to the web. -->
+        <package android:name="ch.protonmail.android" />
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
@@ -32,13 +46,47 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Long-press shortcuts: Hangar and Did I? (hangar-phase1) -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <!-- Share any link from Chrome, Reddit, YouTube etc. straight into the vault -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Share a photo or screenshot into Snap anything -->
+            <intent-filter android:label="Snap anything">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <!-- flightdeck://launch, ://did, ://hangar: from an NFC tag by the door or a link (hangar-phase1) -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="flightdeck" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="flightdeck" />
+            </intent-filter>
         </activity>
+        <!-- Health Connect: why Flight Deck reads sleep and steps (body-people-errands-v1). -->
+        <activity android:name=".HealthRationaleActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias android:name="ViewPermissionUsageActivity" android:exported="true"
+            android:targetActivity=".HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
         <service android:name=".FocusService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Focus countdown timer the user starts" />
         </service>
@@ -80,6 +128,38 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/capture_widget_info" />
         </receiver>
+        <!-- Did I? (hangar-phase1): tick checks from the home screen, and a Quick Settings tile -->
+        <receiver android:name=".DidWidgetReceiver" android:exported="true" android:label="Did I?">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/did_widget_info" />
+        </receiver>
+        <service android:name=".DidTileService" android:exported="true" android:label="Did I?"
+            android:icon="@drawable/ic_notify" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
+        <receiver android:name=".NextStepWidgetReceiver" android:exported="true" android:label="Next step">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/next_widget_info" />
+        </receiver>
+        <receiver android:name=".ChoresWidgetReceiver" android:exported="true" android:label="Chores">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/chores_widget_info" />
+        </receiver>
+        <receiver android:name=".ShoppingWidgetReceiver" android:exported="true" android:label="Shopping">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/shopping_widget_info" />
+        </receiver>
         <receiver android:name=".DeckCaptureWidgetReceiver" android:exported="true" android:label="Capture">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -93,5 +173,7 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+        <!-- Heads Up buzzes and their "5 more min" -->
+        <receiver android:name=".HeadsUpReceiver" android:exported="false" />
     </application>
 </manifest>

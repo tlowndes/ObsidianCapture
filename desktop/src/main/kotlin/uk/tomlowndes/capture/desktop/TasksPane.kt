@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -76,16 +78,17 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun TasksPane(state: AppState) {
+fun TasksPane(state: AppState, upcoming: Boolean) {
     val scope = rememberCoroutineScope()
     var tasks by remember { mutableStateOf<List<TaskItem>?>(null) }
     var done by remember { mutableStateOf<List<TickedTask>>(emptyList()) }
     var order by remember { mutableStateOf(state.prefs.taskOrder) }
-    var upcoming by remember { mutableStateOf(state.prefs.tasksUpcoming) }
     var urgent by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf<List<String>>(emptyList()) }
     var openSteps by remember { mutableStateOf(setOf<String>()) }
+    // Subtasks open in a side panel instead, when Settings says so (windows-settings-gaps-v1). The parent's raw line.
+    var panelFor by remember { mutableStateOf<String?>(null) }
     // Quick Task guard (quick-task-guard-v1): what looks off, and the Show me dialog (the last good copy's time).
     var quickAlert by remember { mutableStateOf<QuickGuard.Alert?>(null) }
     var guardSince by remember { mutableStateOf<Long?>(null) }
@@ -225,7 +228,8 @@ fun TasksPane(state: AppState) {
         focus = { t, m -> state.focus = FocusRun(t, m, System.currentTimeMillis() + m * 60_000L); state.tab = Tab.DECK },
         edit = { editing = it }, remove = { remove(it) },
     )
-    val tag = state.taskTag
+    // Upcoming has no tag row (windows-nav-sync-v1), so it shows every tag.
+    val tag = if (upcoming) null else state.taskTag
     val note = state.taskNote
     val all = tasks.orEmpty()
     val shown = all.filter {
@@ -249,26 +253,42 @@ fun TasksPane(state: AppState) {
         anchor = t.raw
     }
     val sel = SelectState(selecting, selected, ::select)
+    // Energy reshuffle (energy-reshuffle-v1): each task to its own new day, one Undo for them all.
+    var reshuffling by remember { mutableStateOf(false) }
+    fun reshuffle(moves: List<uk.tomlowndes.capture.Reshuffle.Move>) = scope.launch {
+        reshuffling = false
+        val undos = state.io("Couldn't move the tasks") {
+            val w = state.writer()!!
+            moves.mapNotNull { m -> runCatching { val raw = w.rescheduleTask(m.task, m.to); m.task to raw }.getOrNull() }
+        } ?: return@launch
+        reload()
+        if (undos.isEmpty()) { state.say("Couldn't move the tasks"); return@launch }
+        state.offerUndo("Moved ${plural(undos.size)} to later days" + if (undos.size < moves.size) " · ${moves.size - undos.size} failed" else "") {
+            state.io { val w = state.writer()!!; undos.asReversed().forEach { (t, raw) -> runCatching { w.restoreTask(t, null, raw) } } }; reload()
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 26.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    H1("Tasks" + (tag?.let { " · ${Tags.label(it)}" } ?: ""))
+                    H1((if (upcoming) "Upcoming" else "Tasks") + (tag?.let { " · ${Tags.label(it)}" } ?: ""))
                     if (tag != null) Chip("✕ Clear filter", small = true, color = Muted) { state.taskTag = null }
                     if (note != null) Chip("✕ " + note.substringAfterLast('/').removeSuffix(".md"), small = true, color = Muted) { state.taskNote = null }
                 }
                 Sub(
                     if (tasks == null) "Reading the vault…"
-                    else if (upcoming) "Upcoming · next 7 days"
+                    else if (upcoming) "Next 7 days" + uk.tomlowndes.capture.Upcoming.later(shown, calendar.second, today).let { (e, t) ->
+                        listOfNotNull(e.takeIf { it > 0 }?.let { "$it event" + if (it == 1) "" else "s" }, t.takeIf { it > 0 }?.let { "$it task" + if (it == 1) "" else "s" })
+                            .takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = " · later: ") ?: ""
+                    }
                     else if (tag != null) "${shown.size} open · ${if (Tags.kind(tag) == uk.tomlowndes.capture.TagKind.OTHER) "tagged $tag" else Tags.label(tag).lowercase() + " side"}"
                     else "Whole vault · ${all.size} open",
                     Modifier.padding(top = 2.dp)
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Pill(listOf("List", "Upcoming"), if (upcoming) 1 else 0, Modifier.width(200.dp)) { upcoming = it == 1; state.prefs.tasksUpcoming = upcoming; selected = emptySet() }
                 if (!upcoming) {
                     Chip("📅 Due", order == "due", small = true) { order = "due"; state.prefs.taskOrder = order }
                     Chip("! Priority", order == "priority", small = true) { order = "priority"; state.prefs.taskOrder = order }
@@ -278,13 +298,15 @@ fun TasksPane(state: AppState) {
                 Field(filter, { filter = it }, Modifier.width(200.dp), "🔍  Filter tasks", shape = CircleShape)
             }
         }
+        if (!upcoming) TagRow(state, all)
         if (!upcoming) AddTaskBox(state) { reload() }
 
         if (upcoming) {
             val bills = TaskViews.billsMonth(all, done, today)
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
+                Chip("⚡ Reshuffle", small = true, color = Amber) { reshuffling = true }
                 Chip("＋ Add bill", small = true, color = Amber) { addingBill = true }
-                if (!bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; upcoming = false; state.prefs.tasksUpcoming = false }
+                if (!bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
             UpcomingWeek(
                 shown, calendar.second, calendar.first, now,
@@ -301,9 +323,13 @@ fun TasksPane(state: AppState) {
             @Composable
             fun rows(items: List<TaskItem>) = items.forEach { t ->
                 val kids = nested.children[t].orEmpty()
-                TaskRow(t, ::tick, actions, sel, steps = kids.size, stepsOpen = t.raw in openSteps,
-                    onSteps = { openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw })
-                if (t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sel, sub = true) }
+                val inline = state.prefs.subtasksInline
+                TaskRow(t, ::tick, actions, sel, steps = kids.size, stepsOpen = if (inline) t.raw in openSteps else panelFor == t.raw,
+                    onSteps = {
+                        if (inline) openSteps = if (t.raw in openSteps) openSteps - t.raw else openSteps + t.raw
+                        else panelFor = if (panelFor == t.raw) null else t.raw
+                    })
+                if (inline && t.raw in openSteps) kids.forEach { c -> TaskRow(c, ::tick, actions, sel, sub = true) }
             }
             when (order) {
                 "note" -> rows(nested.top)
@@ -342,6 +368,12 @@ fun TasksPane(state: AppState) {
             if (selecting) Box(Modifier.height(90.dp))
         }
     }
+    if (!upcoming && !state.prefs.subtasksInline) nested.top.firstOrNull { it.raw == panelFor }?.let { parent ->
+        StepsPanel(parent, nested.children[parent].orEmpty(),
+            row = { c -> TaskRow(c, ::tick, actions, sel, sub = true) },
+            onAdd = { breaking = parent }, onClose = { panelFor = null },
+            modifier = Modifier.align(Alignment.TopEnd))
+    }
     if (selecting) {
         val picked = all.filter { it.raw in selected }
         BulkBar(picked.size, onAction = { a ->
@@ -358,6 +390,7 @@ fun TasksPane(state: AppState) {
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp))
     }
     }
+    if (reshuffling) ReshuffleDialog(all.filter { it.due != null }, state.prefs.reshuffleUsual, onMove = { reshuffle(it) }, onDismiss = { reshuffling = false })
     bulkDate?.let { items -> PickDateDialog(LocalDate.now().plusDays(1), onPick = { d -> bulkDate = null; if (d != null) bulkDue(items, d) }, onDismiss = { bulkDate = null }) }
     bulkFlag?.let { items -> BulkPriorityDialog(items.size, onPick = { p -> bulkFlag = null; bulkPriority(items, p) }, onDismiss = { bulkFlag = null }) }
     bulkTagFor?.let { items -> BulkTagDialog(items.size, pinned, onPick = { tag -> bulkTagFor = null; bulkTag(items, tag) }, onDismiss = { bulkTagFor = null }) }
@@ -549,3 +582,67 @@ private fun HoverAction(text: String, onClick: () -> Unit) =
 
 /** Multi-select as the rows see it: whether it's on, what's picked, and how a click picks (range with Shift). */
 private class SelectState(val active: Boolean, val selected: Set<String>, val toggle: (TaskItem, Boolean) -> Unit)
+
+/**
+ * Tags as a chip row at the top of Tasks (windows-nav-sync-v1): All, Work, Personal and the most used tags,
+ * with counts and their colour dot. Clicking the selected one clears the filter.
+ */
+@Composable
+private fun TagRow(state: AppState, all: List<TaskItem>) {
+    val tags = state.tagCounts.filter { it.second > 0 }
+    if (tags.isEmpty()) return
+    val current = state.taskTag
+    Row(
+        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+    ) {
+        TagChip("All", null, all.size, current == null) { state.taskTag = null }
+        tags.forEach { (t, n) ->
+            TagChip(Tags.label(t), tagColour(t).first, n, current == t) { state.taskTag = if (current == t) null else t; state.taskNote = null }
+        }
+    }
+}
+
+@Composable
+private fun TagChip(label: String, dot: Color?, n: Int, on: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier.clip(shape).background(if (on) PrimaryTint else Color.Transparent)
+            .border(1.5.dp, if (on) Primary else Outline, shape).hand().clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (dot != null) Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+        Text(label, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) Primary else TextMain)
+        Text("$n", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Side panel for a task's steps (windows-settings-gaps-v1), the PC version of the phone's pop-out sheet,
+ * so the list doesn't jump. ✕, or clicking the task's steps again, closes it.
+ */
+@Composable
+private fun StepsPanel(
+    parent: TaskItem, steps: List<TaskItem>,
+    row: @Composable (TaskItem) -> Unit, onAdd: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.width(380.dp).fillMaxHeight().background(Surface2).border(1.dp, Outline)
+            .padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text(parent.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextMain)
+                Text("${steps.size} step${if (steps.size == 1) "" else "s"} left · " + parent.path.substringAfterLast('/').removeSuffix(".md"),
+                    fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+            }
+            Text("✕", fontSize = 15.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable(onClick = onClose).padding(6.dp))
+        }
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            steps.forEach { row(it) }
+            Text("＋ Add steps", fontSize = 13.5.sp, color = Faint,
+                modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).hand().clickable(onClick = onAdd).padding(8.dp))
+        }
+    }
+}

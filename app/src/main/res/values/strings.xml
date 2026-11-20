@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="widget_did_desc">Did I? checks for today. Tap one when it\'s done.</string>
+    <string name="shortcut_hangar">Hangar</string>
+    <string name="shortcut_did">Did I?</string>
+    <string name="widget_next_desc">Your next step, with Start, Done and Later.</string>
+    <string name="widget_chores_desc">Chores filling up. Tap one when it\'s done.</string>
+    <string name="widget_shopping_desc">The shopping list. Tick things off here.</string>
     <string name="widget_tasks_desc">Overdue and today\'s tasks from across your vault. Tick them off here.</string>
     <string name="widget_read_desc">How many articles are unread, and the newest one. Tap to read it.</string>
     <string name="widget_combined_desc">Today\'s tasks and your next unread article, side by side.</string>

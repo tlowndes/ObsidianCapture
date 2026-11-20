@@ -1,0 +1,133 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Energy reshuffle v1</title><style>
+:root{--bg:#0f131c;--surface:#161b27;--surface2:#1e2534;--outline:#2a3245;--primary:#7aa2ff;--tint:#1b2440;--text:#e8ecf5;--muted:#8a93a8;--faint:#5d667c;--purple:#b39dff;--red:#ff8a80;--green:#5fd39a;--amber:#f5c06a;--mono:"JetBrains Mono",Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{background:#07090e;font-family:Roboto,"Segoe UI",sans-serif;color:var(--text);padding:36px 44px;width:1760px}
+.h{font-size:22px;font-weight:700;margin-bottom:6px}.intro{font-size:14px;color:var(--muted);margin-bottom:26px;max-width:1300px;line-height:1.5}.intro b{color:var(--text)}
+.row{display:flex;gap:30px;align-items:flex-start}.col{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:14px;color:var(--muted);font-weight:600}.cap b{color:var(--text)}
+.note{font-size:13px;color:var(--muted);line-height:1.55;width:400px}.note b{color:var(--text)}.note ul{padding-left:18px}.note li{margin-bottom:5px}
+.new{outline:2px dashed var(--purple);outline-offset:3px;border-radius:14px}
+.phone{width:400px;height:820px;background:var(--bg);border-radius:44px;border:2px solid #232a3a;padding:22px 18px 0;position:relative;overflow:hidden}
+h1{font-size:26px;font-weight:700}.top{display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px}
+.seg{display:flex;background:var(--surface);border:1px solid var(--outline);border-radius:12px;padding:3px;flex:1}
+.seg div{flex:1;text-align:center;padding:7px 0;font-size:13px;color:var(--muted);border-radius:9px}.seg .on{background:var(--tint);color:var(--primary);font-weight:600}
+.ctl{display:flex;gap:8px;margin-bottom:10px;align-items:center}.filt{border:1px solid var(--outline);border-radius:12px;padding:8px 12px;font-size:13px;color:var(--muted)}
+.chips{display:flex;gap:6px;margin-bottom:12px}.chip{border:1px solid var(--outline);border-radius:12px;padding:6px 11px;font-size:13px;white-space:nowrap;color:var(--text)}
+.chip.on{background:var(--tint);color:var(--primary);border-color:var(--primary);font-weight:600}
+.day{background:var(--surface);border:1px solid var(--outline);border-radius:16px;margin-bottom:9px}
+.dh{display:flex;align-items:center;padding:10px 14px;font-weight:700;font-size:14px;gap:8px}.dh span{font-family:var(--mono);font-weight:400;font-size:11.5px;color:var(--muted)}
+.dh .r{margin-left:auto}
+.t{display:flex;gap:10px;align-items:center;padding:9px 14px;border-top:1px solid var(--outline);font-size:14px}
+.t small{color:var(--muted);font-size:12px;margin-left:auto;font-family:var(--mono)}
+.box{width:17px;height:17px;border-radius:5px;border:2px solid var(--muted);flex:none}
+.ev{width:4px;height:18px;border-radius:2px;background:var(--purple);flex:none}
+.later{border:1px dashed var(--outline);border-radius:14px;padding:11px 14px;font-size:13px;color:var(--muted);display:flex;justify-content:space-between}
+.later b{color:var(--primary);font-weight:600}
+.resh{display:inline-flex;align-items:center;gap:5px;background:var(--tint);color:var(--amber);border:1px solid #4a3b1e;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600}
+.nav{position:absolute;left:0;right:0;bottom:0;height:66px;border-top:1px solid var(--outline);background:#121724;display:flex;justify-content:space-around;align-items:center;font-size:13px;color:var(--muted)}.nav b{color:var(--primary)}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.6)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface2);border-radius:26px 26px 0 0;border-top:1px solid var(--outline);padding:12px 18px 20px}
+.grab{width:40px;height:4px;border-radius:4px;background:var(--outline);margin:0 auto 12px}
+.st{font-size:18px;font-weight:700;margin-bottom:2px}.ss{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.gauge{display:flex;flex-direction:column;align-items:center;margin-bottom:10px}
+.gauge .n{font-size:30px;font-weight:700;margin-top:-62px}.gauge .l{font-size:12px;color:var(--muted);margin-bottom:10px;font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase}
+.stops{display:flex;gap:6px;margin-bottom:12px}.stops div{flex:1;text-align:center;border:1px solid var(--outline);border-radius:12px;padding:8px 0;font-size:13px}
+.stops .on{background:var(--amber);color:#1b1305;border-color:var(--amber);font-weight:700}.stops small{display:block;font-size:10.5px;color:var(--muted);margin-top:1px}.stops .on small{color:#4a3912}
+.lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:1.1px;color:var(--muted);text-transform:uppercase;margin:4px 0 6px}
+.strip{display:flex;gap:4px;margin-bottom:12px}.strip div{flex:1;text-align:center;background:var(--surface);border:1px solid var(--outline);border-radius:10px;padding:6px 0 5px;font-size:11px;color:var(--muted)}
+.strip b{display:block;font-size:15px;color:var(--text);margin-top:2px}.strip i{font-style:normal;color:var(--green);font-size:10.5px;display:block}
+.strip .td{border-color:var(--amber)}.strip .td i{color:var(--amber)}
+.mv{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--outline);font-size:13.5px}
+.mv .to{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--primary);background:var(--tint);border-radius:8px;padding:3px 8px}
+.mv .tg{width:18px;height:18px;border-radius:5px;background:var(--primary);flex:none;position:relative}.mv .tg:after{content:"✓";position:absolute;inset:0;font-size:12px;color:#0b1020;text-align:center;line-height:18px;font-weight:700}
+.keep{font-size:12px;color:var(--muted);margin:8px 0 2px;line-height:1.45}.keep b{color:var(--text)}
+.btns{display:flex;gap:8px;margin-top:12px}.btn{flex:1;text-align:center;padding:12px;border-radius:999px;font-weight:700;font-size:14px;border:1px solid var(--outline)}.btn.p{background:var(--primary);color:#0b1020;border-color:var(--primary)}
+.snack{position:absolute;left:14px;right:14px;bottom:80px;background:#e8ecf5;color:#0f131c;border-radius:12px;padding:12px 14px;font-size:13.5px;display:flex;justify-content:space-between;font-weight:500}.snack b{color:#3d63c9}
+</style></head><body>
+<div class="h">Energy reshuffle + one-week Upcoming · v1</div>
+<div class="intro"><b>Reading I took:</b> "main task screen" = Tasks › Upcoming. PR #106 made its default list <b>2 weeks</b> (with Day · Week · Month beside it). This puts the list back to <b>7 days</b>, today plus the next 6 days, rolling. The calendars are still read 14 days ahead, so next week's events still turn up, just as a "Later" line under the week instead of a second week of cards. Day, Week (grid) and Month stay as they are. <b>Dashed purple = new.</b></div>
+<div class="row">
+
+<!-- 1. Upcoming, one week -->
+<div class="col"><div class="cap"><b>1 · Upcoming, back to one week</b></div>
+<div class="phone">
+ <div class="top"><h1>Tasks</h1><span class="resh new">⚡ Reshuffle</span></div>
+ <div class="ctl"><div class="seg"><div>List</div><div class="on">Upcoming</div><div>Chores</div></div><div class="filt">Filter</div></div>
+ <div class="chips"><div class="chip on new">7 days</div><div class="chip">Day</div><div class="chip">Week</div><div class="chip">Month</div></div>
+ <div class="day"><div class="dh">Today <span>Wed 18</span><span class="r">9 tasks · 1 event</span></div>
+  <div class="t"><div class="box"></div>Tailor CV for Monzo<small>45m</small></div>
+  <div class="t"><div class="ev"></div>Call with recruiter<small>11:00</small></div>
+  <div class="t"><div class="box"></div>Portfolio case study draft<small>90m</small></div>
+  <div class="t"><div class="box"></div>Pay council tax<small>bill</small></div>
+  <div class="t" style="color:var(--muted)">+ 6 more</div></div>
+ <div class="day"><div class="dh">Thu <span>19</span><span class="r">2 tasks</span></div></div>
+ <div class="day"><div class="dh">Fri <span>20</span><span class="r">3 tasks · 1 event</span></div></div>
+ <div class="day"><div class="dh">Sat <span>21</span><span class="r">1 task</span></div></div>
+ <div class="day"><div class="dh">Sun <span>22</span><span class="r">—</span></div></div>
+ <div class="day"><div class="dh">Mon <span>23</span><span class="r">4 tasks</span></div></div>
+ <div class="day"><div class="dh">Tue <span>24</span><span class="r">1 event</span></div></div>
+ <div class="later new"><span>Later · 2 events, 3 tasks</span><b>Month ›</b></div>
+ <div class="nav"><span>Deck</span><span>Capture</span><b>Tasks</b><span>Read</span><span>Jarvis</span></div>
+</div></div>
+
+<!-- 2. Reshuffle sheet -->
+<div class="col"><div class="cap"><b>2 · Reshuffle sheet</b> (tap ⚡)</div>
+<div class="phone new" style="outline-offset:-2px;border-radius:44px">
+ <div class="top"><h1>Tasks</h1></div>
+ <div class="dim"></div>
+ <div class="sheet">
+  <div class="grab"></div>
+  <div class="st">How much have you got today?</div>
+  <div class="ss">Sets how many actions fit today. The rest move to lighter days.</div>
+  <div class="gauge">
+   <svg width="200" height="108" viewBox="0 0 200 108"><path d="M16 100 A84 84 0 0 1 184 100" fill="none" stroke="#2a3245" stroke-width="14" stroke-linecap="round"/><path d="M16 100 A84 84 0 0 1 100 16" fill="none" stroke="#f5c06a" stroke-width="14" stroke-linecap="round"/></svg>
+   <div class="n">4 of 9</div><div class="l">actions today · 50%</div>
+  </div>
+  <div class="stops"><div>Rest<small>0</small></div><div>30%<small>3</small></div><div class="on">50%<small>4</small></div><div>100%<small>9</small></div></div>
+  <div class="lbl">This week, after the move</div>
+  <div class="strip"><div class="td">Wed<b>4</b><i>−5</i></div><div>Thu<b>4</b><i>+2</i></div><div>Fri<b>4</b><i>+1</i></div><div>Sat<b>2</b><i>+1</i></div><div>Sun<b>0</b></div><div>Mon<b>4</b></div><div>Tue<b>1</b><i>+1</i></div></div>
+  <div class="lbl">Moving 5</div>
+  <div class="mv"><div class="tg"></div>Portfolio case study draft<span class="to">Thu</span></div>
+  <div class="mv"><div class="tg"></div>Update Dribbble shots<span class="to">Thu</span></div>
+  <div class="mv"><div class="tg"></div>Sort photo backups<span class="to">Fri</span></div>
+  <div class="mv"><div class="tg"></div>Read Refactoring UI ch. 3<span class="to">Sat</span></div>
+  <div class="mv"><div class="tg"></div>Clean laptop desktop<span class="to">Tue</span></div>
+  <div class="keep"><b>Staying today:</b> Tailor CV (★ High), Pay council tax (bill), anything with a time slot, and events.</div>
+  <div class="btns"><div class="btn">Cancel</div><div class="btn p">Move 5 tasks</div></div>
+ </div>
+</div></div>
+
+<!-- 3. After -->
+<div class="col"><div class="cap"><b>3 · After Move</b></div>
+<div class="phone">
+ <div class="top"><h1>Tasks</h1><span class="resh">⚡ 50%</span></div>
+ <div class="ctl"><div class="seg"><div>List</div><div class="on">Upcoming</div><div>Chores</div></div><div class="filt">Filter</div></div>
+ <div class="chips"><div class="chip on">7 days</div><div class="chip">Day</div><div class="chip">Week</div><div class="chip">Month</div></div>
+ <div class="day"><div class="dh">Today <span>Wed 18</span><span class="r">4 tasks · 1 event</span></div>
+  <div class="t"><div class="box"></div>Tailor CV for Monzo<small>45m</small></div>
+  <div class="t"><div class="ev"></div>Call with recruiter<small>11:00</small></div>
+  <div class="t"><div class="box"></div>Pay council tax<small>bill</small></div>
+  <div class="t"><div class="box"></div>Reply to Sam<small>5m</small></div>
+  <div class="t"><div class="box"></div>Book dentist<small>5m</small></div></div>
+ <div class="day"><div class="dh">Thu <span>19</span><span class="r">4 tasks</span></div></div>
+ <div class="day"><div class="dh">Fri <span>20</span><span class="r">4 tasks · 1 event</span></div></div>
+ <div class="day"><div class="dh">Sat <span>21</span><span class="r">2 tasks</span></div></div>
+ <div class="day"><div class="dh">Sun <span>22</span><span class="r">—</span></div></div>
+ <div class="snack new"><span>Moved 5 tasks to later days</span><b>UNDO</b></div>
+ <div class="nav"><span>Deck</span><span>Capture</span><b>Tasks</b><span>Read</span><span>Jarvis</span></div>
+</div></div>
+
+<div class="note" style="margin-top:28px">
+<b>How it works</b>
+<ul>
+<li><b>100%</b> = your usual day, set in Settings › Tasks (default 9 actions). 50% and 30% scale it; <b>Rest</b> moves every movable task.</li>
+<li>Extras go to the <b>lightest days this week</b>, never past a day that's already full. Short tasks (≤15 min) stay first, like the Low energy chip.</li>
+<li><b>Never moved:</b> ★ High, bills, tasks with a time slot, events, repeats due today.</li>
+<li>Untick a row to keep it today. Nothing changes until <b>Move</b>.</li>
+<li>Moving rewrites the 📅 date on the task's own line in the vault (Quick Task or its note). <b>Undo</b> puts the dates back.</li>
+<li>Picking a level also sets the Deck energy chip (Rest/30% = Low, 50% = Med, 100% = High), so the two agree.</li>
+<li><b>Windows:</b> same one-week list and a ⚡ Reshuffle button on the Upcoming page; same sheet as a dialog.</li>
+</ul>
+</div>
+</div>
+</body></html>

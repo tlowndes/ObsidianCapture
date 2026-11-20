@@ -42,7 +42,11 @@ fun main(args: Array<String>) {
         exitProcess(0)
     }
     val startHidden = "--hidden" in args
+    // The app was called Vault Capture up to 1.34: point Start with Windows at the new exe.
+    Autostart.migrate()
     val state = AppState(DesktopPrefs()).apply { windowVisible = !startHidden }
+    // Background sync with Obsidian Headless, when it's switched on in Settings (windows-nav-sync-v1).
+    HeadlessSync.start(state)
     thread(isDaemon = true, name = "single-instance") {
         while (true) {
             val s = runCatching { server.accept() }.getOrNull() ?: break

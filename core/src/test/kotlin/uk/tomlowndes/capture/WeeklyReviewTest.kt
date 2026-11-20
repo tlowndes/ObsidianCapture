@@ -47,4 +47,18 @@ class WeeklyReviewTest {
         File(tmp.root, "Projects/House.md").writeText("- [x] #task Paint door ✅ ${today.minusDays(1)}\n")
         assertEquals(listOf("Paint door"), WeeklyReview.done(FileVault(tmp.root), today).map { it.text })
     }
+
+    @Test fun `done tasks come from the ticked lists without a vault read`() {
+        val ticked = listOf(
+            "- [x] #task Bins out ✅ 2026-10-21",
+            "- [x] #task Paint door ✅ 2026-10-24",
+            "- [x] #task Old thing ✅ 2026-10-01",
+            "- [x] Quick one, no tag ✅ 2026-10-23",
+            "- [x] #task No date",
+        ).map { TaskNote.parseDone(it)!!.copy(path = "a.md") }
+        assertEquals(
+            listOf(DoneTask("Paint door", LocalDate.of(2026, 10, 24), "a.md"), DoneTask("Bins out", LocalDate.of(2026, 10, 21), "a.md")),
+            WeeklyReview.doneFrom(ticked, today)
+        )
+    }
 }

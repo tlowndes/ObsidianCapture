@@ -13,7 +13,7 @@ data class MonthBills(val unpaid: List<Bill>, val paid: List<Bill>, val left: Bi
 }
 
 /** The groups the Flight Deck Tasks tab shows, in order. Later also holds undated tasks. */
-enum class TaskGroup(val title: String) { OVERDUE("Overdue"), TODAY("Today"), WEEK("This week"), LATER("Later") }
+enum class TaskGroup(val title: String) { OVERDUE("Overdue"), TODAY("Today"), WEEK("This week"), LATER("Later"), IDEAS("Ideas") }
 
 /** Filters on the Tasks tab, beyond tags. */
 enum class TaskFilter { WORK, PERSONAL, SHORT, URGENT }
@@ -60,13 +60,23 @@ object TaskViews {
         Bucket.LATER, Bucket.NONE -> TaskGroup.LATER
     }
 
+    /** The group a task goes in: an #idea with no date sits in Ideas (capture-compact-v3) so it doesn't clutter Later. */
+    fun groupFor(t: TaskItem, today: LocalDate): TaskGroup =
+        if (t.due == null && IDEA_TAG in tags(t)) TaskGroup.IDEAS else groupOf(t.due, today)
+
+    const val IDEA_TAG = "#idea"
+    const val EXPLORE_TAG = "#explore"
+
+    /** "!" for an idea, "?" for an explore (the bullet journal marks), else null. */
+    fun kindMark(t: TaskItem): String? = tags(t).let { when { IDEA_TAG in it -> "!"; EXPLORE_TAG in it -> "?"; else -> null } }
+
     /** Flagged tasks first (highest first, low and lowest after unflagged ones), then by due date, undated last. */
     val byPriority: Comparator<TaskItem> = compareBy<TaskItem> { Priority.of(it).level }.thenBy { it.due ?: LocalDate.MAX }
 
     /** Non-empty groups in order, each with flagged tasks first, then by due date with undated tasks last. */
     fun groups(tasks: List<TaskItem>, today: LocalDate): List<Pair<TaskGroup, List<TaskItem>>> =
         TaskGroup.values().mapNotNull { g ->
-            tasks.filter { groupOf(it.due, today) == g }.sortedWith(byPriority)
+            tasks.filter { groupFor(it, today) == g }.sortedWith(byPriority)
                 .takeIf { it.isNotEmpty() }?.let { g to it }
         }
 

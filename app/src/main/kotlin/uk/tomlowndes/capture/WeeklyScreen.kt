@@ -58,16 +58,20 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
-        review = withContext(Dispatchers.IO) {
+        // First: the last task lists read (open and ticked), so the review shows without any vault read.
+        // Then: fresh lists from the task scan (cached per note), and the recap last, as it reads a few more notes.
+        if (review == null) withContext(Dispatchers.IO) { TaskSnapshot.load(ctx) }
+            ?.let { snap -> review = WeeklyReview.build(WeeklyReview.doneFrom(snap.done, today), snap.open, today) }
+        val lists = withContext(Dispatchers.IO) {
+            runCatching { VaultWriter(ctx, uri).listTaskLists().also { TaskSnapshot.save(ctx, it) } }.getOrNull()
+        }
+        if (lists != null) review = WeeklyReview.build(WeeklyReview.doneFrom(lists.done, today), lists.open, today)
+        val done = review?.done ?: return@LaunchedEffect
+        if (recap == null) recap = withContext(Dispatchers.IO) {
             runCatching {
-                val w = VaultWriter(ctx, uri)
                 val v = appVault(ctx, uri)
-                val done = WeeklyReview.done(v, today)
-                recap = runCatching {
-                    Recaps.build(done, FlightNotes.loadSince(v, today.minusDays(6)), runCatching { Habits.load(v) }.getOrNull(),
-                        runCatching { Jobs.list(v) }.getOrDefault(emptyList()), today)
-                }.getOrNull()
-                WeeklyReview.build(done, w.listTasks(), today)
+                Recaps.build(done, FlightNotes.loadSince(v, today.minusDays(6)), runCatching { Habits.load(v) }.getOrNull(),
+                    runCatching { Jobs.list(v) }.getOrDefault(emptyList()), today)
             }.getOrNull()
         }
     }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -78,7 +79,7 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
                     val prompt = Breakdown.prompt(name, level)
                     val reply = if (api) {
                         val d = PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.")
-                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
+                        prefs.spend("Breakdown", PhoneBrain.costUsd(PhoneBrain.FAST, d.inTok, d.outTok))
                         d.reply
                     } else Jarvis.sendText(address, token, prompt, "jarvis").reply
                     Breakdown.parse(reply)
@@ -104,7 +105,7 @@ internal fun BreakdownSheet(t: TaskItem, vault: Uri?, prefs: AppPrefs, snack: Sn
                 !ready -> Text("Turn on Claude from the phone in Settings, or add the server there. Type demo as the address to try it.",
                     fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 10.dp))
                 loading -> Row(Modifier.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.width(18.dp))
+                    CircularProgressIndicator(color = Primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     Text("$who is thinking…", fontSize = 13.sp, color = Muted)
                 }
                 error != null -> Text(error!!, fontSize = 13.sp, color = Warn, modifier = Modifier.padding(vertical = 10.dp))

@@ -42,15 +42,6 @@ import java.time.format.DateTimeFormatter
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private const val DP_PER_MIN = 1.1f
 
-/** The two views inside Upcoming: the 7-day list, or today as a timeline. */
-@Composable
-internal fun UpcomingModeSwitch(day: Boolean, onPick: (Boolean) -> Unit) {
-    Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        AppChip(!day, { onPick(false) }, { Text("7 days") })
-        AppChip(day, { onPick(true) }, { Text("Day view") })
-    }
-}
-
 /**
  * Visual day (build-queue T2): today as coloured blocks with an emoji each and a red now-line. Tasks due today without
  * a time sit above; tap one to give it a time (it's written as `11:00 - 11:45` at the start of the task). Tap a timed

@@ -247,7 +247,7 @@ private fun Stepper(label: String, onMinus: () -> Unit, onPlus: () -> Unit, modi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RepeatSheet(current: String?, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+internal fun RepeatSheet(current: String?, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
     val draft = rememberRepeatDraft(current)
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {

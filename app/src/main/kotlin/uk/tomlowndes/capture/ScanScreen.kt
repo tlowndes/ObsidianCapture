@@ -248,4 +248,6 @@ private fun kindColour(k: LogKind): Color = when (k) {
     LogKind.EVENT -> Teal
     LogKind.NOTE -> Muted
     LogKind.TASK -> TextMain
+    LogKind.IDEA -> Amber
+    LogKind.EXPLORE -> Purple
 }

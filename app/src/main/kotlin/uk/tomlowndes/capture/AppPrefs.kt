@@ -48,6 +48,18 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var upcomingDay: Boolean
         get() = p.getBoolean("upcoming_day", false)
         set(v) { p.edit().putBoolean("upcoming_day", v).apply() }
+    /** New events also go to Proton Calendar as an emailed invite (events-to-proton-v1): the switch's starting position. */
+    var eventsToProton: Boolean
+        get() = p.getBoolean("events_to_proton", true)
+        set(v) { p.edit().putBoolean("events_to_proton", v).apply() }
+    /** Tasks shows Chores by room (chores-rooms-v1). */
+    var tasksChores: Boolean
+        get() = p.getBoolean("tasks_chores", false)
+        set(v) { p.edit().putBoolean("tasks_chores", v).apply() }
+    /** Upcoming's mode (calendar-view-v1): LIST, DAY, WEEK or MONTH. Null falls back to [upcomingDay]. */
+    var upcomingMode: String?
+        get() = p.getString("upcoming_mode", null)
+        set(v) { p.edit().putString("upcoming_mode", v).apply() }
     /** The day Plan today was done ("2026-11-10"), and the day Shut down was. */
     var plannedOn: String?
         get() = p.getString("planned_on", null)
@@ -135,6 +147,52 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("update_latest", null)
         set(v) { p.edit().putString("update_latest", v).apply() }
 
+    /** Hangar's tools in order ("didi,launch"); null until Hangar is first set up. */
+    var hangarTools: String?
+        get() = p.getString("hangar_tools", null)
+        set(v) { p.edit().putString("hangar_tools", v).apply() }
+
+    /** The Did I? check the Quick Settings tile stamps; blank means the first check. */
+    var didTile: String
+        get() = p.getString("did_tile", "Door") ?: "Door"
+        set(v) { p.edit().putString("did_tile", v).apply() }
+
+    /** Launch Pad: items ticked today (reset each morning) and the event start skipped with "Not going". */
+    var launchTicks: Set<String>
+        get() = if (p.getString("launch_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_ticks", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_ticks", v).putString("launch_day", java.time.LocalDate.now().toString()).apply() }
+    var launchSkip: String?
+        get() = p.getString("launch_skip", null)
+        set(v) { p.edit().putString("launch_skip", v).apply() }
+
+    /** Heads Up: on once added in Hangar, what buzzes, the stages ("10,5,1"), quiet hours and the next buzz. */
+    var headsOn: Boolean
+        get() = p.getBoolean("heads_on", false)
+        set(v) { p.edit().putBoolean("heads_on", v).apply() }
+    var headsLeave: Boolean
+        get() = p.getBoolean("heads_leave", true)
+        set(v) { p.edit().putBoolean("heads_leave", v).apply() }
+    var headsEvents: Boolean
+        get() = p.getBoolean("heads_events", true)
+        set(v) { p.edit().putBoolean("heads_events", v).apply() }
+    var headsFocus: Boolean
+        get() = p.getBoolean("heads_focus", true)
+        set(v) { p.edit().putBoolean("heads_focus", v).apply() }
+    var headsStages: String?
+        get() = p.getString("heads_stages", null)
+        set(v) { p.edit().putString("heads_stages", v).apply() }
+    var headsQuiet: Boolean
+        get() = p.getBoolean("heads_quiet", true)
+        set(v) { p.edit().putBoolean("heads_quiet", v).apply() }
+    var headsNext: Long
+        get() = p.getLong("heads_next", 0)
+        set(v) { p.edit().putLong("heads_next", v).apply() }
+    /** The Focus session (its start time) that has used its one "5 more min". */
+    var headsExtendedFor: Long
+        get() = p.getLong("heads_extended_for", 0)
+        set(v) { p.edit().putLong("heads_extended_for", v).apply() }
+
     /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
     var energy: Energy
         get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())
@@ -142,12 +200,27 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         else Energy.MED
         set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
 
+    /** Energy reshuffle (energy-reshuffle-v1): actions on a 100% day, set in Settings › Tasks. */
+    var reshuffleUsual: Int
+        get() = p.getInt("reshuffle_usual", Reshuffle.USUAL)
+        set(v) { p.edit().putInt("reshuffle_usual", v.coerceIn(1, 30)).apply() }
+    /** Today's reshuffle level, once one is saved. Null on other days, so it resets each morning like [energy]. */
+    var reshuffleLevel: Reshuffle.Level?
+        get() = if (p.getString("reshuffle_day", null) == java.time.LocalDate.now().toString())
+            Reshuffle.Level.values().firstOrNull { it.name == p.getString("reshuffle_level", null) } else null
+        set(v) { p.edit().putString("reshuffle_level", v?.name).putString("reshuffle_day", java.time.LocalDate.now().toString()).apply() }
+
     /** Weather card: Morning / Afternoon / Evening strip, shown after a tap on the card. */
     var weatherStrip: Boolean
         get() = p.getBoolean("weather_strip", false)
         set(v) { p.edit().putBoolean("weather_strip", v).apply() }
 
     /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
+    /** Talk me through it: tasks hidden with "Not today", as TalkThrough keys with their until dates. */
+    var talkSnoozed: String?
+        get() = p.getString("talk_snoozed", null)
+        set(v) { p.edit().putString("talk_snoozed", v).apply() }
+
     var laterToday: Set<String>
         get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("later", null).orEmpty() else emptySet()
@@ -255,6 +328,26 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getFloat("jarvis_speed", 1f)
         set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
+    /** Sleep and steps (body-people-errands-v1): read from Health Connect, step goal, and easy day after a short night. */
+    var healthOn: Boolean
+        get() = p.getBoolean("health_on", false)
+        set(v) { p.edit().putBoolean("health_on", v).apply() }
+    var stepGoal: Int
+        get() = p.getInt("step_goal", 7000)
+        set(v) { p.edit().putInt("step_goal", v).apply() }
+    var easyAfterShort: Boolean
+        get() = p.getBoolean("easy_after_short", true)
+        set(v) { p.edit().putBoolean("easy_after_short", v).apply() }
+    /** What helps you: the month whose Deck card was closed with ✕. */
+    var helpsClosed: String?
+        get() = p.getString("helps_closed", null)
+        set(v) { p.edit().putString("helps_closed", v).apply() }
+
+    /** People: the day the birthday gift tasks were last checked. */
+    var giftsCheckedOn: String?
+        get() = p.getString("gifts_checked_on", null)
+        set(v) { p.edit().putString("gifts_checked_on", v).apply() }
+
     var phoneBrain: Boolean
         get() = p.getBoolean("phone_brain", false)
         set(v) { p.edit().putBoolean("phone_brain", v).apply() }
@@ -282,6 +375,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var brainSpend: PhoneBrain.Spend
         get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
         set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
+    /** This month's Claude spend by feature (ClaudeCap ledger). */
+    var spendByFeature: String
+        get() = p.getString("spend_by_feature", "").orEmpty()
+        set(v) { p.edit().putString("spend_by_feature", v).apply() }
+    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
+    fun spend(feature: String, usd: Double) {
+        brainSpend = brainSpend.add(usd)
+        spendByFeature = ClaudeCap.added(spendByFeature, feature, usd)
+        ClaudeCap.ownUsd = ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
+    }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }

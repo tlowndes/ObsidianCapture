@@ -14,7 +14,7 @@ android {
         applicationId = "uk.tomlowndes.capture"
         minSdk = 29
         targetSdk = 35
-        versionCode = 32
+        versionCode = 46
         versionName = providers.gradleProperty("captureVersion").get()
     }
     // The same debug key on every machine and in CI, so any build installs over any other.
@@ -46,6 +46,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.glance:glance-appwidget:1.2.0")
+    // Sleep and steps from Health Connect (body-people-errands-v1).
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    // Map for picking errand places (errand-places-v1): OpenStreetMap tiles, no API key.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")

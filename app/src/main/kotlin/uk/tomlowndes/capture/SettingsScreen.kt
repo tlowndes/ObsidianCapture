@@ -231,6 +231,8 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             { QuietRow("✅", "Habits", "›", onClick = onOpenHabits) },
             { QuietRow("🗓", "Weekly review", "›", onClick = onOpenWeekly) },
         ))
+        HealthSettings(prefs, vault)
+        InboxSettings(vault)
 
         SectionLabel("Tasks")
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
@@ -245,6 +247,20 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             Box(Modifier.padding(horizontal = 14.dp)) {
                 SettingRow("Subtasks open") {
                     Segmented(listOf("Under task", "Sheet"), if (inline) 0 else 1) { inline = it == 0; prefs.subtasksInline = inline }
+                }
+            }
+            HorizontalDivider(color = Outline)
+            // Energy reshuffle (energy-reshuffle-v1): what 100% means.
+            var usual by remember { mutableStateOf(prefs.reshuffleUsual) }
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                SettingRow("Usual day", "Actions that fit at 100% on ⚡ Reshuffle") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("−", fontSize = 20.sp, color = if (usual > 1) Primary else Outline,
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = usual > 1) { usual -= 1; prefs.reshuffleUsual = usual }.padding(horizontal = 10.dp))
+                        Text("$usual", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("+", fontSize = 20.sp, color = if (usual < 30) Primary else Outline,
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = usual < 30) { usual += 1; prefs.reshuffleUsual = usual }.padding(horizontal = 10.dp))
+                    }
                 }
             }
             HorizontalDivider(color = Outline)
@@ -317,9 +333,10 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         PillSwitch(listOf("Fast", "Clever"), if (clever) 1 else 0) { clever = it == 1; prefs.brainClever = clever }
         Text(if (clever) "Clever is for everyday chat. Sorting, research, steps and summaries stay on Fast." else "Fast is the usual model. A quiet month stays very cheap.",
             fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
-        SettingRow("This month", "Worked out on the phone from what Claude reports") {
+        SettingRow("On this phone", "Worked out from what Claude reports") {
             Text(prefs.brainSpend.label(), fontSize = 13.sp, color = Muted, fontFamily = FontFamily.Monospace)
         }
+        CapSettings(prefs, vault)
         Spacer(Modifier.height(8.dp))
         GroupLabel("Voice")
         SettingRow("Phone speech-to-text", "The phone hears you, so talking does not need the server") { AppSwitch(phSpeech) { phSpeech = it; prefs.phoneSpeech = it } }

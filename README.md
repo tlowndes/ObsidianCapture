@@ -17,7 +17,7 @@ Defaults below match a vault laid out as `01 - Inbox`, `03 - Projects` and `99 -
 | Quick tasks | `01 - Inbox/⚡ Quick Task.md` | Open tasks under `## Active`, done ones under `## Archive`. A task is `- [ ] #task …`, with optional `📅 YYYY-MM-DD`, `⏱ 15m` and `🔁 every week` (Tasks-plugin markers). |
 | Tasks in other notes | Any other note in the vault | The same `- [ ] … #task` line. Ticked in place. A task added from search goes under the note's `## Tasks`, or at the end if that heading is missing. A plain line goes at the end. |
 | Read It Later | `01 - Inbox/ReadItLater Inbox/` | One note per page, in the same shape as the Obsidian read-it-later plugin: frontmatter `status` (`unread`, `read` or `archived`) and `saved`, then `[[ReadItLater]]` and the article (or just the link if the page could not be fetched). YouTube links are saved as video notes. Archive moves the file to `ReadItLater Inbox/Archive/`. |
-| Assistant notes | `01 - Inbox/<Title>.md`, or `01 - Inbox/Capture <date>.md` | A long ramble tidied into one note (frontmatter `created`, `source: jarvis`, then the note, then your own words folded in a `> [!quote]- Transcript` callout). A short leftover line goes to `Capture <date>.md`. |
+| Assistant notes | `01 - Inbox/<Title>.md`, or `01 - Inbox/Capture <date>.md` | A long ramble tidied into one note (frontmatter `created`, `source: tower`, then the note, then your own words folded in a `> [!quote]- Transcript` callout). A short leftover line goes to `Capture <date>.md`. |
 | Projects | `03 - Projects/<Title>/<Title>.md` | Frontmatter (`type`, `status`, `created`, `area`, `tags`), a title, `## Summary`, and `## Log` linking to `<Title> - Log.md`. Log entries are newest-first `### ` headings. Photos are embedded as `![[…]]`. |
 | Photos | `99 - Meta/Assets` | JPEG, long side at most 1600 px. |
 | Habits | `99 - Meta/Habits.md` | A habit list, a water goal, and a dated log table. Edit the list in Obsidian. Created with starter habits if it is missing. |
@@ -104,6 +104,10 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 ### Screens opened from Deck or Settings
 
 - **Focus**: a countdown in a notification. Pause, then finish. Finishing writes the session to the focus log and can tick the task it was started from.
+- **Hangar** (the ⌂ on Deck, or long-press the app icon): small tools for getting out the door, so Deck itself never grows. A Right now card on top shows the one thing that needs you, and you can do it there. The tools you add are listed underneath with their status. Edit reorders or hides them, and Pin puts a tool on the home screen as its own icon. When you need to leave within half an hour, Right now shows the leave-by time first.
+- **Did I?** (in Hangar): a "Cleared to leave" pass for checks like meds, door and hob. Start checks asks one question at a time, and each yes logs the time with Undo. Log shows today's stamps. Checks live in `99 - Meta/Did I checks.md` (emoji, name, then an optional question after a ·), and each day is logged in `99 - Meta/Did I/YYYY-MM-DD.md`. There's a home-screen widget you tick from, and a Quick Settings tile that stamps one check (Door by default; tap "Quick tile" in Did I? to change it).
+- **Launch Pad** (in Hangar, or tap a `flightdeck://launch` NFC tag by the door): the leave-the-house pass for your next event today, with the leave-by time from the travel line and the weather. Tick items one at a time with the big Next button. Running late keeps only the essentials and says when you'll arrive. Your Did I? checks show on the pass too. The kit is `99 - Meta/Launch Pad kit.md`: an Always list plus When rules (`rain`, `cold`, `event <word>`, `long <hours>`) that add items for the day.
+- **Heads Up** (in Hangar): buzzes at 10, 5 and 1 minute before a leave-by time, a calendar event or the end of Focus, each with its own vibration. Pick the stages and quiet hours (21:00 to 07:00) in its settings. A Focus buzz opens a switch view with what's next, a one-line "Where I was" note (saved to `99 - Meta/Where I was.md`) and one "5 more min".
 - **Stuck? Pick one.**: Quick, Medium and Long from the stuck menu. Start runs that item as a focus timer. Add your own lines; they are written into the note.
 - **Habits**: the full water counter, streaks and this week's dots. The habit names live in the note.
 - **Weekly review**: the last seven days: tasks done, overdue tasks to move to next Monday, one long-overdue task to drop, and next week's tasks and bills. Also opened from the Sunday reminder.
@@ -135,7 +139,7 @@ Flight Deck can show your day on [Piholegotchi](https://github.com/tlowndes/piho
 
 ## Windows
 
-Compose Desktop, installed per user from an MSI (still named Vault Capture, so it upgrades the installed copy). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
+Compose Desktop, installed per user from an MSI named Flight Deck (called Vault Capture up to 1.34; the same upgrade code means it replaces the old install, and Start with Windows is moved across on first start). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
 
 The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Settings, plus a Capture button (Ctrl+N). Ctrl+R re-reads the vault.
 
@@ -176,7 +180,7 @@ Debug builds are signed with the committed `app/debug.keystore` (store and key p
 
 The unit tests cover the note formats the app reads and writes (tasks and recurrence, project notes, Read It Later, habits, jobs, sorting, the calendar, weather and the weekly review), so a change that would mangle a note fails here first.
 
-GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for pull requests, pushes to main, and version tags. Both files are uploaded as workflow artefacts and kept for 7 days (a failed test report is kept for 3 days). The APK is named `VaultCapture-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Vault Capture v1.7`, with the APK and the MSI attached (`VaultCapture-v1.7.apk` and `VaultCapture-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach. Clean up artifacts (`.github/workflows/cleanup-artifacts.yml`) deletes older artefacts every week, and can be run by hand.
+GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds a debug APK on Ubuntu, then the MSI on Windows, for pull requests, pushes to main, and version tags. Both files are uploaded as workflow artefacts and kept for 7 days (a failed test report is kept for 3 days). The APK is named `FlightDeck-<ref>-<sha>.apk`. Pushing a tag such as `v1.7` also creates a GitHub Release titled `Flight Deck v1.7`, with the APK and the MSI attached (`FlightDeck-v1.7.apk` and `FlightDeck-v1.7.msi`). If that release already exists, the files are replaced on it. Run the workflow by hand with a release tag to rebuild and re-attach. Clean up artifacts (`.github/workflows/cleanup-artifacts.yml`) deletes older artefacts every week, and can be run by hand.
 
 ## Repo layout
 

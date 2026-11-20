@@ -316,6 +316,7 @@ private fun NoteView(
         }
         Text(path.removeSuffix(".md") + " · updated " + shortDate(state.vault?.entry(path)?.modified ?: 0), fontSize = 12.sp, color = Muted,
             fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        if (remember(t) { uk.tomlowndes.capture.Recipes.isRecipe(t) }) RecipeBar(state, path, t)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             noteTags.forEach { TagChip(it, true) { tagging = true } }
             Text("＋ Tag", fontSize = 13.sp, color = Muted,

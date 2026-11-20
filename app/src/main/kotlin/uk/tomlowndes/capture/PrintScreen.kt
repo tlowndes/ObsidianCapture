@@ -75,12 +75,14 @@ private object SlipPrefs {
             it.getBoolean("weather", true), it.getBoolean("calendar", true), it.getBoolean("month", true),
             it.getBoolean("todo", true), it.getBoolean("tomorrow", true), it.getBoolean("blank", true), it.getBoolean("sudoku", true),
             it.getBoolean("tomorrowEvents", true), it.getBoolean("brief", true), it.getBoolean("dontForget", true),
+            quote = it.getBoolean("quote", true),
         )
     }
     fun save(ctx: Context, o: SlipOptions) = p(ctx).edit()
         .putBoolean("weather", o.weather).putBoolean("calendar", o.calendar).putBoolean("month", o.month)
         .putBoolean("todo", o.todo).putBoolean("tomorrow", o.tomorrow).putBoolean("blank", o.blank).putBoolean("sudoku", o.sudoku)
         .putBoolean("tomorrowEvents", o.tomorrowEvents).putBoolean("brief", o.brief).putBoolean("dontForget", o.dontForget)
+        .putBoolean("quote", o.quote)
         .apply()
 }
 
@@ -110,6 +112,7 @@ private enum class SlipMode(val label: String) { DAILY("Daily"), WEEK("Week"), B
 private data class SlipSources(
     val tasks: List<TaskItem>, val events: List<CalEvent>, val weather: WeatherSummary?, val jobs: List<Job> = emptyList(),
     val done: List<TickedTask> = emptyList(), val lists: List<String> = emptyList(),
+    val quote: Pair<String, String>? = null,
 )
 
 /**
@@ -179,13 +182,14 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             val lists = vault?.let { runCatching { VaultWriter(ctx, it).listTaskLists() }.getOrNull() }
             val tasks = lists?.open.orEmpty()
             val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
-            val events = CalendarSync.cached(ctx).filter { on == null || it.id in on }.flatMap { it.events }
+            val events = CalendarSync.cached(ctx).filter { on == null || it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }
             val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
             val jobs = vault?.let { runCatching { Jobs.list(appVault(ctx, it)) }.getOrNull() }.orEmpty()
             val listNotes = vault?.let { v ->
                 runCatching { NoteIndex.paths(appVault(ctx, v)).filter { PrintDocs.looksLikeList(it.path) }.sortedByDescending { it.modified }.take(6).map { it.path } }.getOrNull()
             }.orEmpty()
-            SlipSources(tasks, events, weather, jobs, lists?.done.orEmpty(), listNotes)
+            val quote = vault?.let { runCatching { Highlights.slipQuote(appVault(ctx, it), today) }.getOrNull() }
+            SlipSources(tasks, events, weather, jobs, lists?.done.orEmpty(), listNotes, quote)
         }
     }
     LaunchedEffect(sources, day) {
@@ -208,7 +212,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 val reply = when {
                     jarvisDemo -> null
                     api -> PhoneBrain.complete(secrets.claudeKey!!, prompt, "You are $who. UK English. Follow the request exactly.").also {
-                        prefs.brainSpend = prefs.brainSpend.add(PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
+                        prefs.spend("Printing", PhoneBrain.costUsd(PhoneBrain.FAST, it.inTok, it.outTok))
                     }.reply
                     else -> Jarvis.sendText(jarvisAddress, jarvisToken, prompt, "jarvis").reply
                 }
@@ -225,7 +229,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         slip = withContext(Dispatchers.Default) {
             runCatching {
                 val content = Slip.build(day, src.tasks, src.events, dayWeather, opts, today, src.jobs)
-                    .copy(brief = brief?.takeIf { opts.brief && briefFor == day })
+                    .copy(brief = brief?.takeIf { opts.brief && briefFor == day }, quote = src.quote?.takeIf { opts.quote })
                 SlipRender.draw(content, SLIP_OWNER)
             }.getOrNull()
         }
@@ -347,6 +351,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 SettingRow("Month grid", "This month with today marked") { AppSwitch(opts.month) { set(opts.copy(month = it)) } }
             }
             SettingRow("Don't forget", "Bills due soon and job follow-ups") { AppSwitch(opts.dontForget) { set(opts.copy(dontForget = it)) } }
+            SettingRow("From your reading", if (sources?.quote == null) "Nothing read yet to quote" else "One passage from an article you've read") { AppSwitch(opts.quote) { set(opts.copy(quote = it)) } }
             SettingRow("To-dos", if (day == today) "Overdue and due today" else "Due $dayName, plus anything still late") { AppSwitch(opts.todo) { set(opts.copy(todo = it)) } }
             if (opts.todo) {
                 SettingRow("Tomorrow's to-dos") { AppSwitch(opts.tomorrow) { set(opts.copy(tomorrow = it)) } }

@@ -327,6 +327,7 @@ private fun IdeaDetail(
     var repo by remember { mutableStateOf<Pair<String, String>?>(null) }
     val focus = remember { FocusRequester() }
     var cameraFile by remember { mutableStateOf<File?>(null) }
+    var casing by remember { mutableStateOf(false) }
 
     fun reload() {
         val uri = vault ?: return
@@ -404,12 +405,16 @@ private fun IdeaDetail(
     }
 
     val d = doc
+    if (casing) CaseStudySheet(title, vault, prefs, snack) { casing = false }
     Column(Modifier.fillMaxSize().imePadding()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹ Projects", color = Primary, fontSize = 14.sp,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(vertical = 4.dp))
                 Box(Modifier.weight(1f))
+                // Portfolio case study builder (growth-v1).
+                if (d != null && claudeKey(ctx, prefs) != null) Text("✨ Case study", color = Purple, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(CircleShape).border(1.dp, Purple.copy(alpha = 0.5f), CircleShape).clickable { casing = true }.padding(horizontal = 12.dp, vertical = 6.dp))
                 // Status, area and type for this project.
                 Box(Modifier.size(40.dp).clip(CircleShape).clickable(enabled = d != null) { sheet = true }, contentAlignment = Alignment.Center) {
                     Text("⚙", fontSize = 19.sp, color = Muted)

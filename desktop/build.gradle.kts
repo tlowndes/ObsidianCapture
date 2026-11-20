@@ -39,15 +39,17 @@ compose.desktop {
         mainClass = "uk.tomlowndes.capture.desktop.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
-            packageName = "Vault Capture"
+            // Was "Vault Capture" up to 1.34. The upgradeUuid below is what makes the MSI upgrade
+            // the old install; the name only changes the exe, install folder, shortcuts and Installed apps.
+            packageName = "Flight Deck"
             // MSI versions need three numbers.
             packageVersion = providers.gradleProperty("captureVersion").get() + ".0"
-            description = "Quick capture into an Obsidian vault"
+            description = "Flight Deck: tasks and quick capture for an Obsidian vault"
             vendor = "Tom Lowndes"
             // java.prefs for settings, java.net.http not needed; jdk.unsupported for JNA.
             modules("java.prefs", "jdk.unsupported")
             windows {
-                menuGroup = "Vault Capture"
+                menuGroup = "Flight Deck"
                 shortcut = true
                 perUserInstall = true
                 // Keep this the same forever so new versions upgrade the installed one.

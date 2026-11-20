@@ -218,9 +218,10 @@ internal fun calendarRows(
     earlierOpen: Boolean = false, onToggleEarlier: () -> Unit = {}
 ): List<@Composable () -> Unit> {
     if (sources == null) return emptyList()
-    if (sources.isEmpty()) return listOf<@Composable () -> Unit>({ QuietRow("📅", "Calendar", "Connect ›", Primary, onClick = onConnect) })
+    val hasApp = cache.any { it.id == AppEvents.CAL_ID && it.events.any { e -> e.on(LocalDate.now()) } }
+    if (sources.isEmpty() && !hasApp) return listOf<@Composable () -> Unit>({ QuietRow("📅", "Calendar", "Connect ›", Primary, onClick = onConnect) })
     val on = sources.filter { it.enabled }.map { it.id }.toSet()
-    val mine = cache.filter { it.id in on }
+    val mine = cache.filter { it.id in on || it.id == AppEvents.CAL_ID }
     val today = LocalDate.now()
     val now = LocalDateTime.now()
     val hm = DateTimeFormatter.ofPattern("HH:mm")
@@ -238,8 +239,10 @@ internal fun calendarRows(
                 val e = r.event
                 val live = e.isNow(now)
                 out.add {
+                    // Events added in the app (tower-bar-events-v1): teal ○, with the place.
+                    val mineApp = e.calendarId == AppEvents.CAL_ID
                     QuietRow(
-                        "📅", e.title, if (e.allDay) "all day" else e.start.toLocalTime().format(hm), highlight = live,
+                        if (mineApp) "○" else "📅", e.title + (if (mineApp) e.location?.let { " · 📍 $it" } ?: "" else ""), if (e.allDay) "all day" else e.start.toLocalTime().format(hm), highlight = live,
                         rightColour = if (r.past) PastFaint else if (live) Primary else Muted,
                         textColour = if (r.past) PastFaint else TextMain,
                         trailing = if (live) ({ NowBadge() }) else null

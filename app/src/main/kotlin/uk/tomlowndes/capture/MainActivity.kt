@@ -2,6 +2,7 @@ package uk.tomlowndes.capture
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -50,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -72,7 +73,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent?.action == Intent.ACTION_SEND) {
+        if (intent?.action == Intent.ACTION_SEND && sharedImage(intent)) {
+            // An image goes to Snap anything (snap-anything-v1).
+        } else if (intent?.action == Intent.ACTION_SEND && sharedJob(intent)) {
+            // A job ad goes to the Job co-pilot (job-copilot-v1).
+        } else if (intent?.action == Intent.ACTION_SEND) {
             if (!toCapture(intent)) { handleShare(intent); return }
         } else readOpenRequest(intent)
         enableEdgeToEdge(
@@ -88,7 +93,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == Intent.ACTION_SEND && sharedImage(intent)) return
+        if (intent.action == Intent.ACTION_SEND && sharedJob(intent)) return
         if (intent.action == Intent.ACTION_SEND) toCapture(intent) else readOpenRequest(intent)
+    }
+
+    /** A shared job ad (LinkedIn, Indeed…) opens Jobs with the Save job sheet, when Claude is on. */
+    private fun sharedJob(i: Intent): Boolean {
+        val url = ShareIntent.urlOf(i.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+        if (url.isBlank() || !JobCopilot.looksLikeJob(url) || claudeKey(this, prefs) == null) return false
+        JobInbox.pending = url
+        openRequest = Tab.VAULT to "jobs"
+        return true
+    }
+
+    /** A shared image opens Snap anything with it. Returns false when the share isn't an image. */
+    private fun sharedImage(i: Intent): Boolean {
+        if (i.type?.startsWith("image/") != true) return false
+        @Suppress("DEPRECATION")
+        val uri = (if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) else i.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            ?: return false
+        SnapInbox.pending = uri
+        openRequest = Tab.CAPTURE to "snap"
+        return true
     }
 
     /**
@@ -107,6 +134,24 @@ class MainActivity : ComponentActivity() {
     private fun readOpenRequest(i: Intent?) {
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
+        if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
+        // Hangar and Did I? from the app shortcuts, pinned shortcuts and the Did I? widget.
+        if (i?.getStringExtra("tab") == "HANGAR") { openRequest = Tab.DECK to "hangar"; return }
+        if (i?.getStringExtra("tab") == "DID_I") { openRequest = Tab.DECK to "didi"; return }
+        // Launch Pad and Heads Up from their buzzes and pinned shortcuts. HEADS_SWITCH opens the Focus switch view.
+        if (i?.getStringExtra("tab") == "LAUNCH_PAD") { openRequest = Tab.DECK to "launch"; return }
+        if (i?.getStringExtra("tab") == "HEADS_UP") { openRequest = Tab.DECK to "heads"; return }
+        if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
+        // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
+        if (i?.data?.scheme == "flightdeck") {
+            when (i.data?.host) {
+                "launch" -> openRequest = Tab.DECK to "launch"
+                "did" -> openRequest = Tab.DECK to "didi"
+                "hangar" -> openRequest = Tab.DECK to "hangar"
+                "heads" -> openRequest = Tab.DECK to "heads"
+            }
+            return
+        }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -132,6 +177,9 @@ class MainActivity : ComponentActivity() {
             val msg = when {
                 vault == null -> "Open Flight Deck once and pick your vault first"
                 url.isBlank() -> "Nothing to save"
+                // A recipe page (schema.org Recipe) is saved to Recipes instead (home-life-v1).
+                withContext(Dispatchers.IO) { runCatching { Recipes.fetch(url).first?.let { r -> Recipes.save(appVault(applicationContext, vault), r); r.title } }.getOrNull() } != null ->
+                    "Saved recipe to Recipes"
                 else -> withContext(Dispatchers.IO) { runCatching { ReadLater.save(applicationContext, vault, url, title) } }
                     .fold({ if (it) "Saved page to Read It Later" else "Saved link only (couldn't fetch the page)" },
                         {
@@ -147,7 +195,14 @@ class MainActivity : ComponentActivity() {
 
 private fun subFor(slot: String?) = when (slot) {
     "focus" -> Sub.FOCUS
+    "snap" -> Sub.SNAP
+    "jobs" -> Sub.JOBS
+    "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
+    "hangar" -> Sub.HANGAR
+    "didi" -> Sub.DID_I
+    "launch" -> Sub.LAUNCH_PAD
+    "heads", "heads_switch" -> Sub.HEADS_UP
     else -> null
 }
 
@@ -163,6 +218,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var sub by remember { mutableStateOf(subFor(request?.second)) }
+    /** Heads Up opened from a Focus buzz shows the switch view; from Hangar it shows its settings. */
+    var headsSwitch by remember { mutableStateOf(request?.second == "heads_switch") }
     var routineName by remember { mutableStateOf<String?>(null) }
     fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
         Focus.start(ctx, task, raw, path, minutes)
@@ -180,6 +237,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
         Reminders.scheduleAll(ctx, prefs)
+        HeadsAlarms.changed(ctx)
         val report = withContext(Dispatchers.IO) { runCatching { PhoneOutbox.retry(ctx, prefs) }.getOrNull() }
         if (report != null && report.done > 0) snack.showSnackbar(if (report.done == 1) "Saved 1 that was waiting" else "Saved ${report.done} that were waiting")
         if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn || prefs.weeklyOn) && !prefs.askedNotif) {
@@ -192,6 +250,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         request?.let {
             tab = it.first; settings = false; cards = false; search = false; openIdea = null
             sub = subFor(it.second)
+            headsSwitch = it.second == "heads_switch"
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -233,7 +292,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (sub == Sub.JOBS) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            if (!hideNav) NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -242,13 +301,32 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
             when {
+                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t ->
+                    when (t) {
+                        HangarTool.DID_I -> sub = Sub.DID_I
+                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
+                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+                        else -> {}
+                    }
+                }) { sub = null }
+                sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
-                sub == Sub.JOBS -> JobsScreen(vault, snack) { sub = null }
+                sub == Sub.JOBS -> JobsScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.SCAN -> ScanScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.SNAP -> SnapScreen(vault, prefs, snack, onScanPage = { sub = Sub.SCAN }) { sub = null }
+                sub == Sub.CHORES -> ChoresScreen(vault, snack) { sub = null }
+                sub == Sub.LEARN -> LearnScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.INBOX -> InboxScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.PEOPLE -> PeopleScreen(vault, snack) { sub = null }
+                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack) { sub = null }
+                sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
+                sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PLAN -> PlanScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
@@ -261,16 +339,17 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
                     onOpenTriage = { sub = Sub.TRIAGE },
                     onOpenGuardBackups = { settingsBackups = true; settings = true },
+                    onAddOn = { d -> CapturePreset.date = d; prefs.captureMode = 0; tab = Tab.CAPTURE },
                 )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
-                    onOpenJobs = { sub = Sub.JOBS },
+                    onOpenJobs = { sub = Sub.JOBS }, onOpenRecipes = { sub = Sub.RECIPES },
                     onOpenTasks = { tasksNote = it; tab = Tab.TASKS }, onEditing = { vaultEditing = it }
                 )
                 tab == Tab.PROJECTS -> Column(Modifier.fillMaxSize()) {

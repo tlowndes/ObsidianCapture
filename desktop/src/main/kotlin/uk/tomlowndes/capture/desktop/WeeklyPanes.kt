@@ -338,6 +338,8 @@ fun JobsPane(state: AppState) {
     var company by remember { mutableStateOf("") }
     var role by remember { mutableStateOf("") }
     var dating by remember { mutableStateOf<Job?>(null) }
+    var pasting by remember { mutableStateOf(false) }
+    var letterFor by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
     fun reload() = scope.launch { state.vault?.let { v -> jobs = state.io("Couldn't read the Job Hunt folder") { Jobs.list(v) } } }
@@ -361,8 +363,10 @@ fun JobsPane(state: AppState) {
                 }
                 H1("💼 Jobs", 28)
                 Text("${open.size} open · $thisWeek this week · ${closed.size} closed", color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp))
+                    modifier = Modifier.padding(top = 4.dp))
+                Text("This week " + uk.tomlowndes.capture.JobCopilot.weekLine(all, today), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 14.dp))
             }
+            if (hasClaude(state)) Chip("＋ Paste a job link", modifier = Modifier.padding(end = 8.dp)) { pasting = true }
             PrimaryButton("＋ Add job") { adding = !adding }
         }
         if (adding) Row(Modifier.padding(bottom = 14.dp).widthIn(max = 760.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -379,27 +383,31 @@ fun JobsPane(state: AppState) {
             listOf("Open", "Interview", "Applied").forEach { f -> Chip(f, filter == f, small = true) { filter = f } }
         }
         if (jobs == null) { Sub("Reading the Job Hunt folder…"); return@Column }
-        Panel(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+        Panel(Modifier.weight(1f)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                listOf("COMPANY" to 1.2f, "ROLE" to 2f, "STATUS" to 1.1f, "NEXT" to 1.1f, "APPLIED" to 0.7f).forEach { (h, w) ->
+                listOf("COMPANY" to 1.2f, "ROLE" to 2f, "FIT" to 0.5f, "STATUS" to 1.1f, "NEXT" to 1.1f, "APPLIED" to 0.7f, "" to 0.4f).forEach { (h, w) ->
                     Text(h, fontSize = 10.5.sp, letterSpacing = 1.2.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.weight(w))
                 }
             }
             if (shown.isEmpty()) Sub("No applications here yet.", Modifier.padding(vertical = 8.dp))
-            (shown + if (showClosed) closed else emptyList()).forEach { j -> JobRow(state, j, today, onStatus = { s -> edit { v -> Jobs.setStatus(v, j.path, s) } }, onNext = { dating = j }) }
+            (shown + if (showClosed) closed else emptyList()).forEach { j -> JobRow(state, j, today, onStatus = { s -> edit { v -> Jobs.setStatus(v, j.path, s) } }, onNext = { dating = j }, onLetter = if (hasClaude(state)) ({ letterFor = j }) else null) }
             if (closed.isNotEmpty()) Text(
                 (if (showClosed) "▾ " else "▸ ") + "${closed.size} closed", fontSize = 12.5.sp, color = Muted,
                 modifier = Modifier.padding(top = 10.dp).hand().clickable { showClosed = !showClosed }
             )
         }
+        letterFor?.let { j -> LetterPanel(state, j, Modifier.width(420.dp)) { letterFor = null } }
+        }
     }
+    if (pasting) JobSaveDialog(state) { p -> pasting = false; if (p != null) { reload(); state.say("Saved to Jobs") } }
     dating?.let { j ->
         PickDateDialog(j.next ?: today.plusDays(3), onPick = { d -> dating = null; edit { v -> Jobs.setNext(v, j.path, d) } }, onDismiss = { dating = null })
     }
 }
 
 @Composable
-private fun JobRow(state: AppState, j: Job, today: LocalDate, onStatus: (String) -> Unit, onNext: () -> Unit) {
+private fun JobRow(state: AppState, j: Job, today: LocalDate, onStatus: (String) -> Unit, onNext: () -> Unit, onLetter: (() -> Unit)? = null) {
     var menu by remember { mutableStateOf(false) }
     val (fg, bg) = when (j.status.lowercase()) {
         "interview" -> Purple to TagTint
@@ -413,6 +421,7 @@ private fun JobRow(state: AppState, j: Job, today: LocalDate, onStatus: (String)
         Row(Modifier.fillMaxWidth().hand().clickable { state.vaultNote = j.path; state.tab = Tab.VAULT }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(j.company.ifBlank { "–" }, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = TextMain, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.2f))
             Text(j.role, fontSize = 13.5.sp, color = TextMain, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
+            Text(j.fit?.toString() ?: "–", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = j.fit?.let { fitColour(it) } ?: Muted, modifier = Modifier.weight(0.5f))
             Box(Modifier.weight(1.1f)) {
                 Text("${j.status} ▾", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = fg,
                     modifier = Modifier.clip(CircleShape).background(bg).hand().clickable { menu = true }.padding(horizontal = 9.dp, vertical = 2.dp))
@@ -423,6 +432,7 @@ private fun JobRow(state: AppState, j: Job, today: LocalDate, onStatus: (String)
             Text(j.next?.format(DAY) ?: "–", fontSize = 13.sp, color = j.next.let { n -> if (n != null && !n.isAfter(today)) Amber else if (n == null) Muted else TextMain },
                 modifier = Modifier.weight(1.1f).hand().clickable(onClick = onNext))
             Text(j.applied?.format(SHORT) ?: "–", fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.weight(0.7f))
+            Box(Modifier.weight(0.4f)) { if (onLetter != null) Text("✉", fontSize = 14.sp, color = Primary, modifier = Modifier.hand().clickable(onClick = onLetter).padding(4.dp)) }
         }
     }
 }

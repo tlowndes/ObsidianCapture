@@ -68,6 +68,7 @@ object DesktopSlip {
             if (s.dontForget.isNotEmpty()) add { p.dontForget(s.dontForget) }
             if (s.show.todo) add { p.todo(s) }
             s.sudoku?.let { su -> add { p.sudoku(su) } }
+            s.quote?.let { q -> add { p.quote(q) } }
         }
         sections.forEachIndexed { i, f -> if (i > 0) p.dashed(); f() }
         p.footer(owner, now)
@@ -232,6 +233,13 @@ object DesktopSlip {
         fun tickBox(top: Float) = box(M + 3f, top + 2f, M + 1f + BOX, top + BOX, 4f)
 
         fun brief(t: String) { heading("In brief"); gap(4f); text(t, mono(BODY), spacing = 1.15f) }
+
+        /** From your reading (home-life-v1): one passage and where it's from. */
+        fun quote(q: Pair<String, String>) {
+            heading("From your reading"); gap(4f)
+            text("“${q.first}”", Font(if ("Georgia" in fonts) "Georgia" else Font.SERIF, Font.ITALIC, 1).deriveFont(BODY), spacing = 1.15f)
+            gap(4f); text("— ${q.second}", mono(SMALL))
+        }
 
         fun summary(d: Summary.Doc) {
             text(d.title, head(52f), spacing = 0.95f)

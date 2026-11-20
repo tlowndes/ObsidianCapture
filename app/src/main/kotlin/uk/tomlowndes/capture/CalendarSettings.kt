@@ -98,6 +98,13 @@ internal fun CalendarSection(vault: Uri?, startAdding: Boolean = false) {
         }
     }
 
+    // events-to-proton-v1: where the switch on New event starts.
+    val prefs = remember { AppPrefs(ctx) }
+    var toProton by remember { mutableStateOf(prefs.eventsToProton) }
+    SettingRow("Add new events to Proton", "The box emails you an invite; tap Yes in Proton Mail") {
+        AppSwitch(toProton) { toProton = it; prefs.eventsToProton = it }
+    }
+
     if (adding) AddCalendarSheet(onDismiss = { adding = false }) { s -> adding = false; save(sources + s) }
     removing?.let { s ->
         AlertDialog(
