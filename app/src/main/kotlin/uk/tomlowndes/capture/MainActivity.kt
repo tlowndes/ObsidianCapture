@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -143,6 +143,9 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "LAUNCH_PAD") { openRequest = Tab.DECK to "launch"; return }
         if (i?.getStringExtra("tab") == "HEADS_UP") { openRequest = Tab.DECK to "heads"; return }
         if (i?.getStringExtra("tab") == "NIGHT_PAD") { openRequest = Tab.DECK to "night"; return }
+        if (i?.getStringExtra("tab") == "POCKET_PASS") { openRequest = Tab.DECK to "pass"; return }
+        if (i?.getStringExtra("tab") == "LAST_SEEN") { openRequest = Tab.DECK to "seen"; return }
+        if (i?.getStringExtra("tab") == "RETURN_RADAR") { openRequest = Tab.DECK to "returns"; return }
         if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
         // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
         // flightdeck://clear/<id>: a Ticket Rail ticket read by the phone's own camera (ticket-rail-v1).
@@ -152,6 +155,7 @@ class MainActivity : ComponentActivity() {
                 "rail" -> openRequest = Tab.DECK to "rail"
                 "launch" -> openRequest = Tab.DECK to "launch"
                 "night" -> openRequest = Tab.DECK to "night"
+                "pass", "seen", "returns" -> openRequest = Tab.DECK to i.data?.host
                 "did" -> openRequest = Tab.DECK to "didi"
                 "hangar" -> openRequest = Tab.DECK to "hangar"
                 "heads" -> openRequest = Tab.DECK to "heads"
@@ -211,6 +215,9 @@ private fun subFor(slot: String?) = when (slot) {
     "heads", "heads_switch" -> Sub.HEADS_UP
     "rail" -> Sub.TICKET_RAIL
     "night" -> Sub.NIGHT_PAD
+    "pass" -> Sub.POCKET_PASS
+    "seen" -> Sub.LAST_SEEN
+    "returns" -> Sub.RETURN_RADAR
     else -> null
 }
 
@@ -316,12 +323,18 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
                         HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
                         HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
+                        HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
+                        HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
+                        HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
                         else -> {}
                     }
                 }) { sub = null }
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.NIGHT_PAD -> NightPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.POCKET_PASS -> PocketPassScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.LAST_SEEN -> LastSeenScreen(vault, snack) { sub = Sub.HANGAR }
+                sub == Sub.RETURN_RADAR -> ReturnRadarScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }

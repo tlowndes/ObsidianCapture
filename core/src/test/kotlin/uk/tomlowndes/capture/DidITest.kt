@@ -74,7 +74,7 @@ class DidITest {
         assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), t)
         assertEquals("launch,didi", Hangar.format(Hangar.move(t, 1, -1)))
         assertEquals(t, Hangar.move(t, 0, -1))
-        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.TICKET_RAIL), Hangar.available(t).toSet())
+        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.TICKET_RAIL), Hangar.available(t).toSet())
         assertEquals(HangarTool.DID_I, Hangar.available(emptyList()).first())
     }
 }

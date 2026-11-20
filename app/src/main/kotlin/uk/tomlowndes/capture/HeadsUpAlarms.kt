@@ -62,18 +62,39 @@ object HeadsAlarms {
         val prefs = AppPrefs(app)
         val am = app.getSystemService(AlarmManager::class.java) ?: return
         repeat(MAX) { i -> pending(app, i, null)?.let { am.cancel(it) } }
-        if (!prefs.headsOn) { prefs.headsNext = 0; return }
-        val plan = HeadsUp.plan(targets(app, prefs), LocalDateTime.now(), HeadsUp.parseStages(prefs.headsStages),
+        val returns = returnBuzzes(app, prefs)
+        if (!prefs.headsOn) {
+            // Return Radar's buzzes don't need Heads Up in Hangar.
+            prefs.headsNext = 0
+            schedule(app, am, returns.take(MAX))
+            return
+        }
+        val heads = HeadsUp.plan(targets(app, prefs), LocalDateTime.now(), HeadsUp.parseStages(prefs.headsStages),
             quietFrom = if (prefs.headsQuiet) java.time.LocalTime.of(21, 0) else java.time.LocalTime.MIDNIGHT,
             quietTo = if (prefs.headsQuiet) java.time.LocalTime.of(7, 0) else java.time.LocalTime.MIDNIGHT)
-            .let { p -> (p + listOfNotNull(nightNudge(app, prefs))).sortedBy { it.at } }.take(MAX)
+            .let { p -> (p + listOfNotNull(nightNudge(app, prefs))).sortedBy { it.at } }
+        schedule(app, am, (heads + returns).sortedBy { it.at }.take(MAX))
+        prefs.headsNext = heads.firstOrNull()?.at?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0
+    }
+
+    private fun schedule(app: Context, am: AlarmManager, plan: List<HeadsAlert>) {
         val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
         plan.forEachIndexed { i, a ->
             val at = a.at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val pi = pending(app, i, a) ?: return@forEachIndexed
             if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi) else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
-        prefs.headsNext = plan.firstOrNull()?.at?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0
+    }
+
+    /** Return Radar's buzzes (hangar-phase2): 09:00 three days before a return-by date, and 09:00 on the day. */
+    private fun returnBuzzes(ctx: Context, prefs: AppPrefs, now: LocalDateTime = LocalDateTime.now()): List<HeadsAlert> {
+        if (Hangar.parse(prefs.hangarTools)?.contains(HangarTool.RETURN_RADAR) != true) return emptyList()
+        val uri = prefs.vault ?: return emptyList()
+        val rs = runCatching { Returns.load(appVault(ctx, uri)) }.getOrNull() ?: return emptyList()
+        return Returns.buzzes(rs, now).map { (at, r) ->
+            val due = r.by.atTime(9, 0)
+            HeadsAlert(at, if (at.isBefore(due)) 10 else 5, HeadsTarget(HeadsTarget.Kind.RETURN, r.item, due))
+        }
     }
 
     /** The one 21:00 Night Pad buzz, when it's switched on and Night Pad is in Hangar. Soft, so it uses the 10-minute channel. */
@@ -112,7 +133,7 @@ object HeadsAlarms {
                 enableVibration(true); vibrationPattern = pattern; setSound(null, null)
             })
         }
-        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD" }
+        val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD"; HeadsTarget.Kind.RETURN -> "RETURN_RADAR" }
         val open = Intent(ctx, MainActivity::class.java).putExtra("tab", tab).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val icon = when { minutes >= 10 -> "◔"; minutes > 1 -> "◑"; else -> "●" }
