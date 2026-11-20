@@ -147,6 +147,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("update_latest", null)
         set(v) { p.edit().putString("update_latest", v).apply() }
 
+    /** Hangar's tools in order ("didi,launch"); null until Hangar is first set up. */
+    var hangarTools: String?
+        get() = p.getString("hangar_tools", null)
+        set(v) { p.edit().putString("hangar_tools", v).apply() }
+
+    /** The Did I? check the Quick Settings tile stamps; blank means the first check. */
+    var didTile: String
+        get() = p.getString("did_tile", "Door") ?: "Door"
+        set(v) { p.edit().putString("did_tile", v).apply() }
+
     /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
     var energy: Energy
         get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())

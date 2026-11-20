@@ -506,7 +506,7 @@ fun DeckScreen(
         Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot(); viewport = it.boundsInRoot() }
             .verticalScroll(scroll).padding(horizontal = 18.dp)
     ) {
-        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) })
+        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) }, onHangar = { onOpenSub(Sub.HANGAR) })
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
@@ -609,7 +609,7 @@ private fun DeckSheet(onDismiss: () -> Unit, full: Boolean = false, content: @Co
 }
 
 @Composable
-private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: () -> Unit) {
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: () -> Unit, onHangar: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
@@ -617,6 +617,8 @@ private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onP
         Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
         Row {
             // Daily Slip: today's printout for the pocket thermal printer.
+            // Hangar: the small getting-out-the-door tools. Its only entry on Deck, so Deck stays the same length.
+            IconButton(onClick = onHangar) { Text("⌂", fontSize = 21.sp, color = Amber) }
             IconButton(onClick = onPrint) { Text("🧾", fontSize = 19.sp) }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }

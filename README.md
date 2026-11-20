@@ -104,6 +104,8 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 ### Screens opened from Deck or Settings
 
 - **Focus**: a countdown in a notification. Pause, then finish. Finishing writes the session to the focus log and can tick the task it was started from.
+- **Hangar** (the ⌂ on Deck, or long-press the app icon): small tools for getting out the door, so Deck itself never grows. A Right now card on top shows the one thing that needs you, and you can do it there. The tools you add are listed underneath with their status. Edit reorders or hides them, and Pin puts a tool on the home screen as its own icon. Launch Pad and Heads Up are listed as coming next.
+- **Did I?** (in Hangar): a "Cleared to leave" pass for checks like meds, door and hob. Start checks asks one question at a time, and each yes logs the time with Undo. Log shows today's stamps. Checks live in `99 - Meta/Did I checks.md` (emoji, name, then an optional question after a ·), and each day is logged in `99 - Meta/Did I/YYYY-MM-DD.md`. There's a home-screen widget you tick from, and a Quick Settings tile that stamps one check (Door by default; tap "Quick tile" in Did I? to change it).
 - **Stuck? Pick one.**: Quick, Medium and Long from the stuck menu. Start runs that item as a focus timer. Add your own lines; they are written into the note.
 - **Habits**: the full water counter, streaks and this week's dots. The habit names live in the note.
 - **Weekly review**: the last seven days: tasks done, overdue tasks to move to next Monday, one long-overdue task to drop, and next week's tasks and bills. Also opened from the Sunday reminder.
