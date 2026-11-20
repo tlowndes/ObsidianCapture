@@ -145,7 +145,12 @@ object DidI {
 enum class HangarTool(val id: String, val title: String, val icon: String, val blurb: String, val ready: Boolean) {
     DID_I("didi", "Did I?", "✓", "Stop wondering if you locked the door", true),
     LAUNCH_PAD("launch", "Launch Pad", "↗", "A checklist when you head out", true),
-    HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", true);
+    HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", true),
+    /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
+    TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true);
+
+    /** Tools for getting out the door; the rest sit "At the desk". */
+    val out get() = this != TICKET_RAIL
 
     companion object {
         fun byId(id: String) = values().firstOrNull { it.id == id.trim() }

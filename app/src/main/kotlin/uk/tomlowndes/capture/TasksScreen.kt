@@ -764,7 +764,16 @@ fun TasksScreen(
             onSave = { text, due, rule, minutes, priority -> editing = null; save(t, text, due, rule, minutes, priority) },
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null },
-            onBreakDown = { editing = null; breaking = t }
+            onBreakDown = { editing = null; breaking = t },
+            onPrintTicket = if (Hangar.parse(prefs.hangarTools)?.contains(HangarTool.TICKET_RAIL) == true) ({
+                editing = null
+                val uri = vault
+                if (uri != null) scope.launch {
+                    val r = runCatching { TicketPrint.print(ctx, uri, listOf(t)) }
+                    reload()
+                    snack.showSnackbar(r.fold({ "Ticket printed. It's on the rail" }, { "Couldn't print: ${it.message}" }))
+                }
+            }) else null,
         )
     }
     breaking?.let { t -> BreakdownSheet(t, vault, prefs, snack, onDone = { breaking = null; reload() }) }

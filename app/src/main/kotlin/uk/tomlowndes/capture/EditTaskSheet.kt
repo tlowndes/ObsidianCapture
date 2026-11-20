@@ -46,6 +46,8 @@ internal fun EditTaskSheet(
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
     onBreakDown: (() -> Unit)? = null,
+    /** Ticket Rail: prints this task as a ticket for the rail (only when Ticket Rail is in Hangar). */
+    onPrintTicket: (() -> Unit)? = null,
 ) {
     var text by remember(t.raw) { mutableStateOf(t.text) }
     var due by remember(t.raw) { mutableStateOf(t.due) }
@@ -98,6 +100,12 @@ internal fun EditTaskSheet(
                 "🌶 Break it down", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).background(PrimaryTint)
                     .clickable(onClick = onBreakDown).padding(vertical = 10.dp)
+            )
+            if (onPrintTicket != null) Text(
+                if (TicketRail.railId(t.raw) != null) "▤ Reprint ticket ${TicketRail.code(TicketRail.railId(t.raw)!!)}" else "▤ Print ticket",
+                color = PaperInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(CircleShape).background(Paper)
+                    .clickable(onClick = onPrintTicket).padding(vertical = 10.dp)
             )
             Text(
                 "Remove task", color = Warn, fontSize = 14.sp, textAlign = TextAlign.Center,
