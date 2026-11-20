@@ -82,12 +82,15 @@ object Focus {
         save(ctx, null)
         ctx.stopService(Intent(ctx, FocusService::class.java))
         Piholegotchi.sendFocus(ctx)
+        HeadsAlarms.changed(ctx)
         return s
     }
 
     private fun kick(ctx: Context) {
         ContextCompat.startForegroundService(ctx, Intent(ctx, FocusService::class.java))
         Piholegotchi.sendFocus(ctx)
+        // Heads Up re-plans its Focus-ending buzzes whenever the timer starts, pauses or changes.
+        HeadsAlarms.changed(ctx)
     }
 }
 

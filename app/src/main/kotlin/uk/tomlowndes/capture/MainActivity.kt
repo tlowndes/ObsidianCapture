@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -138,6 +138,20 @@ class MainActivity : ComponentActivity() {
         // Hangar and Did I? from the app shortcuts, pinned shortcuts and the Did I? widget.
         if (i?.getStringExtra("tab") == "HANGAR") { openRequest = Tab.DECK to "hangar"; return }
         if (i?.getStringExtra("tab") == "DID_I") { openRequest = Tab.DECK to "didi"; return }
+        // Launch Pad and Heads Up from their buzzes and pinned shortcuts. HEADS_SWITCH opens the Focus switch view.
+        if (i?.getStringExtra("tab") == "LAUNCH_PAD") { openRequest = Tab.DECK to "launch"; return }
+        if (i?.getStringExtra("tab") == "HEADS_UP") { openRequest = Tab.DECK to "heads"; return }
+        if (i?.getStringExtra("tab") == "HEADS_SWITCH") { openRequest = Tab.DECK to "heads_switch"; return }
+        // flightdeck://launch, flightdeck://did and flightdeck://hangar, from an NFC tag by the door or a link.
+        if (i?.data?.scheme == "flightdeck") {
+            when (i.data?.host) {
+                "launch" -> openRequest = Tab.DECK to "launch"
+                "did" -> openRequest = Tab.DECK to "didi"
+                "hangar" -> openRequest = Tab.DECK to "hangar"
+                "heads" -> openRequest = Tab.DECK to "heads"
+            }
+            return
+        }
         val tab = i?.getStringExtra("tab")?.let { name -> Tab.values().firstOrNull { it.name.equals(name, true) } } ?: return
         openRequest = tab to i.getStringExtra("slot")
     }
@@ -187,6 +201,8 @@ private fun subFor(slot: String?) = when (slot) {
     "weekly" -> Sub.WEEKLY
     "hangar" -> Sub.HANGAR
     "didi" -> Sub.DID_I
+    "launch" -> Sub.LAUNCH_PAD
+    "heads", "heads_switch" -> Sub.HEADS_UP
     else -> null
 }
 
@@ -202,6 +218,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var cards by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(false) }
     var sub by remember { mutableStateOf(subFor(request?.second)) }
+    /** Heads Up opened from a Focus buzz shows the switch view; from Hangar it shows its settings. */
+    var headsSwitch by remember { mutableStateOf(request?.second == "heads_switch") }
     var routineName by remember { mutableStateOf<String?>(null) }
     fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
         Focus.start(ctx, task, raw, path, minutes)
@@ -219,6 +237,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
         Reminders.scheduleAll(ctx, prefs)
+        HeadsAlarms.changed(ctx)
         val report = withContext(Dispatchers.IO) { runCatching { PhoneOutbox.retry(ctx, prefs) }.getOrNull() }
         if (report != null && report.done > 0) snack.showSnackbar(if (report.done == 1) "Saved 1 that was waiting" else "Saved ${report.done} that were waiting")
         if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) && (prefs.morningOn || prefs.eveningOn || prefs.weeklyOn) && !prefs.askedNotif) {
@@ -231,6 +250,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         request?.let {
             tab = it.first; settings = false; cards = false; search = false; openIdea = null
             sub = subFor(it.second)
+            headsSwitch = it.second == "heads_switch"
             // From the Read widget the second part is the article's file name in the inbox.
             openArticle = if (it.first == Tab.READ) it.second?.let { f -> ReadRef(f, archived = false) } else null
             onRequestHandled()
@@ -281,8 +301,17 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
             when {
-                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t -> if (t == HangarTool.DID_I) sub = Sub.DID_I }) { sub = null }
+                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t ->
+                    when (t) {
+                        HangarTool.DID_I -> sub = Sub.DID_I
+                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
+                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+                        else -> {}
+                    }
+                }) { sub = null }
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
                 sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }

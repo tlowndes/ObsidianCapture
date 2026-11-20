@@ -157,6 +157,42 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("did_tile", "Door") ?: "Door"
         set(v) { p.edit().putString("did_tile", v).apply() }
 
+    /** Launch Pad: items ticked today (reset each morning) and the event start skipped with "Not going". */
+    var launchTicks: Set<String>
+        get() = if (p.getString("launch_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_ticks", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_ticks", v).putString("launch_day", java.time.LocalDate.now().toString()).apply() }
+    var launchSkip: String?
+        get() = p.getString("launch_skip", null)
+        set(v) { p.edit().putString("launch_skip", v).apply() }
+
+    /** Heads Up: on once added in Hangar, what buzzes, the stages ("10,5,1"), quiet hours and the next buzz. */
+    var headsOn: Boolean
+        get() = p.getBoolean("heads_on", false)
+        set(v) { p.edit().putBoolean("heads_on", v).apply() }
+    var headsLeave: Boolean
+        get() = p.getBoolean("heads_leave", true)
+        set(v) { p.edit().putBoolean("heads_leave", v).apply() }
+    var headsEvents: Boolean
+        get() = p.getBoolean("heads_events", true)
+        set(v) { p.edit().putBoolean("heads_events", v).apply() }
+    var headsFocus: Boolean
+        get() = p.getBoolean("heads_focus", true)
+        set(v) { p.edit().putBoolean("heads_focus", v).apply() }
+    var headsStages: String?
+        get() = p.getString("heads_stages", null)
+        set(v) { p.edit().putString("heads_stages", v).apply() }
+    var headsQuiet: Boolean
+        get() = p.getBoolean("heads_quiet", true)
+        set(v) { p.edit().putBoolean("heads_quiet", v).apply() }
+    var headsNext: Long
+        get() = p.getLong("heads_next", 0)
+        set(v) { p.edit().putLong("heads_next", v).apply() }
+    /** The Focus session (its start time) that has used its one "5 more min". */
+    var headsExtendedFor: Long
+        get() = p.getLong("heads_extended_for", 0)
+        set(v) { p.edit().putLong("heads_extended_for", v).apply() }
+
     /** Flight Deck energy chip. Medium unless set today, so it resets each morning. */
     var energy: Energy
         get() = if (p.getString("energy_day", null) == java.time.LocalDate.now().toString())

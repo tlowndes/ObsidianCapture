@@ -144,8 +144,8 @@ object DidI {
 /** The tools in Hangar. Only [ready] ones can be added; the rest show as coming next. */
 enum class HangarTool(val id: String, val title: String, val icon: String, val blurb: String, val ready: Boolean) {
     DID_I("didi", "Did I?", "✓", "Stop wondering if you locked the door", true),
-    LAUNCH_PAD("launch", "Launch Pad", "↗", "A checklist when you head out", false),
-    HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", false);
+    LAUNCH_PAD("launch", "Launch Pad", "↗", "A checklist when you head out", true),
+    HEADS_UP("heads", "Heads Up", "◔", "Buzzes before you need to switch", true);
 
     companion object {
         fun byId(id: String) = values().firstOrNull { it.id == id.trim() }
