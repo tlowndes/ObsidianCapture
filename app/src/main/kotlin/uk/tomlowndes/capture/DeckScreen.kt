@@ -113,7 +113,7 @@ internal data class DeckData(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeckScreen(
-    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState,
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, layoutRev: Int = 0, onEditDeck: () -> Unit = {},
     onOpenTab: (Tab) -> Unit, onOpenSub: (Sub) -> Unit, onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSearch: () -> Unit, onOpenArticle: (ReadRef) -> Unit = {}, onPlayRoutine: (String) -> Unit = {},
     onOpenSettings: () -> Unit
@@ -155,7 +155,7 @@ fun DeckScreen(
         }
     }
 
-    LaunchedEffect(vault, refresh) {
+    LaunchedEffect(vault, refresh, layoutRev) {
         val uri = vault ?: return@LaunchedEffect
         if (rewalk) { VaultScan.invalidate(); rewalk = false } // pull to refresh: walk the whole vault again
         data = withContext(Dispatchers.IO) {
@@ -488,8 +488,8 @@ fun DeckScreen(
                 }
                 val showLearn = HomeCard.LEARN !in hidden && cardsDue != null
                 val showLife = vault != null
-                if (showRoutines || showJournal || showLearn || showLife) {
-                    SectionLabel("More")
+                run {
+                    SectionLabel("More", "✎ Edit", onEditDeck)
                     val tiles = mutableListOf<@Composable RowScope.() -> Unit>()
                     if (showRoutines) tiles.add {
                         Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
@@ -502,6 +502,7 @@ fun DeckScreen(
                         if (HomeCard.PEOPLE !in hidden) tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
                         tiles.add { Tile("▤", "Ticket Rail", railOn?.let { "$it on the rail" }) { onOpenSub(Sub.TICKET_RAIL) } }
                     }
+                    tiles.add { Tile("✎", "Edit Deck", "cards · order", onClick = onEditDeck) }
                     // Three to a row; a short last row keeps the same tile width.
                     val perRow = if (tiles.size == 4) 2 else 3
                     tiles.chunked(perRow).forEachIndexed { i, chunk ->

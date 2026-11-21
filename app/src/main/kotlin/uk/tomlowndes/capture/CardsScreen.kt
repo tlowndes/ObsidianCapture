@@ -46,7 +46,7 @@ val PHONE_GONE = listOf(HomeCard.READ_LATER, HomeCard.JOBS)
 
 /** Settings › Cards on home: drag ≡ to reorder, switch cards on and off. Saved to the vault config. */
 @Composable
-fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
+fun CardsScreen(vault: Uri?, snack: SnackbarHostState, inSheet: Boolean = false, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var layout by remember { mutableStateOf<DeckLayout?>(null) }
@@ -69,8 +69,9 @@ fun CardsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
-        ScreenTitle("Cards on home") { TextButton(onClick = onBack) { Text("Close", color = Muted) } }
+    Column((if (inSheet) Modifier.fillMaxWidth() else Modifier.fillMaxSize()).padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
+        ScreenTitle(if (inSheet) "Edit Deck" else "Cards on home") { TextButton(onClick = onBack) { Text(if (inSheet) "Done" else "Close", color = Muted) } }
+        if (inSheet) Text("Hold ≡ and drag to reorder. Switch off to hide.", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(bottom = 10.dp))
         val l = layout ?: return@Column
         // Phone-only cards sit at the end of the order and aren't listed, so drag indices still match.
         val lastShown = l.order.count { it !in PHONE_GONE } - 1
