@@ -523,7 +523,7 @@ fun DeckScreen(
     ) {
         DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings,
             // The Daily Slip button only once a printer is paired (care-welcome-v1); Settings › Printer pairs one.
-            onPrint = if (remember { SlipPrinter.saved(ctx) != null }) ({ onOpenSub(Sub.PRINT) }) else null, onHangar = { onOpenSub(Sub.HANGAR) })
+            onPrint = if (remember { SlipPrinter.saved(ctx) != null }) ({ onOpenSub(Sub.PRINT) }) else null)
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
@@ -642,7 +642,7 @@ private fun DeckSheet(onDismiss: () -> Unit, full: Boolean = false, content: @Co
 }
 
 @Composable
-private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: (() -> Unit)?, onHangar: () -> Unit) {
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: (() -> Unit)?) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
@@ -650,9 +650,8 @@ private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onP
         Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, maxLines = 2, modifier = Modifier.weight(1f).semantics { heading() })
         Row {
             // Daily Slip: today's printout for the pocket thermal printer.
-            // Hangar: the small getting-out-the-door tools. Its only entry on Deck, so Deck stays the same length.
+            // Hangar moved to the dock above the bottom bar (hangar-dock-v1).
             // Spoken labels for the emoji buttons (care-welcome-v1).
-            IconButton(onClick = onHangar, modifier = Modifier.semantics { contentDescription = "Hangar" }) { Text("⌂", fontSize = 21.sp, color = Amber, modifier = Modifier.clearAndSetSemantics { }) }
             if (onPrint != null) IconButton(onClick = onPrint, modifier = Modifier.semantics { contentDescription = "Daily Slip" }) { Text("🧾", fontSize = 19.sp, modifier = Modifier.clearAndSetSemantics { }) }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }

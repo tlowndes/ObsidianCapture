@@ -100,7 +100,7 @@ private fun dayNudge(d: DayStatus?, list: List<HangarTool>): DayNudge? {
 }
 
 /**
- * Hangar (hangar-phase1): the hub behind the one Hangar icon on Deck. The most urgent action sits on top, so
+ * Hangar (hangar-phase1): the hub behind the Hangar dock (hangar-dock-v1). The most urgent action sits on top, so
  * it can be done without opening a tool; the tools you've added are listed underneath with their live status.
  */
 @Composable
