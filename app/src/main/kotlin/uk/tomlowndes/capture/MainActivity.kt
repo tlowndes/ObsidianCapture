@@ -28,6 +28,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -290,6 +294,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     // Hangar opens as a pull-up sheet (hangar-menu-v1) from the dock (hangar-dock-v1). Anything that asks for
     // Sub.HANGAR (a tool's back arrow, the app shortcut) lands on the Deck with the sheet open.
     var hangarOpen by remember { mutableStateOf(false) }
+    // Edit Deck sheet from the Deck's More row (bottom-dock-v1 A); deckRev makes the Deck re-read its layout after.
+    var editDeck by remember { mutableStateOf(false) }
+    var addTiles by remember { mutableStateOf(false) }
+    var deckRev by remember { mutableIntStateOf(0) }
     LaunchedEffect(sub) {
         if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
     }
@@ -410,15 +418,11 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            // The dock shows on the main tabs only, and hides while typing.
-            val showDock = !hideNav && sub == null && !settings && !search && !cards &&
-                tab in Tab.NAV && !WindowInsets.isImeVisible
-            if (!hideNav) Column {
-            if (showDock) HangarDock(dockTools, dockDots, onOpen = { openTool(it) }) { hangarOpen = true }
-            NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            // One bar (bottom-dock-v1 A): Deck, Capture, Tasks, Vault and Hangar, with a badge for what needs you.
+            if (!hideNav) NavBar(if (hangarOpen) null else if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab,
+                hangarOpen = hangarOpen, needs = dockDots.size, onHangar = { hangarOpen = true }) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
-            }
             }
         }
     ) { pad ->
@@ -461,7 +465,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY }, onOpenPrint = { settings = false; sub = Sub.PRINT })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
-                    vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
+                    vault, prefs, snack, deckRev, onEditDeck = { editDeck = true }, onAddTile = { addTiles = true }, onOpenTool = { openTool(it) }, onOpenTab = { tab = it }, onOpenSub = { sub = it },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
@@ -492,6 +496,17 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 }
             }
         }
+        if (addTiles) {
+            ModalBottomSheet(onDismissRequest = { addTiles = false; deckRev++ }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                AddTilesSheet(prefs) { addTiles = false; deckRev++ }
+            }
+        }
+        if (editDeck) {
+            ModalBottomSheet(onDismissRequest = { editDeck = false; deckRev++ }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Surface2,
+                scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                CardsScreen(vault, snack, inSheet = true) { editDeck = false; deckRev++ }
+            }
+        }
         if (hangarOpen) {
             val hangarSheet = rememberModalBottomSheetState()
             // Opens halfway; drag up for the full list. A darker scrim so the screen behind doesn't show through.
@@ -504,7 +519,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
 }
 
 @Composable
-private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
+private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: () -> Unit, onSelect: (Tab) -> Unit) {
     Column(Modifier.fillMaxWidth().background(NavBg)) {
         HorizontalDivider(color = Outline)
         Row(
@@ -519,6 +534,18 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
                     }
                     Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
                 }
+            }
+            Column(Modifier.clickable(onClick = onHangar).padding(horizontal = 2.dp).semantics { contentDescription = "Hangar" + if (needs > 0) ", $needs need you" else "" },
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Box {
+                    Box(Modifier.clip(CircleShape).background(if (hangarOpen) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
+                        Text("⌂", fontSize = 18.sp, color = if (hangarOpen) Primary else Muted)
+                    }
+                    if (needs > 0) Box(Modifier.align(Alignment.TopEnd).size(16.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
+                        Text("$needs", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A12))
+                    }
+                }
+                Text("Hangar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (hangarOpen) Primary else Muted)
             }
         }
     }
