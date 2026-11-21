@@ -6,11 +6,14 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** One Did I? check: `- 🔥 Hob · Is the hob off?`. The question is optional. */
-data class DidCheck(val emoji: String, val name: String, val question: String = "$name done?")
+/**
+ * One Did I? check: `- 🔥 Hob · Is the hob off?`. The question is optional. A check linked to the house (Home Did I?)
+ * ends with its Home Assistant test: `- 🔥 Hob · Is the hob off? · ha sensor.hob_plug_power < 5`.
+ */
+data class DidCheck(val emoji: String, val name: String, val question: String = "$name done?", val link: HaLink? = null)
 
-/** One tap in the day's log: `- 08:12 · Door`. */
-data class DidStamp(val time: LocalTime, val name: String)
+/** One tap in the day's log: `- 08:12 · Door`, or `- 08:39 · Door · auto` when Home Assistant answered it. */
+data class DidStamp(val time: LocalTime, val name: String, val auto: Boolean = false)
 
 /** A check with the time it was last stamped today, or null when it hasn't been yet. */
 data class DidStatus(val check: DidCheck, val at: LocalTime?)
@@ -45,7 +48,11 @@ object DidI {
     // ---- checks ----
 
     fun checks(text: String): List<DidCheck> = text.split("\n").mapNotNull { line ->
-        val body = CHECK_LINE.matchEntire(line)?.groupValues?.get(1) ?: return@mapNotNull null
+        val whole = CHECK_LINE.matchEntire(line)?.groupValues?.get(1) ?: return@mapNotNull null
+        // A Home Did I? link is the last part, starting "ha ".
+        val parts = whole.split("·").map { it.trim() }
+        val link = parts.drop(1).lastOrNull()?.let { HaLink.parse(it) }
+        val body = (if (link != null) parts.dropLast(1) else parts).joinToString(" · ")
         val main = body.substringBefore("·").trim()
         val question = body.substringAfter("·", "").trim()
         val first = main.substringBefore(" ")
@@ -53,11 +60,12 @@ object DidI {
         val hasEmoji = first.isNotEmpty() && !first.first().isLetterOrDigit() && main.contains(" ")
         val emoji = if (hasEmoji) first else "✓"
         val name = (if (hasEmoji) main.substringAfter(" ") else main).trim()
-        if (name.isEmpty()) null else if (question.isEmpty()) DidCheck(emoji, name) else DidCheck(emoji, name, question)
+        if (name.isEmpty()) null else if (question.isEmpty()) DidCheck(emoji, name, link = link) else DidCheck(emoji, name, question, link)
     }.distinctBy { it.name.lowercase(Locale.UK) }
 
     fun checkLine(c: DidCheck): String =
-        if (c.question == "${c.name} done?") "- ${c.emoji} ${c.name}" else "- ${c.emoji} ${c.name} · ${c.question}"
+        (if (c.question == "${c.name} done?") "- ${c.emoji} ${c.name}" else "- ${c.emoji} ${c.name} · ${c.question}") +
+            (c.link?.let { " · " + it.format() } ?: "")
 
     /** Adds [c] after the last check line, or at the end. Does nothing if a check with that name is there. */
     fun addCheck(lines: MutableList<String>, c: DidCheck) {
@@ -72,12 +80,16 @@ object DidI {
 
     fun header(d: LocalDate) = "# Did I? · ${d.format(DAY)}\n\n"
 
-    fun stampLine(s: DidStamp) = "- ${s.time.format(HM)} · ${s.name}"
+    fun stampLine(s: DidStamp) = "- ${s.time.format(HM)} · ${s.name}" + if (s.auto) " · $AUTO" else ""
+
+    private const val AUTO = "auto"
 
     fun stamps(text: String): List<DidStamp> = text.split("\n").mapNotNull { line ->
         val m = STAMP_LINE.matchEntire(line) ?: return@mapNotNull null
         val t = runCatching { LocalTime.parse(m.groupValues[1]) }.getOrNull() ?: return@mapNotNull null
-        DidStamp(t, m.groupValues[2])
+        val name = m.groupValues[2]
+        val auto = name.endsWith(" · $AUTO") || name.endsWith("·$AUTO")
+        DidStamp(t, if (auto) name.substringBeforeLast("·").trim() else name, auto)
     }
 
     fun addStamp(lines: MutableList<String>, s: DidStamp) {
@@ -139,6 +151,34 @@ object DidI {
     }
 
     fun saveCheck(v: Vault, c: DidCheck) { ensure(v); VaultIo.edit(v, CHECKS) { addCheck(it, c) } }
+
+    /** Sets (or with null, clears) the Home Did I? link on the check called [name], keeping the rest of its line. */
+    fun setLink(lines: MutableList<String>, name: String, link: HaLink?): Boolean {
+        val i = lines.indexOfFirst { l -> CHECK_LINE.matches(l) && checks(l).firstOrNull()?.name?.equals(name, ignoreCase = true) == true }
+        if (i < 0) return false
+        val c = checks(lines[i]).first()
+        lines[i] = checkLine(c.copy(link = link))
+        return true
+    }
+
+    fun saveLink(v: Vault, name: String, link: HaLink?) { ensure(v); VaultIo.edit(v, CHECKS) { setLink(it, name, link) } }
+
+    /** Logs [s] as it is (an auto stamp keeps its own time). Makes the day's note if it isn't there yet. */
+    fun stampAt(v: Vault, d: LocalDate, s: DidStamp) {
+        val path = logPath(d)
+        if (v.entry(path) == null) {
+            v.mkdirs(LOG_DIR)
+            VaultIo.write(v, v.create(LOG_DIR, d.toString(), "md"), header(d))
+        }
+        VaultIo.edit(v, path) { lines -> addStamp(lines, s); sortStamps(lines) }
+    }
+
+    /** Keeps the day's stamp lines in time order (an auto stamp can land after a later tap). */
+    private fun sortStamps(lines: MutableList<String>) {
+        val idx = lines.indices.filter { STAMP_LINE.matches(lines[it]) }
+        val sorted = idx.map { lines[it] }.sortedBy { it.trim().removePrefix("- ").take(5) }
+        idx.forEachIndexed { k, i -> lines[i] = sorted[k] }
+    }
 }
 
 /** The tools in Hangar. Only [ready] ones can be added; the rest show as coming next. */

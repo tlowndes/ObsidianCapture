@@ -325,6 +325,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("piholegotchi_address", "").orEmpty()
         set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
 
+    /** Home Did I? (hangar-phase4): the HA person or tracker that says you've left home, e.g. `person.tom`. */
+    var haPerson: String
+        get() = p.getString("ha_person", "").orEmpty()
+        set(v) { p.edit().putString("ha_person", v.trim()).apply() }
+
+    /** Home Did I? left-home buzzes already sent (leave time plus check), so each one buzzes once. */
+    var homeAlerted: Set<String>
+        get() = p.getStringSet("home_alerted", null).orEmpty()
+        set(v) { p.edit().putStringSet("home_alerted", v.toList().takeLast(30).toSet()).apply() }
+
     /** Home Assistant for Sensory Dial: `homeassistant.local:8123` or an https address. The token is in [SecretStore]. */
     var haAddress: String
         get() = p.getString("ha_address", "").orEmpty()

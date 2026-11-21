@@ -111,6 +111,13 @@ internal object SensoryHa {
         return Sensory.save(v, Sensory.history(body))
     }
 
+    /** Every entity's state, for Home Did I? (hangar-phase4). */
+    fun states(s: Setup): Map<String, HaState> {
+        val (code, body) = call(s, "GET", HomeDidI.STATES_PATH, null)
+        if (code !in 200..299) error(why(code))
+        return HomeDidI.states(body)
+    }
+
     /** For setup: "Connected · Normal" or why not. */
     fun test(s: Setup): String = runCatching {
         "Connected · " + (level(s)?.option ?: "level unknown")

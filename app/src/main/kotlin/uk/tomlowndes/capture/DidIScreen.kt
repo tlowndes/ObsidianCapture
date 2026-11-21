@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -78,6 +79,9 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
     var skipped by remember { mutableStateOf(setOf<String>()) }
     var adding by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    /** Home Did I? (hangar-phase4): what the house says, when checks are linked to it. */
+    var live by remember { mutableStateOf<Map<String, HaState>?>(null) }
+    var linking by remember { mutableStateOf(false) }
     val today = LocalDate.now()
 
     LaunchedEffect(vault, reload) {
@@ -85,6 +89,15 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
         withContext(Dispatchers.IO) {
             runCatching { val v = appVault(ctx, uri); DidI.today(v, today) to DidI.loadStamps(v, today) }
         }.onSuccess { status = it.first; stamps = it.second }.onFailure { snack.showSnackbar("Couldn't read Did I?: ${it.message}") }
+    }
+    // Ask the house about linked checks; anything that came true today is logged as an auto stamp.
+    LaunchedEffect(vault, reload, status.count { it.check.link != null }) {
+        val uri = vault ?: return@LaunchedEffect
+        if (status.none { it.check.link != null }) return@LaunchedEffect
+        HomeHouse.keep(ctx, true)
+        val r = withContext(Dispatchers.IO) { runCatching { HomeHouse.check(ctx, appVault(ctx, uri), alert = false) } }
+        r.onFailure { snack.showSnackbar(it.message ?: "Can't reach Home Assistant") }
+        r.getOrNull()?.let { l -> live = l.states; if (l.added.isNotEmpty()) reload++ }
     }
     BackHandler { if (mode != DidMode.PASS) mode = DidMode.PASS else onBack() }
 
@@ -127,7 +140,7 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
             }
             mode == DidMode.LOG -> Log(stamps)
             else -> {
-                Pass(today, status) { yes(it) }
+                Pass(today, status, live) { yes(it) }
                 val left = status.count { it.at == null }
                 Spacer(Modifier.height(14.dp))
                 if (left > 0) BigButton("Start checks · $left left", Green) { skipped = emptySet(); mode = DidMode.FLOW }
@@ -143,11 +156,24 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
                         }.padding(vertical = 8.dp))
                     }
                 }
-                Text("Checks live in ${DidI.CHECKS}, and each day's log in ${DidI.LOG_DIR}.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+                Text("🏠 Link to the house", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable {
+                    if (SensoryHa.setup(ctx) == null) scope.launch { snack.showSnackbar("Connect Home Assistant in Sensory Dial first") } else linking = true
+                }.padding(vertical = 8.dp))
+                Text("Checks live in ${DidI.CHECKS}, and each day's log in ${DidI.LOG_DIR}. Linked checks are answered by Home Assistant and logged as auto.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
             }
         }
     }
 
+    if (linking) LinkDialog(status.map { it.check }, prefs, onDismiss = { linking = false }) { name, link ->
+        val uri = vault ?: return@LinkDialog
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { DidI.saveLink(appVault(ctx, uri), name, link) } }
+                .onSuccess { snack.showSnackbar(if (link == null) "$name unlinked" else "$name answered by ${link.entity}") }
+                .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            reload++
+        }
+    }
     if (adding) AddCheckDialog(onDismiss = { adding = false }) { c ->
         adding = false
         val uri = vault ?: return@AddCheckDialog
@@ -161,7 +187,7 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
 
 /** The boarding pass: each check with its stamp time, or a dash. Tapping an open line stamps it. */
 @Composable
-private fun Pass(today: LocalDate, status: List<DidStatus>, onStamp: (DidCheck) -> Unit) {
+private fun Pass(today: LocalDate, status: List<DidStatus>, live: Map<String, HaState>?, onStamp: (DidCheck) -> Unit) {
     val cleared = status.isNotEmpty() && status.all { it.at != null }
     Column(
         Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(18.dp)).background(TextMain)
@@ -176,14 +202,21 @@ private fun Pass(today: LocalDate, status: List<DidStatus>, onStamp: (DidCheck) 
         if (status.isEmpty()) Text("No checks yet. Add one below.", color = PassInk, fontSize = 13.sp)
         status.forEach { s ->
             val done = s.at != null
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(enabled = !done) { onStamp(s.check) }.padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("${s.check.emoji}  ${s.check.name.uppercase(Locale.UK)}", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontSize = 14.sp,
-                    fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                Text(if (done) "${s.at!!.format(HM)} ✓" else "— tap", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            val link = s.check.link
+            val st = link?.let { live?.get(it.entity) }
+            val house = link?.let { HomeDidI.answer(it, st) }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(enabled = !done) { onStamp(s.check) }.padding(vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${s.check.emoji}  ${s.check.name.uppercase(Locale.UK)}", color = PassInk.copy(alpha = if (done || house == true) 1f else 0.5f), fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                    Text(when { done -> "${s.at!!.format(HM)} ✓"; house == true -> "house ✓"; else -> "— tap" },
+                        color = PassInk.copy(alpha = if (done || house == true) 1f else 0.5f), fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+                // The house's live answer under a linked check: "🏠 Locked", "🏠 1400 W · not done".
+                if (link != null) Text("🏠 " + (if (live == null) "asking the house…" else HomeDidI.words(st) + if (house == false) " · not done" else ""),
+                    color = if (house == false) Color(0xFFB3261E) else PassInk.copy(alpha = 0.6f), fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(start = 26.dp))
             }
         }
         Rule()
@@ -262,3 +295,96 @@ private fun AddCheckDialog(onDismiss: () -> Unit, onAdd: (DidCheck) -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Muted) } }
     )
 }
+
+/** Home Did I? setup: link each check to a Home Assistant entity and what "done" means, and say who's home. */
+@Composable
+private fun LinkDialog(checks: List<DidCheck>, prefs: AppPrefs, onDismiss: () -> Unit, onSave: (String, HaLink?) -> Unit) {
+    val ctx = LocalContext.current
+    var states by remember { mutableStateOf<Map<String, HaState>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var check by remember { mutableStateOf<DidCheck?>(null) }
+    var query by remember { mutableStateOf("") }
+    var entity by remember { mutableStateOf<HaState?>(null) }
+    var op by remember { mutableStateOf(HaLink.Op.EQ) }
+    var value by remember { mutableStateOf("") }
+    var person by remember { mutableStateOf(prefs.haPerson) }
+    LaunchedEffect(Unit) {
+        val s = SensoryHa.setup(ctx) ?: run { error = "Connect Home Assistant in Sensory Dial first"; return@LaunchedEffect }
+        withContext(Dispatchers.IO) { runCatching { SensoryHa.states(s) } }.onSuccess { states = it }.onFailure { error = it.message ?: "Can't reach Home Assistant" }
+    }
+    fun pickCheck(c: DidCheck) {
+        check = c; query = ""
+        entity = c.link?.let { l -> states?.get(l.entity) ?: HaState(l.entity, "") }
+        op = c.link?.op ?: HaLink.Op.EQ; value = c.link?.value.orEmpty()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface1,
+        title = { Text(check?.let { "${it.emoji} ${it.name}" } ?: "Link to the house") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val all = states
+                val c = check
+                when {
+                    error != null -> Text(error!!, color = Muted, fontSize = 13.sp)
+                    all == null -> Text("Asking Home Assistant…", color = Muted, fontSize = 13.sp)
+                    c == null -> {
+                        Text("Pick a check to link.", color = Muted, fontSize = 13.sp)
+                        checks.forEach { k ->
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2).clickable { pickCheck(k) }.padding(12.dp)) {
+                                Text("${k.emoji} ${k.name}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text(k.link?.entity ?: "not linked", color = Muted, fontSize = 12.sp, maxLines = 1)
+                            }
+                        }
+                        val people = HomeDidI.people(all)
+                        if (people.isNotEmpty()) {
+                            Text("You've left home when this isn't \"home\"", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                            FlowRowChips(people.map { it.entity }, person) { person = if (person == it) "" else it; prefs.haPerson = person }
+                        }
+                    }
+                    entity == null -> {
+                        OutlinedTextField(query, { query = it }, singleLine = true, colors = fieldColors(), placeholder = { Text("Search, e.g. door or hob") })
+                        HomeDidI.linkable(all, query).take(30).forEach { e ->
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
+                                .clickable { entity = e; HomeDidI.suggest(e).let { s -> op = s.op; value = s.value } }.padding(10.dp)) {
+                                Text(e.name ?: e.entity, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("${e.entity} · ${HomeDidI.words(e)}", color = Muted, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    else -> {
+                        val e = entity!!
+                        Text(e.name ?: e.entity, fontWeight = FontWeight.SemiBold)
+                        Text("${e.entity} · now ${HomeDidI.words(states?.get(e.entity))}", color = Muted, fontSize = 12.sp)
+                        Text("Done when it", color = Muted, fontSize = 12.sp)
+                        FlowRowChips(HaLink.Op.values().map { it.words }, op.words) { w -> op = HaLink.Op.values().first { it.words == w } }
+                        OutlinedTextField(value, { value = it.replace("·", "") }, singleLine = true, colors = fieldColors(), placeholder = { Text("locked, off, 5…") })
+                        val test = HaLink(e.entity, op, value.trim())
+                        HomeDidI.answer(test, states?.get(e.entity))?.let { Text(if (it) "Right now: done ✓" else "Right now: not done", color = if (it) Green else Amber, fontSize = 13.sp) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val c = check
+            val e = entity
+            if (c != null && e != null) TextButton(enabled = value.isNotBlank(), onClick = { onSave(c.name, HaLink(e.entity, op, value.trim())); onDismiss() }) { Text("Link", color = Primary) }
+            else TextButton(onClick = onDismiss) { Text("Done", color = Primary) }
+        },
+        dismissButton = {
+            val c = check
+            when {
+                c != null && entity != null -> TextButton(onClick = { entity = null }) { Text("Back", color = Muted) }
+                c != null && c.link != null -> TextButton(onClick = { onSave(c.name, null); onDismiss() }) { Text("Unlink", color = Coral) }
+                c != null -> TextButton(onClick = { check = null }) { Text("Back", color = Muted) }
+                else -> {}
+            }
+        }
+    )
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRowChips(options: List<String>, selected: String, onPick: (String) -> Unit) =
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEach { o -> AppChip(o == selected, { onPick(o) }, { Text(o) }) }
+    }

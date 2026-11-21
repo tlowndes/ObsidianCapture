@@ -124,6 +124,8 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
         if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
         // Cool-off checks prices in the background, and its and Refill's buzzes are planned with Heads Up's.
         CoolPrices.keep(ctx, HangarTool.COOL_OFF in t)
+        // Home Did I? asks the house every 15 minutes while Did I? is in Hangar (it stops early when nothing's linked).
+        HomeHouse.keep(ctx, HangarTool.DID_I in t)
         SensorySync.keep(ctx, HangarTool.SENSORY in t && SensoryHa.setup(ctx) != null)
         HeadsAlarms.changed(ctx)
     }

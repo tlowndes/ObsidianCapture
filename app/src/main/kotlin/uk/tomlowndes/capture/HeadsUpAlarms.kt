@@ -156,7 +156,7 @@ object HeadsAlarms {
             })
         }
         val tab = when (kind) { HeadsTarget.Kind.LEAVE -> "LAUNCH_PAD"; HeadsTarget.Kind.FOCUS -> "HEADS_SWITCH"; HeadsTarget.Kind.EVENT -> "DECK"; HeadsTarget.Kind.NIGHT -> "NIGHT_PAD"; HeadsTarget.Kind.RETURN -> "RETURN_RADAR"
-            HeadsTarget.Kind.COOL, HeadsTarget.Kind.PRICE -> "COOL_OFF"; HeadsTarget.Kind.REFILL -> "REFILL" }
+            HeadsTarget.Kind.COOL, HeadsTarget.Kind.PRICE -> "COOL_OFF"; HeadsTarget.Kind.REFILL -> "REFILL"; HeadsTarget.Kind.HOME -> "DID_I" }
         val open = Intent(ctx, MainActivity::class.java).putExtra("tab", tab).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val icon = when { minutes >= 10 -> "◔"; minutes > 1 -> "◑"; else -> "●" }
