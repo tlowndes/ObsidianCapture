@@ -92,8 +92,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         // Quiet the day (quiet-day-v1): once per phone, then the reminders and Heads Up are planned again.
-        if (!prefs.quietDayDone) {
+        if (!prefs.quietDayDone || !prefs.eveningWeekDone) {
             prefs.quietDayOnce()
+            prefs.eveningWeekOnce()
             Reminders.scheduleAll(applicationContext, prefs)
             Thread { runCatching { HeadsAlarms.reschedule(applicationContext) } }.start()
         }
@@ -383,7 +384,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
-                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
+                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack, prefs, onMigrate = { sub = Sub.MIGRATE }) { sub = null }
                 sub == Sub.JOBS -> JobsScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }

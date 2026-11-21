@@ -606,7 +606,7 @@ fun TasksScreen(
                 val g = s.group
                 item(key = "h-${s.key}") {
                     GroupHead(s.title, s.items.size.toString(), red = g == TaskGroup.OVERDUE, flag = s.priority,
-                        action = if (g == TaskGroup.OVERDUE && triage > 0) "⚡ Triage ›" else null, onAction = onOpenTriage)
+                        action = null, onAction = onOpenTriage) // Triage folded into Shut down (evening-week-v1)
                 }
                 val items = s.items
                 item(key = "c-${s.key}") {

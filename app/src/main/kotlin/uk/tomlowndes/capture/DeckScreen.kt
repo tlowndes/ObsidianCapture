@@ -321,19 +321,21 @@ fun DeckScreen(
             val left = DayPlan.leftToday(data.tasks, today).size
             if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today.toString() && !data.dayDone.planned(today))
                 add(NowItem.Line("☀️ Plan today · pick up to ${DayPlan.PICK_MAX}", "Plan ›") { onOpenSub(Sub.PLAN) })
-            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
-                add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
+            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && (left > 0 || !journalDone)) {
+                // One evening line (evening-week-v1): Shut down walks through what's left, the check-in and Night Pad.
+                val what = listOfNotNull(if (left > 0) "$left left" else null, if (!journalDone) "check in" else null).joinToString(", then ")
+                add(NowItem.Line("🌙 Shut down · $what", "Start ›") { onOpenSub(Sub.PLAN) })
+            }
         }
-        val checkIn = HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone && journalSkipped != today.toString()
+        // With Plan · Shut down on, the check-in and mood are steps in Shut down, not lines of their own.
+        val shutDownOn = HomeCard.PLAN !in hidden
+        val checkIn = !shutDownOn && HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone && journalSkipped != today.toString()
         if (checkIn) add(NowItem.Line("📓 Evening check-in · 1 min", "Write ›", onDismiss = {
             journalSkipped = today.toString(); prefs.journalSkippedOn = journalSkipped
         }) { journalOpen = true })
         // The check-in asks for mood too, so the mood faces wait until it's done.
-        else if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
-        if (Migrate.due(data.tasks, today, prefs.migratedMonth)) {
-            val n = Migrate.candidates(data.tasks, today).size
-            add(NowItem.Line("Migrate · $n from last month", "Start ›") { onOpenSub(Sub.MIGRATE) })
-        }
+        else if (!shutDownOn && HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
+        // Monthly Migrate now sits in the weekly review (evening-week-v1).
     }
 
     var earlierOpen by remember { mutableStateOf(prefs.earlierOpenOn == LocalDate.now().toString()) }
