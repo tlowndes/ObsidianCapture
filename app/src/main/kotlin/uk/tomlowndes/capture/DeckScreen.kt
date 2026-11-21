@@ -210,6 +210,12 @@ fun DeckScreen(
         val uri = vault ?: return@LaunchedEffect
         journalDone = withContext(Dispatchers.IO) { runCatching { Journal.written(appVault(ctx, uri), LocalDate.now()) }.getOrDefault(false) }
     }
+    // A quieter Deck? (quiet-day-v1): asked once, on any device, while a quiet card is still on.
+    var quietAsk by remember { mutableStateOf(false) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        quietAsk = withContext(Dispatchers.IO) { runCatching { DeckConfig.loadShouldAskQuiet(appVault(ctx, uri)) }.getOrDefault(false) }
+    }
     val nowDt = java.time.LocalDateTime.now()
 
     // Stage 1 (home-life-v1): chores that decay, and one passage from your reading.
@@ -590,6 +596,19 @@ fun DeckScreen(
         DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
     }
     if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
+    if (quietAsk && data.layout.loudCards.isNotEmpty()) {
+        fun answer(l: DeckLayout) {
+            quietAsk = false
+            data = data.copy(layout = l)
+            val uri = vault ?: return
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { DeckConfig.saveQuiet(appVault(ctx, uri), l) } }
+                    .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            }
+        }
+        QuietDeckSheet(data.layout.loudCards, onQuiet = { keep -> answer(data.layout.quieted(keep)) },
+            onKeep = { answer(data.layout) }, onLater = { quietAsk = false })
+    }
     if (journalOpen) DeckSheet({ journalOpen = false }, full = true) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
         val events = cal.filter { it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }.count { it.on(LocalDate.now()) }

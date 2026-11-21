@@ -70,15 +70,19 @@ object Reminders {
     fun canNotify(ctx: Context) =
         Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** [dueToday] is only used for the due alert; it's skipped when nothing is due. */
-    internal fun notify(ctx: Context, slot: Slot, dueToday: Int = 0) {
+    /**
+     * [dueToday] is used for the due alert (skipped when nothing is due) and, since quiet-day-v1, folded into the
+     * morning nudge with [firstEvent], so one morning ping says it all. The evening nudge opens Shut down.
+     */
+    internal fun notify(ctx: Context, slot: Slot, dueToday: Int = 0, firstEvent: String? = null) {
         if (!canNotify(ctx)) return
         if (slot == Slot.DUE && dueToday == 0) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_DEFAULT))
         val target = when (slot) {
             Slot.MORNING -> Tab.DECK.name
-            Slot.EVENING, Slot.DUE -> Tab.TASKS.name
+            Slot.EVENING -> "PLAN"
+            Slot.DUE -> Tab.TASKS.name
             Slot.WEEKLY -> "WEEKLY"
         }
         val open = Intent(ctx, MainActivity::class.java)
@@ -87,8 +91,9 @@ object Reminders {
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val snooze = Intent(ctx, SnoozeReceiver::class.java).putExtra("slot", slot.name)
         val (title, text) = when (slot) {
-            Slot.MORNING -> "☀ Flight Deck" to "Today's plan is ready."
-            Slot.EVENING -> "🌙 Evening wrap-up" to "Tick off or move the rest."
+            Slot.MORNING -> "☀ Today's plan is ready" to
+                (listOfNotNull(if (dueToday > 0) "$dueToday due today" else null, firstEvent).joinToString(" · ").ifEmpty { "Nothing due yet" })
+            Slot.EVENING -> "🌙 Shut down" to "Park, date or drop what's left."
             Slot.DUE -> "Tasks due today" to "$dueToday due"
             Slot.WEEKLY -> "Weekly review" to "Done, carried over, next week."
         }
@@ -110,14 +115,24 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val snooze = inputData.getBoolean("snooze", false)
         val prefs = AppPrefs(applicationContext)
         if (Reminders.on(prefs, slot)) {
-            val due = if (slot == Slot.DUE) prefs.vault?.let { v ->
+            val due = if (slot == Slot.DUE || slot == Slot.MORNING) prefs.vault?.let { v ->
                 runCatching { Deck.dueCount(VaultWriter(applicationContext, v).listTasks(), LocalDate.now()) }.getOrDefault(0)
             } ?: 0 else 0
-            Reminders.notify(applicationContext, slot, due)
+            val first = if (slot == Slot.MORNING) runCatching { firstEventToday(applicationContext) }.getOrNull() else null
+            Reminders.notify(applicationContext, slot, due, first)
         }
         if (!snooze) Reminders.scheduleAll(applicationContext, prefs)
         return Result.success()
     }
+}
+
+/** "Dentist at 10:00": today's first timed event still to come, from the cached calendars. */
+private fun firstEventToday(ctx: Context): String? {
+    val now = java.time.LocalDateTime.now()
+    return CalendarSync.cached(ctx).flatMap { it.events }
+        .filter { !it.allDay && it.on(now.toLocalDate()) && it.start.isAfter(now) }
+        .minByOrNull { it.start }
+        ?.let { "${it.title} at ${it.start.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))}" }
 }
 
 class SnoozeReceiver : BroadcastReceiver() {

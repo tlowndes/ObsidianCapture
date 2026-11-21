@@ -47,7 +47,7 @@ Four tabs: **Deck**, **Capture**, **Tasks**, **Vault**. Read later and Projects 
 
 The home screen. A Low / Med / High energy chip (it resets to Med each morning) changes the day: Low moves **Stuck? Pick one.** to the top and prefers tasks of 15 minutes or less; High shows three top tasks instead of two. Pills along the top open Tasks (how many are due today or overdue), Focus (minutes logged today) and Habits.
 
-Cards, in an order you can rearrange, and any of which you can hide, under Settings › Cards on home:
+Cards, in an order you can rearrange, and any of which you can hide, under Settings › Cards on home. Projects, Jobs, Inbox, Spent this month, From your reading and Routines start switched off. A Deck saved before that is asked once, "A quieter Deck?", and keeps any card you pick:
 
 - **Next step**: the earliest dated task that is not a bill and was not put off with Later today. Start opens Focus. Later hides it until tomorrow.
 - **Weather & travel**: today's forecast from Open-Meteo, using the phone's coarse location (no API key, cached for an hour). Tap for a Morning / Afternoon / Evening strip. If today's next timed Proton event has a place, a drive time from OpenStreetMap and OSRM is shown, with a leave-by time.
@@ -104,7 +104,7 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 ### Screens opened from Deck or Settings
 
 - **Focus**: a countdown in a notification. Pause, then finish. Finishing writes the session to the focus log and can tick the task it was started from.
-- **Hangar** (the ⌂ on Deck, or long-press the app icon): small tools for getting out the door, so Deck itself never grows. A Right now card on top shows the one thing that needs you, and you can do it there. The tools you add are listed underneath with their status. Edit reorders or hides them, and Pin puts a tool on the home screen as its own icon. When you need to leave within half an hour, Right now shows the leave-by time first.
+- **Hangar** (the ⌂ on Deck, or long-press the app icon): a sheet that pulls up over the Deck, with your tools as tiles. Small tools for getting out the door, so Deck itself never grows. A Right now card on top shows the one thing that needs you, and you can do it there. The tools you add are listed underneath with their status. Edit reorders or hides them, and Pin puts a tool on the home screen as its own icon. When you need to leave within half an hour, Right now shows the leave-by time first.
 - **Did I?** (in Hangar): a "Cleared to leave" pass for checks like meds, door and hob. Start checks asks one question at a time, and each yes logs the time with Undo. Log shows today's stamps. Checks live in `99 - Meta/Did I checks.md` (emoji, name, then an optional question after a ·), and each day is logged in `99 - Meta/Did I/YYYY-MM-DD.md`. There's a home-screen widget you tick from, and a Quick Settings tile that stamps one check (Door by default; tap "Quick tile" in Did I? to change it).
 - **Home Did I?** (in Did I?, with Sensory Dial's Home Assistant connection): tap "Link to the house" to let a lock, door sensor or smart plug answer a check, e.g. the door is `locked` or the hob plug is under 5 W. Linked checks show the house's live answer on the pass, and one that comes true today is logged at the time HA says it changed, marked `· auto` (`- 08:39 · Door · auto`). Pick your HA person, and if a linked check is still not done after you've left home, it buzzes once. The link is kept on the check's line: `- 🔥 Hob · Is the hob off? · ha sensor.hob_plug_power < 5`. It checks every 15 minutes in the background and whenever Did I? opens.
 - **Launch Pad** (in Hangar, or tap a `flightdeck://launch` NFC tag by the door): the leave-the-house pass for your next event today, with the leave-by time from the travel line and the weather. Tick items one at a time with the big Next button. Running late keeps only the essentials and says when you'll arrive. Your Did I? checks show on the pass too. The kit is `99 - Meta/Launch Pad kit.md`: an Always list plus When rules (`rain`, `cold`, `event <word>`, `long <hours>`) that add items for the day.
@@ -142,7 +142,7 @@ Five home-screen widgets:
 
 ### Reminders
 
-Scheduled with WorkManager (they survive a reboot, and may fire a few minutes late). Each has Snooze 1h. Defaults: morning briefing 08:00 (opens Deck), evening wrap-up 21:00 (opens Tasks), task due alerts off until switched on (09:00, and only when something is due), weekly review Sunday 19:00 (opens the review).
+Scheduled with WorkManager (they survive a reboot, and may fire a few minutes late). Each has Snooze 1h. One morning nudge at 08:00 says how many tasks are due today and the first event, and opens Deck. One evening nudge at 21:00 opens Shut down. The weekly review is Sunday 19:00. The separate due-today alert is gone; its count is in the morning nudge. Heads Up warns once, 10 minutes before, unless Settings › Reminders is set to Three (10, 5 and 1).
 
 ### Piholegotchi
 
