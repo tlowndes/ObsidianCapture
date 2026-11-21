@@ -200,13 +200,20 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
     TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true),
     /** At the desk too: turns the room down through Home Assistant (sensory-dial-v1). */
-    SENSORY("sensory", "Sensory Dial", "◐", "Turn the room down in one move: lights, noise and calls", true);
+    SENSORY("sensory", "Sensory Dial", "◐", "Turn the room down in one move: lights, noise and calls", true),
+    /** Moved off the Deck into Hangar (hangar-dock-v2). They open the app's own screens. */
+    INBOX("inbox", "Inbox", "✉", "Email that needs you, from the box", true),
+    HOME("home", "Home", "🏠", "Chores by room, when they need doing", true),
+    PROJECTS("projects", "Projects", "💡", "Your active project and ideas", true),
+    ERRANDS("errands", "Errands", "📍", "Errands and shopping, by place", true),
+    MEALS("meals", "Meals", "🍽", "This week's meals and the shop", true);
 
     /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
         TICKET_RAIL, SENSORY -> "At the desk"
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
         COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
+        INBOX, HOME, PROJECTS, ERRANDS, MEALS -> "Around home"
         else -> "Getting out"
     }
 
@@ -238,6 +245,16 @@ object Hangar {
         val to = from + by
         if (from !in tools.indices || to !in tools.indices) return tools
         return tools.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    /** The tools that moved off the Deck (hangar-dock-v2), and where each lands in an existing Hangar. */
+    val FROM_DECK = listOf(HangarTool.INBOX to 0, HangarTool.HOME to 2, HangarTool.ERRANDS to 3, HangarTool.PROJECTS to 6, HangarTool.MEALS to 7)
+
+    /** Adds the Deck's old tiles to a Hangar set up before they moved, spread through the top so they show in the dock. */
+    fun withDeckTools(tools: List<HangarTool>?): List<HangarTool> {
+        val list = tools.orEmpty().toMutableList()
+        FROM_DECK.forEach { (t, at) -> if (t !in list) list.add(minOf(at, list.size), t) }
+        return list
     }
 
     /** Tools not added yet, ready ones first. */

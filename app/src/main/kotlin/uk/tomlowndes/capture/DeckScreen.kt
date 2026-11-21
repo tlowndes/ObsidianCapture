@@ -294,6 +294,12 @@ fun DeckScreen(
     var recat by remember { mutableStateOf<Receipt?>(null) }
     // Stage 5: people a week ahead, tonight's meal, errands.
     var home by remember { mutableStateOf<HomeBits?>(null) }
+    // Ticket Rail's tile on the Deck (hangar-dock-v2): how many tickets hang on the rail.
+    var railOn by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        railOn = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri).onRail }.getOrNull() }
+    }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         home = withContext(Dispatchers.IO) { runCatching { loadHomeBits(ctx, uri, prefs, LocalDate.now()) }.getOrNull() }
@@ -455,7 +461,8 @@ fun DeckScreen(
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
-            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { g -> mailOpen = g }, onAll = { onOpenSub(Sub.INBOX) }) }
+            // Inbox moved to Hangar (hangar-dock-v2).
+            DeckSection.INBOX -> {}
             DeckSection.SPEND -> if (HomeCard.SPEND !in hidden) spend?.let { (now, last) -> SpendCard(now, last) { recat = it } }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
@@ -467,11 +474,10 @@ fun DeckScreen(
                 }
             }
             DeckSection.MORE -> {
-                // Routines, Projects and Journal as small tiles.
+                // Routines, Journal, Learn, People and Ticket Rail as small tiles. Home, Projects, Meals and Errands
+                // moved to Hangar (hangar-dock-v2); Ticket Rail is in both.
                 val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
-                val showProject = HomeCard.PROJECTS !in hidden && data.project != null
                 val showJournal = HomeCard.HIGHLIGHTS !in hidden
-                val showHome = HomeCard.CHORES !in hidden && chores.isNotEmpty()
                 val passage = passages.getOrNull(passageIdx).takeIf { HomeCard.READING !in hidden }
                 if (passage != null) {
                     SectionLabel("From your reading")
@@ -482,25 +488,19 @@ fun DeckScreen(
                 }
                 val showLearn = HomeCard.LEARN !in hidden && cardsDue != null
                 val showLife = vault != null
-                if (showRoutines || showProject || showJournal || showHome || showLearn || showLife) {
+                if (showRoutines || showJournal || showLearn || showLife) {
                     SectionLabel("More")
                     val tiles = mutableListOf<@Composable RowScope.() -> Unit>()
-                    if (showHome) tiles.add {
-                        val due = Chores.due(chores, today).size
-                        Tile("🏠", "Home", if (due > 0) "$due need doing" else "all fresh", dot = due > 0) { onOpenSub(Sub.CHORES) }
-                    }
                     if (showRoutines) tiles.add {
                         Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                             data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                         }
                     }
-                    if (showProject) tiles.add { Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) } }
                     if (showJournal) tiles.add { Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true } }
                     if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
                     if (showLife) {
-                        if (HomeCard.MEALS !in hidden) tiles.add { Tile("🍽", "Meals", home?.let { "${it.planned} of 7 planned" }) { onOpenSub(Sub.MEALS) } }
                         if (HomeCard.PEOPLE !in hidden) tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
-                        tiles.add { Tile("📍", "Errands", home?.errands?.takeIf { it > 0 }?.let { "$it to do" } ?: "none") { onOpenSub(Sub.ERRANDS) } }
+                        tiles.add { Tile("▤", "Ticket Rail", railOn?.let { "$it on the rail" }) { onOpenSub(Sub.TICKET_RAIL) } }
                     }
                     // Three to a row; a short last row keeps the same tile width.
                     val perRow = if (tiles.size == 4) 2 else 3

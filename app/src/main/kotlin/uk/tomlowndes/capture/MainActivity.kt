@@ -293,15 +293,35 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     LaunchedEffect(sub) {
         if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
     }
+    var routineName by remember { mutableStateOf<String?>(null) }
+    fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
+        Focus.start(ctx, task, raw, path, minutes)
+        sub = Sub.FOCUS
+    }
+    var openIdea by remember { mutableStateOf<String?>(null) }
+    var openArticle by remember { mutableStateOf<ReadRef?>(null) }
+    /** Tasks filtered to one note (from a note in Vault), and whether Vault is in quick edit (no bottom bar). */
+    var tasksNote by remember { mutableStateOf<String?>(null) }
+    var vaultEditing by remember { mutableStateOf(false) }
+    var unread by remember { mutableStateOf(0) }
+    var jobsOpen by remember { mutableStateOf(0) }
+    val snack = remember { SnackbarHostState() }
     // The Hangar dock (hangar-dock-v1): tools in Hangar's order, re-read when the sheet closes (Edit may have changed them).
+    // Inbox, Home, Projects, Errands and Meals moved off the Deck into Hangar (hangar-dock-v2): added once to a Hangar set up before.
+    remember {
+        if (!prefs.hangarDeckToolsAdded) {
+            Hangar.parse(prefs.hangarTools)?.let { prefs.hangarTools = Hangar.format(Hangar.withDeckTools(it)) }
+            prefs.hangarDeckToolsAdded = true
+        }
+    }
     var dockTools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
     var dockDots by remember { mutableStateOf(emptySet<HangarTool>()) }
-    LaunchedEffect(vault, hangarOpen, sub, tab) {
+    LaunchedEffect(vault, hangarOpen, sub) {
         if (hangarOpen) return@LaunchedEffect
         val t = Hangar.parse(prefs.hangarTools)
         dockTools = t
         val uri = vault ?: return@LaunchedEffect
-        dockDots = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, t.orEmpty().take(DOCK_SLOTS)) }.getOrDefault(emptySet()) }
+        dockDots = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, t.orEmpty()) }.getOrDefault(emptySet()) }
     }
     fun openTool(t: HangarTool) {
         hangarOpen = false
@@ -320,21 +340,13 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             HangarTool.WAITING -> sub = Sub.WAITING
             HangarTool.ERRAND_RUN -> sub = Sub.ERRANDS
             HangarTool.SENSORY -> sub = Sub.SENSORY
+            HangarTool.INBOX -> sub = Sub.INBOX
+            HangarTool.HOME -> sub = Sub.CHORES
+            HangarTool.ERRANDS -> sub = Sub.ERRANDS
+            HangarTool.MEALS -> sub = Sub.MEALS
+            HangarTool.PROJECTS -> { sub = null; openIdea = null; tab = Tab.PROJECTS }
         }
     }
-    var routineName by remember { mutableStateOf<String?>(null) }
-    fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
-        Focus.start(ctx, task, raw, path, minutes)
-        sub = Sub.FOCUS
-    }
-    var openIdea by remember { mutableStateOf<String?>(null) }
-    var openArticle by remember { mutableStateOf<ReadRef?>(null) }
-    /** Tasks filtered to one note (from a note in Vault), and whether Vault is in quick edit (no bottom bar). */
-    var tasksNote by remember { mutableStateOf<String?>(null) }
-    var vaultEditing by remember { mutableStateOf(false) }
-    var unread by remember { mutableStateOf(0) }
-    var jobsOpen by remember { mutableStateOf(0) }
-    val snack = remember { SnackbarHostState() }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
@@ -485,7 +497,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             // Opens halfway; drag up for the full list. A darker scrim so the screen behind doesn't show through.
             ModalBottomSheet(onDismissRequest = { hangarOpen = false }, sheetState = hangarSheet, containerColor = Surface2,
                 scrimColor = Color.Black.copy(alpha = 0.6f)) {
-            HangarScreen(vault, prefs, snack, onOpen = { openTool(it) }, inSheet = true) { hangarOpen = false }
+            HangarScreen(vault, prefs, snack, onOpen = { openTool(it) }, inSheet = true, needs = dockDots) { hangarOpen = false }
             }
         }
     }

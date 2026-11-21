@@ -152,6 +152,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("hangar_tools", null)
         set(v) { p.edit().putString("hangar_tools", v).apply() }
 
+    /** Inbox, Home, Projects, Errands and Meals have been added to an existing Hangar once (hangar-dock-v2). */
+    var hangarDeckToolsAdded: Boolean
+        get() = p.getBoolean("hangar_deck_tools", false)
+        set(v) { p.edit().putBoolean("hangar_deck_tools", v).apply() }
+
     /** Ticket Rail: print the morning's task tickets on the end of the Daily Slip. */
     var ticketsWithSlip: Boolean
         get() = p.getBoolean("tickets_with_slip", true)

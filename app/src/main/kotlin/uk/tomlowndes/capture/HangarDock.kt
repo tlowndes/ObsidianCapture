@@ -53,10 +53,10 @@ internal fun HangarTool.dockLabel(): String = when (this) {
 }
 
 /**
- * Which docked tools have something waiting (hangar-dock-v1): a Did I? check not done today, a return due
- * within 2 days, a Cool-off wait that's up, or a med to reorder. Read off the main thread.
+ * Which Hangar tools have something waiting (hangar-dock-v1, v2): a Did I? check not done today, a return due
+ * within 2 days, a Cool-off wait that's up, a med to reorder, email that needs you, or chores due. Off the main thread.
  */
-internal fun dockNeeds(ctx: Context, uri: Uri, tools: List<HangarTool>): Set<HangarTool> {
+internal fun dockNeeds(ctx: Context, uri: Uri, prefs: AppPrefs, tools: List<HangarTool>): Set<HangarTool> {
     val v = appVault(ctx, uri)
     val today = LocalDate.now()
     val out = mutableSetOf<HangarTool>()
@@ -68,6 +68,10 @@ internal fun dockNeeds(ctx: Context, uri: Uri, tools: List<HangarTool>): Set<Han
         val meds = Refill.load(v)
         val stamps = Refill.stamps(v, meds, today)
         meds.any { Refill.needsOrder(it, Refill.left(it, stamps), today) }
+    }
+    if (HangarTool.INBOX in tools || HangarTool.HOME in tools) loadAround(ctx, uri, prefs, tools.filter { it == HangarTool.INBOX || it == HangarTool.HOME }).let { a ->
+        if (a.mail > 0) out += HangarTool.INBOX
+        if (a.chores > 0) out += HangarTool.HOME
     }
     return out
 }
