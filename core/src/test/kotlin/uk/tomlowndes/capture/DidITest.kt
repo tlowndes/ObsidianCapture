@@ -74,7 +74,15 @@ class DidITest {
         assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), t)
         assertEquals("launch,didi", Hangar.format(Hangar.move(t, 1, -1)))
         assertEquals(t, Hangar.move(t, 0, -1))
-        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.ERRAND_RUN, HangarTool.TICKET_RAIL, HangarTool.SENSORY), Hangar.available(t).toSet())
+        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.TICKET_RAIL, HangarTool.SENSORY), Hangar.available(t).toSet())
         assertEquals(HangarTool.DID_I, Hangar.available(emptyList()).first())
+    }
+
+    @Test fun `errand run leaves hangar but is remembered once`() {
+        val saved = "didi,run,launch"
+        assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), Hangar.parse(saved))
+        assertTrue(Hangar.hadRun(saved))
+        assertFalse(Hangar.hadRun(Hangar.format(Hangar.parse(saved)!!)))
+        assertFalse(HangarTool.ERRAND_RUN in Hangar.available(emptyList()))
     }
 }

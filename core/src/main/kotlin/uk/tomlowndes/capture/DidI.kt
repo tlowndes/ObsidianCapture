@@ -222,7 +222,10 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
 object Hangar {
     /** Null means Hangar has never been set up (first run shows the Add list). */
     fun parse(saved: String?): List<HangarTool>? =
-        saved?.split(",")?.mapNotNull { HangarTool.byId(it) }?.distinct()
+        saved?.split(",")?.mapNotNull { HangarTool.byId(it) }?.filter { it != HangarTool.ERRAND_RUN }?.distinct()
+
+    /** Errand Run moved to the Errands list (fold-doors-v1). True while an old Hangar list still names it. */
+    fun hadRun(saved: String?) = saved?.split(",")?.contains(HangarTool.ERRAND_RUN.id) == true
 
     fun format(tools: List<HangarTool>) = tools.distinct().joinToString(",") { it.id }
 
@@ -238,5 +241,5 @@ object Hangar {
     }
 
     /** Tools not added yet, ready ones first. */
-    fun available(tools: List<HangarTool>) = HangarTool.values().filter { it !in tools }.sortedBy { !it.ready }
+    fun available(tools: List<HangarTool>) = HangarTool.values().filter { it !in tools && it != HangarTool.ERRAND_RUN }.sortedBy { !it.ready }
 }

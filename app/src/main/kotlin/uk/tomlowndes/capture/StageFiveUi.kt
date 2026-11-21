@@ -13,7 +13,11 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -271,7 +275,7 @@ class ErrandWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 }
 
 @Composable
-fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
+fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onRun: () -> Unit = {}, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var places by remember { mutableStateOf<List<Place>>(emptyList()) }
@@ -341,6 +345,14 @@ fun ErrandsScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         BackTitle("Errands", errands?.let { "${it.sumOf { e -> e.items.size }} to do at ${it.size} places" }, onBack)
         SharedPill(vault)
         errands?.let { es ->
+            // Errand Run starts here now, not from Hangar (fold-doors-v1).
+            val stops = es.count { it.place != null }
+            if (stops >= 2) Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PrimaryTint)
+                .border(1.dp, Primary, RoundedCornerShape(14.dp)).clickable(onClick = onRun).padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("⇢ Start a run · $stops stops", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Primary, modifier = Modifier.weight(1f))
+                Text("nearest first ›", fontSize = 13.sp, color = Muted)
+            }
             if (es.isEmpty()) Text("Add @tesco or @b&q to any task and it shows here.", fontSize = 14.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp))
             ListCard(Modifier.padding(top = 6.dp)) {
                 Column {

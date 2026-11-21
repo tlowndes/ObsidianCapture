@@ -270,6 +270,14 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
                     Text("›", fontSize = 18.sp, color = Muted)
                 }
             }
+            HorizontalDivider(color = Outline)
+            // Fold the extra doors (fold-doors-v1): put the folded widgets back in the picker.
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                var allW by remember { mutableStateOf(prefs.allWidgets) }
+                SettingRow("Show every widget", "Next step, Read It Later, Chores and the rest. Ones on your home screen always stay.") {
+                    AppSwitch(allW) { allW = it; prefs.allWidgets = it; Thread { WidgetFold.apply(ctx.applicationContext, prefs) }.start() }
+                }
+            }
         }
 
         SectionLabel("Assistant")

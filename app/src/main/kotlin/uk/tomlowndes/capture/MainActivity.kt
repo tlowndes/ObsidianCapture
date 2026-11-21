@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
             Reminders.scheduleAll(applicationContext, prefs)
             Thread { runCatching { HeadsAlarms.reschedule(applicationContext) } }.start()
         }
+        // Fold the extra doors (fold-doors-v1): duplicate widgets leave the picker unless one is placed.
+        Thread { WidgetFold.apply(applicationContext, prefs) }.start()
         setContent {
             CaptureTheme {
                 App(prefs, openRequest) { openRequest = null }
@@ -378,7 +380,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.COOL_OFF -> CoolOffScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.REFILL -> RefillScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.WAITING -> WaitingScreen(vault, snack, onOpenArticle = { openArticle = it; sub = null; tab = Tab.READ }) { sub = Sub.HANGAR }
-                sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.HANGAR }
+                sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.ERRANDS }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.SENSORY -> SensoryScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
@@ -394,7 +396,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.LEARN -> LearnScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.INBOX -> InboxScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PEOPLE -> PeopleScreen(vault, snack) { sub = null }
-                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack) { sub = null }
+                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack, onRun = { sub = Sub.ERRAND_RUN }) { sub = null }
                 sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
                 sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
@@ -409,7 +411,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onScanPage = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
@@ -453,7 +455,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
                         HangarTool.REFILL -> sub = Sub.REFILL
                         HangarTool.WAITING -> sub = Sub.WAITING
-                        HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
+                        HangarTool.ERRAND_RUN -> sub = Sub.ERRANDS
                         HangarTool.SENSORY -> sub = Sub.SENSORY
                         else -> {}
                     }
