@@ -152,6 +152,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("hangar_tools", null)
         set(v) { p.edit().putString("hangar_tools", v).apply() }
 
+    /** Hangar tools shown as tiles in the Deck's More row ("rail,home"); null = just Ticket Rail (add-to-more-v1). */
+    var deckTiles: String?
+        get() = p.getString("deck_tiles", null)
+        set(v) { p.edit().putString("deck_tiles", v).apply() }
+
     /** Inbox, Home, Projects, Errands and Meals have been added to an existing Hangar once (hangar-dock-v2). */
     var hangarDeckToolsAdded: Boolean
         get() = p.getBoolean("hangar_deck_tools", false)

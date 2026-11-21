@@ -296,6 +296,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var hangarOpen by remember { mutableStateOf(false) }
     // Edit Deck sheet from the Deck's More row (bottom-dock-v1 A); deckRev makes the Deck re-read its layout after.
     var editDeck by remember { mutableStateOf(false) }
+    var addTiles by remember { mutableStateOf(false) }
     var deckRev by remember { mutableIntStateOf(0) }
     LaunchedEffect(sub) {
         if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
@@ -464,7 +465,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY }, onOpenPrint = { settings = false; sub = Sub.PRINT })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
-                    vault, prefs, snack, deckRev, onEditDeck = { editDeck = true }, onOpenTab = { tab = it }, onOpenSub = { sub = it },
+                    vault, prefs, snack, deckRev, onEditDeck = { editDeck = true }, onAddTile = { addTiles = true }, onOpenTool = { openTool(it) }, onOpenTab = { tab = it }, onOpenSub = { sub = it },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
@@ -493,6 +494,11 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         modifier = Modifier.clickable { tab = Tab.VAULT }.padding(start = 18.dp, top = 10.dp, end = 18.dp))
                     Box(Modifier.weight(1f)) { ReadScreen(vault, prefs, snack, openArticle) { openArticle = it } }
                 }
+            }
+        }
+        if (addTiles) {
+            ModalBottomSheet(onDismissRequest = { addTiles = false; deckRev++ }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                AddTilesSheet(prefs) { addTiles = false; deckRev++ }
             }
         }
         if (editDeck) {

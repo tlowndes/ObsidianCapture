@@ -113,7 +113,7 @@ internal data class DeckData(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeckScreen(
-    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, layoutRev: Int = 0, onEditDeck: () -> Unit = {},
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, layoutRev: Int = 0, onEditDeck: () -> Unit = {}, onAddTile: () -> Unit = {}, onOpenTool: (HangarTool) -> Unit = {},
     onOpenTab: (Tab) -> Unit, onOpenSub: (Sub) -> Unit, onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSearch: () -> Unit, onOpenArticle: (ReadRef) -> Unit = {}, onPlayRoutine: (String) -> Unit = {},
     onOpenSettings: () -> Unit
@@ -155,6 +155,13 @@ fun DeckScreen(
         }
     }
 
+    // Hangar tools picked as More tiles (add-to-more-v1) and which of them need you.
+    val tileTools = remember(layoutRev) { deckTiles(prefs) }
+    var tileNeeds by remember { mutableStateOf(emptySet<HangarTool>()) }
+    LaunchedEffect(vault, refresh, layoutRev) {
+        val uri = vault ?: return@LaunchedEffect
+        tileNeeds = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, tileTools) }.getOrDefault(emptySet()) }
+    }
     LaunchedEffect(vault, refresh, layoutRev) {
         val uri = vault ?: return@LaunchedEffect
         if (rewalk) { VaultScan.invalidate(); rewalk = false } // pull to refresh: walk the whole vault again
@@ -500,9 +507,14 @@ fun DeckScreen(
                     if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
                     if (showLife) {
                         if (HomeCard.PEOPLE !in hidden) tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
-                        tiles.add { Tile("▤", "Ticket Rail", railOn?.let { "$it on the rail" }) { onOpenSub(Sub.TICKET_RAIL) } }
+                        tileTools.forEach { t ->
+                            tiles.add {
+                                val sub = if (t == HangarTool.TICKET_RAIL) railOn?.let { "$it on the rail" } else if (t in tileNeeds) "needs you" else null
+                                Tile(t.icon, t.title, sub, dot = t in tileNeeds) { onOpenTool(t) }
+                            }
+                        }
                     }
-                    tiles.add { Tile("✎", "Edit Deck", "cards · order", onClick = onEditDeck) }
+                    tiles.add { Tile("＋", "Add", "any Hangar tool", onClick = onAddTile) }
                     // Three to a row; a short last row keeps the same tile width.
                     val perRow = if (tiles.size == 4) 2 else 3
                     tiles.chunked(perRow).forEachIndexed { i, chunk ->
