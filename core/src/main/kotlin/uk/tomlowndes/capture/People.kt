@@ -134,6 +134,37 @@ object People {
 
     fun setBirthday(v: Vault, p: Person, date: String) = VaultIo.edit(v, p.path) { Md.fmSet(it, "birthday", date) }
 
+    // ---- Birthday picker (birthday-picker-v1): month and day, year optional ----
+
+    /** Days to offer for a month. With no year, 29 Feb is allowed (kept on 28 Feb in other years). */
+    fun pickerDays(month: Int, year: Int?): Int = when (month) {
+        2 -> if (year == null || java.time.Year.isLeap(year.toLong())) 29 else 28
+        4, 6, 9, 11 -> 30
+        else -> 31
+    }
+
+    /** Frontmatter value, same shape as before: "--11-21" without a year, "1958-11-21" with one. Day is clamped to the month. */
+    fun birthdayValue(month: Int, day: Int, year: Int?): String {
+        val d = day.coerceIn(1, pickerDays(month, year))
+        return (year?.let { "%04d".format(it) } ?: "-") + "-%02d-%02d".format(month, d)
+    }
+
+    /** Preview under the picker, e.g. "🎂 21 November · in 5 days" or "🎂 14 March · turns 68 · in 4 months". */
+    fun pickerPreview(month: Int, day: Int, year: Int?, today: LocalDate): String {
+        val md = MonthDay.of(month, day.coerceIn(1, pickerDays(month, null)))
+        val next = md.atYear(today.year).let { if (it.isBefore(today)) md.atYear(today.year + 1) else it }
+        val days = ChronoUnit.DAYS.between(today, next)
+        val whenText = when {
+            days == 0L -> "today"
+            days == 1L -> "tomorrow"
+            days < 14 -> "in $days days"
+            days < 60 -> "in ${days / 7} weeks"
+            else -> ChronoUnit.MONTHS.between(today, next).coerceAtLeast(2).let { "in $it months" }
+        }
+        val age = year?.let { next.year - it }?.takeIf { it in 0..130 }?.let { " · turns $it" } ?: ""
+        return "🎂 ${md.format(DateTimeFormatter.ofPattern("d MMMM", Locale.UK))}$age · $whenText"
+    }
+
     /** "gift idea for Mum: kneeler" or "gift for Jamie - socks" → (Mum, kneeler). Capture uses it. */
     fun giftIdea(text: String): Pair<String, String>? =
         Regex("^\\s*gift(?: idea)?s? (?:for|4) ([^:–\\-]+?)\\s*[:–\\-]\\s*(.+)$", RegexOption.IGNORE_CASE).find(text)?.groupValues?.let { it[1].trim() to it[2].trim() }
