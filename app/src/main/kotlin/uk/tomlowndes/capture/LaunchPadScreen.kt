@@ -112,8 +112,7 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { DidI.stamp(appVault(ctx, uri), c.name) } }
-            DoorInkSend.soon(ctx)
-                .onSuccess { s -> did = did.map { if (it.check == c) it.copy(at = s.time) else it }; DidWidgets.changed(ctx) }
+                .onSuccess { s -> did = did.map { if (it.check == c) it.copy(at = s.time) else it }; DidWidgets.changed(ctx); DoorInkSend.soon(ctx) }
                 .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
         }
     }
