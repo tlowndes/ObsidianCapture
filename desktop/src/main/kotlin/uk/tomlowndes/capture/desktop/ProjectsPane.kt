@@ -693,9 +693,9 @@ fun DialogCard(heading: String, onDismiss: () -> Unit, content: @Composable () -
 }
 
 @Composable
-fun DialogButtons(onDismiss: () -> Unit, onDelete: (() -> Unit)? = null, confirm: @Composable () -> Unit) {
+fun DialogButtons(onDismiss: () -> Unit, onDelete: (() -> Unit)? = null, deleteText: String = "Delete", confirm: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (onDelete != null) TextAction("Delete", Warn, onClick = onDelete)
+        if (onDelete != null) TextAction(deleteText, Warn, onClick = onDelete)
         Box(Modifier.weight(1f))
         TextAction("Cancel", Muted, onClick = onDismiss)
         confirm()

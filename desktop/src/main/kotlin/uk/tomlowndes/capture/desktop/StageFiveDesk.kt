@@ -395,7 +395,7 @@ private fun BirthdayDialog(p: Person, onDone: (String?) -> Unit) {
             Text(People.pickerPreview(month, dayShown, y, today), fontSize = 14.sp, color = TextMain,
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp)).background(PrimaryTint).padding(horizontal = 13.dp, vertical = 10.dp))
             Spacer(Modifier.height(14.dp))
-            DialogButtons({ onDone(null) }, onDelete = if (p.birthday != null) ({ onDone("") }) else null) {
+            DialogButtons({ onDone(null) }, onDelete = if (p.birthday != null) ({ onDone("") }) else null, deleteText = "Remove") {
                 PrimaryButton("Save", enabled = !knowYear || typed != null) { onDone(People.birthdayValue(month, dayShown, y)) }
             }
         }
