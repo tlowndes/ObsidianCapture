@@ -60,6 +60,7 @@ fun FindPane(state: AppState) {
             Field(query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus).padding(bottom = 12.dp)
                 .onKeys(enter = { picked = results.firstOrNull() }), "🔍  Note name", shape = RoundedCornerShape(999.dp))
             if (notes == null) Sub("Reading the vault…")
+            uk.tomlowndes.capture.NoteIndex.privateHint(query)?.let { Sub(it.replace("Open it from Hangar.", "Open it from Hangar on the phone."), Modifier.padding(bottom = 8.dp)) }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(results, key = { it.path }) { n ->
                     val on = n == picked

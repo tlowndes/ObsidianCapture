@@ -39,7 +39,7 @@ interface Vault {
     /** What image loaders on this platform take for the file at [path] (a content Uri on Android, a File on desktop). */
     fun handle(path: String): Any
 
-    /** Every .md note under the vault, except in folders [skip] says no to (it gets the folder's vault path). */
+    /** Every .md note under the vault, except notes and folders [skip] says no to (it gets the vault path). */
     fun notes(skip: (String) -> Boolean = { false }): List<VaultNote> {
         val out = mutableListOf<VaultNote>()
         fun walk(dir: String) {
@@ -47,7 +47,7 @@ interface Vault {
             for (e in list(dir)) {
                 val path = prefix + e.name
                 if (e.isDir) { if (!skip(path)) walk(path) }
-                else if (e.name.endsWith(".md") && !e.name.startsWith(".")) out.add(VaultNote(path, e.modified))
+                else if (e.name.endsWith(".md") && !e.name.startsWith(".") && !skip(path)) out.add(VaultNote(path, e.modified))
             }
         }
         walk("")

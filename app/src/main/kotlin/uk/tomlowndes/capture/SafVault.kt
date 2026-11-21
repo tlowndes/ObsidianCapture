@@ -169,7 +169,7 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
             for (e in healFolder(doc)) {
                 val path = prefix + e.name
                 if (e.isDirectory) { if (!skip(path)) sub.add(e to "$path/") }
-                else if (e.name.endsWith(".md") && !e.name.startsWith(".") && !scratch(e.name)) out.add(VaultNote(path, e.modified))
+                else if (e.name.endsWith(".md") && !e.name.startsWith(".") && !scratch(e.name) && !skip(path)) out.add(VaultNote(path, e.modified))
             }
             if (top) dirs.addAll(sub) else sub.forEach { (d, p) -> walk(d, p, false) }
         }

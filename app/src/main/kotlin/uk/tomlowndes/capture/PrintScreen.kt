@@ -47,6 +47,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -475,7 +479,7 @@ private fun ModeSwitch(options: List<String>, selected: Int, onPick: (Int) -> Un
             Text(o, fontSize = 14.sp, color = if (on) Primary else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                    .clickable { onPick(i) }.padding(vertical = 8.dp))
+                    .semantics { this.selected = on; role = Role.Tab }.clickable { onPick(i) }.padding(vertical = 8.dp))
         }
     }
 }
@@ -487,7 +491,7 @@ private fun DayTile(top: String, num: String, on: Boolean, width: Dp? = null, on
     Column(
         (if (width != null) Modifier.width(width) else Modifier)
             .clip(shape).background(if (on) PrimaryTint else Surface1).border(1.dp, if (on) Primary else Outline, shape)
-            .clickable(onClick = onClick).padding(horizontal = if (fixed) 2.dp else 10.dp, vertical = 6.dp),
+            .semantics(mergeDescendants = true) { selected = on }.clickable(onClick = onClick).padding(horizontal = if (fixed) 2.dp else 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
