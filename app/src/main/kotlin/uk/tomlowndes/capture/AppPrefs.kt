@@ -276,6 +276,15 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         p.edit().putBoolean("quiet_day_done", true).apply()
     }
 
+    val eveningWeekDone get() = p.getBoolean("evening_week_done", false)
+
+    /** Evening and week (evening-week-v1), once per phone: the 21:00 Night Pad buzz stops; Shut down ends with Night Pad. */
+    fun eveningWeekOnce() {
+        if (eveningWeekDone) return
+        headsNight = false
+        p.edit().putBoolean("evening_week_done", true).apply()
+    }
+
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean
         get() = p.getBoolean("due_on", false)
