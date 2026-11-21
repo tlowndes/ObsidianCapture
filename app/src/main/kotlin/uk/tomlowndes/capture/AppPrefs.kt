@@ -352,6 +352,15 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("piholegotchi_address", "").orEmpty()
         set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
 
+    /** Door Ink (hangar-phase4): the door screen's address on the home Wi-Fi, blank for off. */
+    var doorInkAddress: String
+        get() = p.getString("door_ink_address", "").orEmpty()
+        set(v) { p.edit().putString("door_ink_address", v.trim()).remove("door_ink_last").apply() }
+    /** The last body the door screen took, so an unchanged one isn't sent again. */
+    var doorInkLast: String?
+        get() = p.getString("door_ink_last", null)
+        set(v) { p.edit().putString("door_ink_last", v).apply() }
+
     /** Home Did I? (hangar-phase4): the HA person or tracker that says you've left home, e.g. `person.tom`. */
     var haPerson: String
         get() = p.getString("ha_person", "").orEmpty()
