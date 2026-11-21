@@ -44,6 +44,27 @@ class StageFiveTest {
         assertTrue(v.read(mum)!!.contains("gift_task: 2026"))
     }
 
+    @Test fun `birthday picker values and preview`() {
+        assertEquals("--11-21", People.birthdayValue(11, 21, null))
+        assertEquals("1958-03-14", People.birthdayValue(3, 14, 1958))
+        assertEquals("--02-29", People.birthdayValue(2, 29, null))
+        assertEquals("1958-02-28", People.birthdayValue(2, 29, 1958))
+        assertEquals("2000-02-29", People.birthdayValue(2, 29, 2000))
+        assertEquals("--11-30", People.birthdayValue(11, 31, null))
+        assertEquals(30, People.pickerDays(11, null)); assertEquals(29, People.pickerDays(2, null)); assertEquals(28, People.pickerDays(2, 2026))
+        assertEquals("🎂 21 November · in 6 days", People.pickerPreview(11, 21, null, today))
+        assertEquals("🎂 15 November · turns 30 · today", People.pickerPreview(11, 15, 1996, today))
+        assertEquals("🎂 14 March · turns 69 · in 3 months", People.pickerPreview(3, 14, 1958, today))
+        // Saved values read back the same way as before
+        val v = FileVault(tmp.root)
+        People.create(v, "Nat")
+        People.setBirthday(v, People.list(v).first(), People.birthdayValue(2, 29, null))
+        assertEquals(MonthDay.of(2, 29), People.list(v).first().birthday)
+        assertEquals(LocalDate.of(2027, 2, 28), People.list(v).first().nextBirthday(today))
+        People.setBirthday(v, People.list(v).first(), "")
+        assertNull(People.list(v).first().birthday)
+    }
+
     @Test fun `errands group by place and nudge once a visit`() {
         val v = FileVault(tmp.root)
         val bq = Place("@b&q", "B&Q Kirkstall", 53.8123, -1.6012, 200)
