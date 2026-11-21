@@ -479,7 +479,7 @@ private fun ModeSwitch(options: List<String>, selected: Int, onPick: (Int) -> Un
             Text(o, fontSize = 14.sp, color = if (on) Primary else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                    .semantics { selected = on; role = Role.Tab }.clickable { onPick(i) }.padding(vertical = 8.dp))
+                    .semantics { this.selected = on; role = Role.Tab }.clickable { onPick(i) }.padding(vertical = 8.dp))
         }
     }
 }
