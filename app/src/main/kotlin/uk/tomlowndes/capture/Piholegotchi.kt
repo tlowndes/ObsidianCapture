@@ -44,7 +44,7 @@ internal object Piholegotchi {
     }.getOrElse { "Can't reach it. Use the IP address shown on the Pi's screen, on home Wi-Fi." }
 
     /** POSTs JSON and returns the status code. */
-    private fun post(address: String, path: String, json: String): Int {
+    fun post(address: String, path: String, json: String): Int {
         val (host, port) = PiDeck.hostPort(address) ?: error("No address")
         val bytes = json.toByteArray(Charsets.UTF_8)
         Socket().use { sock ->

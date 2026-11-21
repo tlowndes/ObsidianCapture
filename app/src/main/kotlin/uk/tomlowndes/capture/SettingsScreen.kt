@@ -284,6 +284,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             { QuietRow("🗄", "Folders", "projects, images, the notes the app uses ›", onClick = { page = SettingsPage.VAULT }) },
             { QuietRow("🛰", "Server", "Oracle, Tailscale, and sync fallback ›", onClick = { page = SettingsPage.ADVANCED }) },
             { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "on" else "off") + " ›", onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
+            { QuietRow("🚪", "Door Ink", (if (prefs.doorInkAddress.isNotBlank()) "on" else "off") + " ›", onClick = { page = SettingsPage.DOOR_INK }) },
             { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },
         ))
         Box(Modifier.height(20.dp))
@@ -309,6 +310,10 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         SettingsPage.PIHOLEGOTCHI -> {
             SubPageTitle("Piholegotchi", back)
             PiholegotchiSection(prefs)
+        }
+        SettingsPage.DOOR_INK -> {
+            SubPageTitle("Door Ink", back)
+            DoorInkSection(prefs)
         }
         SettingsPage.JARVIS -> {
             SubPageTitle(prefs.assistantName, back)
@@ -477,7 +482,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
     }
 }
 
-private enum class SettingsPage { MAIN, BACKUPS, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, UPDATES, VAULT, ADVANCED }
+private enum class SettingsPage { MAIN, BACKUPS, SWIPES, REMINDERS, CALENDARS, JARVIS, PIHOLEGOTCHI, DOOR_INK, UPDATES, VAULT, ADVANCED }
 
 /** "‹ Jarvis": a settings sub-page title that goes back to the main page. */
 @Composable
@@ -580,6 +585,36 @@ private fun SwipePreview(c: SwipeChoice, toRight: Boolean) {
             Modifier.fillMaxHeight().fillMaxWidth(0.68f).align(if (toRight) Alignment.CenterEnd else Alignment.CenterStart).background(Surface1)
                 .padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart
         ) { Text(if (c == SwipeChoice.NOTHING) "Nothing happens" else "Book MOT", fontSize = 13.sp, color = if (c == SwipeChoice.NOTHING) Muted else TextMain) }
+    }
+}
+
+/** Door Ink (hangar-phase4): the e-ink screen by the front door, where it is, and a test that sends it the screen. */
+@Composable
+private fun DoorInkSection(prefs: AppPrefs) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    var addr by remember { mutableStateOf(prefs.doorInkAddress) }
+    Text(
+        "Shows the leave-by time, what to grab and the weather before you head out, and today's Did I? checks the " +
+            "rest of the day. Sent over your home Wi-Fi when you tick or stamp something, and every 15 minutes. " +
+            "Leave blank to turn it off.",
+        fontSize = 12.sp, color = Muted, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 8.dp)
+    )
+    PathField("Address", addr) {
+        prefs.doorInkAddress = it; addr = it.trim(); result = null
+        DoorInkSend.keep(ctx, addr.isNotBlank())
+    }
+    Text(
+        "doorink.local, or the IP address the door screen shows if that doesn't connect.",
+        fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 4.dp)
+    )
+    SettingRow("Test connection", result ?: if (testing) "Checking…" else null) {
+        TextButton(onClick = {
+            testing = true; result = null
+            scope.launch { result = withContext(Dispatchers.IO) { DoorInkSend.test(ctx) }; testing = false }
+        }, enabled = !testing && addr.isNotBlank()) { Text("Test", color = Primary) }
     }
 }
 
