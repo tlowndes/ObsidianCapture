@@ -34,6 +34,10 @@ private fun HomeCard.stillAt(): String? = when (this) {
     HomeCard.PROJECTS -> "Still in Vault › Projects"
     HomeCard.JOBS -> "The Jobs screen stays"
     HomeCard.INBOX -> "Proton Mail stays your inbox"
+    HomeCard.READ_LATER -> "The Read later tab stays"
+    HomeCard.MOOD, HomeCard.HIGHLIGHTS -> "Both are in Shut down"
+    HomeCard.MEALS, HomeCard.PEOPLE -> "Their notes stay in the vault"
+    HomeCard.LEARN -> "Flashcards stay in the vault"
     else -> null
 }
 
@@ -44,13 +48,17 @@ private fun HomeCard.stillAt(): String? = when (this) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun QuietDeckSheet(cards: List<HomeCard>, onQuiet: (Set<HomeCard>) -> Unit, onKeep: () -> Unit, onLater: () -> Unit) {
+internal fun QuietDeckSheet(
+    cards: List<HomeCard>, onQuiet: (Set<HomeCard>) -> Unit, onKeep: () -> Unit, onLater: () -> Unit,
+    title: String = "A quieter Deck?",
+    body: String = "These cards are switched off for new installs now. Pick any you want to keep. Their notes stay in the vault.",
+) {
     var keep by remember { mutableStateOf(emptySet<HomeCard>()) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onLater, sheetState = sheet, containerColor = Surface1) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
-            Text("A quieter Deck?", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Text("These cards are switched off for new installs now. Pick any you want to keep. Their notes stay in the vault.",
+            Text(title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text(body,
                 fontSize = 13.sp, color = Muted, lineHeight = 19.sp, modifier = Modifier.padding(top = 4.dp, bottom = 10.dp))
             cards.forEach { c ->
                 HorizontalDivider(color = Outline)

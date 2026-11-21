@@ -64,7 +64,7 @@ class DeckTest {
     @Test fun `cards reorder and switch off`() {
         val l = DeckLayout().let { it.moved(it.order.indexOf(HomeCard.JOBS), 0) }.toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
-        assertEquals(HomeCard.values().size - QUIET_CARDS.size - 1, l.onCount)
+        assertEquals(HomeCard.values().size - QUIET_CARDS.size - QUIET_STILL.size - 1, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
     }
 
@@ -77,7 +77,8 @@ class DeckTest {
 
     @Test fun `a new install starts with the quiet cards off`() {
         val l = DeckConfig.layout(null)
-        assertEquals(QUIET_CARDS, l.hidden)
+        assertEquals(QUIET_CARDS + QUIET_STILL, l.hidden)
+        assertEquals(false, DeckConfig.shouldAskQuietStill(null))
         assertEquals(true, HomeCard.NEXT_STEP in l.visible(false))
         assertEquals(false, HomeCard.JOBS in l.visible(false))
         assertEquals(false, DeckConfig.shouldAskQuiet(null))
@@ -95,6 +96,17 @@ class DeckTest {
         val answered = DeckConfig.withQuietAsked(DeckConfig.withLayout(json, quiet))
         assertEquals(false, DeckConfig.shouldAskQuiet(answered))
         assertEquals(quiet, DeckConfig.layout(answered))
+    }
+
+    @Test fun `the second round waits for the first, then is asked once`() {
+        val json = "{\"cards\":[\"NEXT_STEP\",\"JOBS\",\"MOOD\"],\"hiddenCards\":[]}"
+        assertEquals(false, DeckConfig.shouldAskQuietStill(json))
+        val first = DeckConfig.withQuietAsked(DeckConfig.withLayout(json, DeckConfig.layout(json).quieted()))
+        assertEquals(true, DeckConfig.shouldAskQuietStill(first))
+        val still = DeckConfig.layout(first).quietedStill(keep = setOf(HomeCard.MOOD))
+        assertEquals(true, HomeCard.MOOD in still.visible(false))
+        assertEquals(false, HomeCard.MEALS in still.visible(false))
+        assertEquals(emptyList<HomeCard>(), still.loudStill - HomeCard.MOOD)
     }
 
     @Test fun `a saved layout with every quiet card off is not asked`() {

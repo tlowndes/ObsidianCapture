@@ -63,7 +63,7 @@ class RemoteVault(address: String, private val token: String, private val local:
         }
         return (0 until a.length()).map { a.getJSONObject(it) }
             .map { VaultNote(it.getString("path"), it.optLong("modified")) }
-            .filter { it.path.endsWith(".md") && !it.path.substringAfterLast('/').startsWith(".") && !inSkipped(it.path) }
+            .filter { it.path.endsWith(".md") && !it.path.substringAfterLast('/').startsWith(".") && !inSkipped(it.path) && !skip(it.path) }
     }
 
     /** What the server says about its newest note; see [ServerFallback.judge]. */

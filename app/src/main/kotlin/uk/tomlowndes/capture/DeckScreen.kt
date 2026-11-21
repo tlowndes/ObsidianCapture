@@ -51,6 +51,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -212,9 +216,12 @@ fun DeckScreen(
     }
     // A quieter Deck? (quiet-day-v1): asked once, on any device, while a quiet card is still on.
     var quietAsk by remember { mutableStateOf(false) }
+    var stillAsk by remember { mutableStateOf(false) }
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
         quietAsk = withContext(Dispatchers.IO) { runCatching { DeckConfig.loadShouldAskQuiet(appVault(ctx, uri)) }.getOrDefault(false) }
+        // A bit quieter still? (care-welcome-v1): the second round, once the first is answered.
+        stillAsk = !quietAsk && withContext(Dispatchers.IO) { runCatching { DeckConfig.loadShouldAskQuietStill(appVault(ctx, uri)) }.getOrDefault(false) }
     }
     val nowDt = java.time.LocalDateTime.now()
 
@@ -473,7 +480,7 @@ fun DeckScreen(
                         onKeep = { passageSeen(passage, keep = true) },
                         onNext = { passageSeen(passage, keep = false) })
                 }
-                val showLearn = cardsDue != null
+                val showLearn = HomeCard.LEARN !in hidden && cardsDue != null
                 val showLife = vault != null
                 if (showRoutines || showProject || showJournal || showHome || showLearn || showLife) {
                     SectionLabel("More")
@@ -491,8 +498,8 @@ fun DeckScreen(
                     if (showJournal) tiles.add { Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true } }
                     if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
                     if (showLife) {
-                        tiles.add { Tile("🍽", "Meals", home?.let { "${it.planned} of 7 planned" }) { onOpenSub(Sub.MEALS) } }
-                        tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
+                        if (HomeCard.MEALS !in hidden) tiles.add { Tile("🍽", "Meals", home?.let { "${it.planned} of 7 planned" }) { onOpenSub(Sub.MEALS) } }
+                        if (HomeCard.PEOPLE !in hidden) tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
                         tiles.add { Tile("📍", "Errands", home?.errands?.takeIf { it > 0 }?.let { "$it to do" } ?: "none") { onOpenSub(Sub.ERRANDS) } }
                     }
                     // Three to a row; a short last row keeps the same tile width.
@@ -514,7 +521,9 @@ fun DeckScreen(
         Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot(); viewport = it.boundsInRoot() }
             .verticalScroll(scroll).padding(horizontal = 18.dp)
     ) {
-        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) }, onHangar = { onOpenSub(Sub.HANGAR) })
+        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings,
+            // The Daily Slip button only once a printer is paired (care-welcome-v1); Settings › Printer pairs one.
+            onPrint = if (remember { SlipPrinter.saved(ctx) != null }) ({ onOpenSub(Sub.PRINT) }) else null, onHangar = { onOpenSub(Sub.HANGAR) })
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
@@ -531,18 +540,8 @@ fun DeckScreen(
                 onSplit = { breaking = it }, onStuck = { onOpenSub(Sub.STUCK) }
             )
         }
-        // Talk me through it (wellbeing-v1): a task that has waited 3+ days, once a day at most.
-        if (claudeKey(ctx, prefs) != null) TalkThrough.stuck(data.tasks, today, TalkThrough.readSnoozed(snoozed))?.let { t ->
-            StuckNudge(t, TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) {
-                snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed
-            }
-        }
-        // Morning audio briefing (growth-v1): from 6am until noon, hidden once heard.
-        if (claudeKey(ctx, prefs) != null && LocalTime.now().hour in Briefing.READY_HOUR until 12) BriefingCard(vault, prefs, hasWeather = weather != null) {
-            val events = CalendarSync.cached(ctx).flatMap { it.events }
-            Briefing.prompt(Slip.build(today, data.tasks, events, weather, SlipOptions(), today, data.jobs), next?.let { TaskViews.plainText(it) },
-                listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }))
-        }
+        // Talk me through it now lives in Stuck? (care-welcome-v1), not as a surprise card here.
+        // The morning briefing moved to Plan today's ▶ Briefing button (care-welcome-v1).
         // What helps you (wellbeing-v1): first week of the month, until closed.
         helps?.let { p ->
             HelpsCard(p, onAll = { helpsOpen = true }) {
@@ -610,6 +609,19 @@ fun DeckScreen(
         }
         QuietDeckSheet(data.layout.loudCards, onQuiet = { keep -> answer(data.layout.quieted(keep)) },
             onKeep = { answer(data.layout) }, onLater = { quietAsk = false })
+    } else if (stillAsk && data.layout.loudStill.isNotEmpty()) {
+        fun answer(l: DeckLayout) {
+            stillAsk = false
+            data = data.copy(layout = l)
+            val uri = vault ?: return
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { DeckConfig.saveQuietStill(appVault(ctx, uri), l) } }
+                    .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            }
+        }
+        QuietDeckSheet(data.layout.loudStill, onQuiet = { keep -> answer(data.layout.quietedStill(keep)) },
+            onKeep = { answer(data.layout) }, onLater = { stillAsk = false },
+            title = "A bit quieter still?", body = "Shut down covers the evening now, and these are off for new installs. Pick any to keep. Their notes stay in the vault.")
     }
     if (journalOpen) DeckSheet({ journalOpen = false }, full = true) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
@@ -630,17 +642,18 @@ private fun DeckSheet(onDismiss: () -> Unit, full: Boolean = false, content: @Co
 }
 
 @Composable
-private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: () -> Unit, onHangar: () -> Unit) {
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: (() -> Unit)?, onHangar: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+        Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, maxLines = 2, modifier = Modifier.weight(1f).semantics { heading() })
         Row {
             // Daily Slip: today's printout for the pocket thermal printer.
             // Hangar: the small getting-out-the-door tools. Its only entry on Deck, so Deck stays the same length.
-            IconButton(onClick = onHangar) { Text("⌂", fontSize = 21.sp, color = Amber) }
-            IconButton(onClick = onPrint) { Text("🧾", fontSize = 19.sp) }
+            // Spoken labels for the emoji buttons (care-welcome-v1).
+            IconButton(onClick = onHangar, modifier = Modifier.semantics { contentDescription = "Hangar" }) { Text("⌂", fontSize = 21.sp, color = Amber, modifier = Modifier.clearAndSetSemantics { }) }
+            if (onPrint != null) IconButton(onClick = onPrint, modifier = Modifier.semantics { contentDescription = "Daily Slip" }) { Text("🧾", fontSize = 19.sp, modifier = Modifier.clearAndSetSemantics { }) }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }
         }

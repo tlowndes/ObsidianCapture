@@ -41,6 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -471,8 +474,9 @@ private fun GridTile(t: HangarTool, status: Pair<String, String>, modifier: Modi
             .clickable(enabled = t.ready, onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(t.icon, fontSize = 22.sp)
-        Text(t.title, color = c, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
+        Text(t.icon, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics { })
+        // Two lines so a long name wraps at large text instead of clipping (care-welcome-v1).
+        Text(t.title, color = c, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 2.dp))
         Text(status.second.ifEmpty { status.first }, color = Muted, fontSize = 11.sp, maxLines = 1,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -486,9 +490,9 @@ private fun SpareTile(icon: String, label: String, modifier: Modifier, onClick: 
             .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(icon, fontSize = 20.sp, color = Muted)
+        Text(icon, fontSize = 20.sp, color = Muted, modifier = Modifier.clearAndSetSemantics { })
         Text(label, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
-        Text(" ", fontSize = 11.sp)
+        Text(" ", fontSize = 11.sp, modifier = Modifier.clearAndSetSemantics { })
     }
 }
 
@@ -521,8 +525,8 @@ private fun EditList(ctx: Context, list: List<HangarTool>, onSave: (List<HangarT
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         list.forEachIndexed { i, t ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("↑", color = if (i > 0) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable(enabled = i > 0) { onSave(Hangar.move(list, i, -1)) }.padding(8.dp))
-                Text("↓", color = if (i < list.lastIndex) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable(enabled = i < list.lastIndex) { onSave(Hangar.move(list, i, 1)) }.padding(8.dp))
+                Text("↑", color = if (i > 0) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.semantics { contentDescription = "Move ${t.title} up" }.clip(CircleShape).clickable(enabled = i > 0) { onSave(Hangar.move(list, i, -1)) }.padding(8.dp))
+                Text("↓", color = if (i < list.lastIndex) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.semantics { contentDescription = "Move ${t.title} down" }.clip(CircleShape).clickable(enabled = i < list.lastIndex) { onSave(Hangar.move(list, i, 1)) }.padding(8.dp))
                 Text(t.title, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 4.dp))
                 if (t.ready) Text("Pin", color = Primary, fontSize = 13.sp, modifier = Modifier.clip(CircleShape).clickable { pinShortcut(ctx, t) }.padding(8.dp))
                 Text("Hide", color = Muted, fontSize = 13.sp, modifier = Modifier.clip(CircleShape).clickable { onSave(Hangar.remove(list, t)) }.padding(8.dp))
