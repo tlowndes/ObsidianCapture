@@ -19,7 +19,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -269,7 +272,7 @@ private fun subFor(slot: String?) = when (slot) {
     else -> null
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
@@ -284,8 +287,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var sub by remember { mutableStateOf(subFor(request?.second)) }
     /** Heads Up opened from a Focus buzz shows the switch view; from Hangar it shows its settings. */
     var headsSwitch by remember { mutableStateOf(request?.second == "heads_switch") }
-    // Hangar opens as a pull-up sheet over the Deck (hangar-menu-v1). Anything that asks for Sub.HANGAR
-    // (the ⌂, a tool's back arrow, the app shortcut) lands on the Deck with the sheet open.
+    // Hangar opens as a pull-up sheet (hangar-menu-v1) from the dock (hangar-dock-v1). Anything that asks for
+    // Sub.HANGAR (a tool's back arrow, the app shortcut) lands on the Deck with the sheet open.
     var hangarOpen by remember { mutableStateOf(false) }
     LaunchedEffect(sub) {
         if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
@@ -303,6 +306,47 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var unread by remember { mutableStateOf(0) }
     var jobsOpen by remember { mutableStateOf(0) }
     val snack = remember { SnackbarHostState() }
+    // The Hangar dock (hangar-dock-v1): tools in Hangar's order, re-read when the sheet closes (Edit may have changed them).
+    // Inbox, Home, Projects, Errands and Meals moved off the Deck into Hangar (hangar-dock-v2): added once to a Hangar set up before.
+    remember {
+        if (!prefs.hangarDeckToolsAdded) {
+            Hangar.parse(prefs.hangarTools)?.let { prefs.hangarTools = Hangar.format(Hangar.withDeckTools(it)) }
+            prefs.hangarDeckToolsAdded = true
+        }
+    }
+    var dockTools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
+    var dockDots by remember { mutableStateOf(emptySet<HangarTool>()) }
+    LaunchedEffect(vault, hangarOpen, sub) {
+        if (hangarOpen) return@LaunchedEffect
+        val t = Hangar.parse(prefs.hangarTools)
+        dockTools = t
+        val uri = vault ?: return@LaunchedEffect
+        dockDots = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, t.orEmpty()) }.getOrDefault(emptySet()) }
+    }
+    fun openTool(t: HangarTool) {
+        hangarOpen = false
+        settings = false; search = false; cards = false
+        when (t) {
+            HangarTool.DID_I -> sub = Sub.DID_I
+            HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
+            HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+            HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
+            HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
+            HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
+            HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
+            HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
+            HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
+            HangarTool.REFILL -> sub = Sub.REFILL
+            HangarTool.WAITING -> sub = Sub.WAITING
+            HangarTool.ERRAND_RUN -> sub = Sub.ERRANDS
+            HangarTool.SENSORY -> sub = Sub.SENSORY
+            HangarTool.INBOX -> sub = Sub.INBOX
+            HangarTool.HOME -> sub = Sub.CHORES
+            HangarTool.ERRANDS -> sub = Sub.ERRANDS
+            HangarTool.MEALS -> sub = Sub.MEALS
+            HangarTool.PROJECTS -> { sub = null; openIdea = null; tab = Tab.PROJECTS }
+        }
+    }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
@@ -366,9 +410,15 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            // The dock shows on the main tabs only, and hides while typing.
+            val showDock = !hideNav && sub == null && !settings && !search && !cards &&
+                tab in Tab.NAV && !WindowInsets.isImeVisible
+            if (!hideNav) Column {
+            if (showDock) HangarDock(dockTools, dockDots, onOpen = { openTool(it) }) { hangarOpen = true }
+            NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
+            }
             }
         }
     ) { pad ->
@@ -444,26 +494,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
         if (hangarOpen) {
             val hangarSheet = rememberModalBottomSheetState()
-            ModalBottomSheet(onDismissRequest = { hangarOpen = false }, sheetState = hangarSheet, containerColor = Surface2) {
-            HangarScreen(vault, prefs, snack, onOpen = { t ->
-                    hangarOpen = false
-                    when (t) {
-                        HangarTool.DID_I -> sub = Sub.DID_I
-                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
-                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
-                        HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
-                        HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
-                        HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
-                        HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
-                        HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
-                        HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
-                        HangarTool.REFILL -> sub = Sub.REFILL
-                        HangarTool.WAITING -> sub = Sub.WAITING
-                        HangarTool.ERRAND_RUN -> sub = Sub.ERRANDS
-                        HangarTool.SENSORY -> sub = Sub.SENSORY
-                        else -> {}
-                    }
-                }, inSheet = true) { hangarOpen = false }
+            // Opens halfway; drag up for the full list. A darker scrim so the screen behind doesn't show through.
+            ModalBottomSheet(onDismissRequest = { hangarOpen = false }, sheetState = hangarSheet, containerColor = Surface2,
+                scrimColor = Color.Black.copy(alpha = 0.6f)) {
+            HangarScreen(vault, prefs, snack, onOpen = { openTool(it) }, inSheet = true, needs = dockDots) { hangarOpen = false }
             }
         }
     }

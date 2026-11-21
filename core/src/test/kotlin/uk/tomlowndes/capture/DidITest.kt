@@ -74,7 +74,8 @@ class DidITest {
         assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), t)
         assertEquals("launch,didi", Hangar.format(Hangar.move(t, 1, -1)))
         assertEquals(t, Hangar.move(t, 0, -1))
-        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.TICKET_RAIL, HangarTool.SENSORY), Hangar.available(t).toSet())
+        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.TICKET_RAIL, HangarTool.SENSORY,
+            HangarTool.INBOX, HangarTool.HOME, HangarTool.PROJECTS, HangarTool.ERRANDS, HangarTool.MEALS), Hangar.available(t).toSet())
         assertEquals(HangarTool.DID_I, Hangar.available(emptyList()).first())
     }
 
@@ -84,5 +85,17 @@ class DidITest {
         assertTrue(Hangar.hadRun(saved))
         assertFalse(Hangar.hadRun(Hangar.format(Hangar.parse(saved)!!)))
         assertFalse(HangarTool.ERRAND_RUN in Hangar.available(emptyList()))
+    }
+
+    @Test
+    fun deckToolsMoveIntoAnExistingHangar() {
+        val old = listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD, HangarTool.HEADS_UP, HangarTool.NIGHT_PAD)
+        val now = Hangar.withDeckTools(old)
+        assertEquals(listOf(HangarTool.INBOX, HangarTool.DID_I, HangarTool.HOME, HangarTool.ERRANDS, HangarTool.LAUNCH_PAD,
+            HangarTool.HEADS_UP, HangarTool.PROJECTS, HangarTool.MEALS, HangarTool.NIGHT_PAD), now)
+        // Running it twice adds nothing more, and a tool already there stays put.
+        assertEquals(now, Hangar.withDeckTools(now))
+        assertEquals(listOf(HangarTool.INBOX, HangarTool.HOME, HangarTool.ERRANDS, HangarTool.PROJECTS, HangarTool.MEALS), Hangar.withDeckTools(null))
+        assertEquals("Around home", HangarTool.MEALS.group)
     }
 }
