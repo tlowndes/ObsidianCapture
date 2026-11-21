@@ -32,6 +32,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import uk.tomlowndes.capture.DeckConfig
+import uk.tomlowndes.capture.HomeCard
 import uk.tomlowndes.capture.ReadNote
 import uk.tomlowndes.capture.Tags
 import java.io.File
@@ -50,20 +60,44 @@ fun MainWindow(state: AppState) {
             if (state.vault == null && state.tab != Tab.SETTINGS) Welcome(state)
             else when (state.tab) {
                 Tab.DECK -> DeckPane(state)
-                Tab.TASKS -> TasksPane(state, upcoming = false)
-                Tab.UPCOMING -> TasksPane(state, upcoming = true)
-                Tab.PROJECTS -> ProjectsPane(state)
-                Tab.VAULT -> VaultPane(state)
-                Tab.READ -> ReadPane(state)
-                Tab.FIND -> FindPane(state)
+                // Fold the extra doors (fold-doors-v1): Upcoming is a switch inside Tasks.
+                Tab.TASKS, Tab.UPCOMING -> Column(Modifier.fillMaxSize()) {
+                    Pill(listOf("Today", "Upcoming"), if (state.tab == Tab.UPCOMING) 1 else 0, Modifier.padding(start = 28.dp, top = 14.dp).width(240.dp)) {
+                        state.tab = if (it == 1) Tab.UPCOMING else Tab.TASKS
+                    }
+                    Box(Modifier.weight(1f)) { TasksPane(state, upcoming = state.tab == Tab.UPCOMING) }
+                }
+                // Projects, Read later, Inbox, Home and People are chips along the top of Vault.
+                Tab.VAULT, Tab.PROJECTS, Tab.READ, Tab.INBOX, Tab.HOME, Tab.PEOPLE, Tab.FIND -> Column(Modifier.fillMaxSize()) {
+                    VaultChips(state)
+                    Box(Modifier.weight(1f)) {
+                        when (state.tab) {
+                            Tab.PROJECTS -> ProjectsPane(state)
+                            Tab.READ -> ReadPane(state)
+                            Tab.FIND -> FindPane(state)
+                            Tab.HOME -> HomePane(state)
+                            Tab.INBOX -> InboxPane(state)
+                            Tab.PEOPLE -> PeoplePane(state)
+                            else -> VaultPane(state)
+                        }
+                    }
+                }
                 Tab.SETTINGS -> SettingsPane(state)
                 Tab.WEEKLY -> WeeklyPane(state)
                 Tab.ROUTINES -> RoutinesPane(state)
                 Tab.JOBS -> JobsPane(state)
-                Tab.JARVIS -> JarvisPane(state)
-                Tab.HOME -> HomePane(state)
-                Tab.INBOX -> InboxPane(state)
-                Tab.PEOPLE -> PeoplePane(state)
+                // Capture is a page now: a box that opens quick capture, with Tower below it.
+                Tab.JARVIS -> Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.padding(start = 28.dp, end = 28.dp, top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1)
+                            .border(1.dp, Outline, RoundedCornerShape(14.dp)).hand().clickable { state.quickVisible = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("＋ Add a task or a link…", fontSize = 14.sp, color = Muted, modifier = Modifier.weight(1f))
+                        Kbd("Ctrl"); Kbd("N")
+                    }
+                    Box(Modifier.weight(1f)) { JarvisPane(state) }
+                }
             }
             SnackbarHost(state.snack, Modifier.align(Alignment.BottomEnd).padding(24.dp).widthIn(max = 460.dp)) { data ->
                 Snackbar(data, containerColor = SnackBg, contentColor = SnackText,
@@ -106,31 +140,18 @@ private fun Sidebar(state: AppState) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 2.dp).padding(bottom = 16.dp).clip(CircleShape).background(Primary)
-                .hand().clickable { state.quickVisible = true }.padding(vertical = 11.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("＋ Capture", color = OnPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text("Ctrl N", color = OnPrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x22000000)).padding(horizontal = 5.dp, vertical = 1.dp))
-        }
+        // The phone's four destinations plus Settings (fold-doors-v1).
         NavItem(state, Tab.DECK, "◎", "Deck")
-        NavItem(state, Tab.TASKS, "✓", "Tasks") { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
-        NavItem(state, Tab.UPCOMING, "🗓", "Upcoming")
-        NavItem(state, Tab.INBOX, "✉", "Inbox") { if (state.inboxOpen > 0) Count(state.inboxOpen) }
-        NavItem(state, Tab.JARVIS, "🎙", state.prefs.assistantName)
-        NavItem(state, Tab.PROJECTS, "💡", "Projects") { if (state.activeProjects > 0) Count(state.activeProjects) }
-        NavItem(state, Tab.VAULT, "🗂", "Vault")
-        NavItem(state, Tab.HOME, "🏠", "Home")
-        NavItem(state, Tab.PEOPLE, "👥", "People")
+        NavItem(state, Tab.JARVIS, "＋", "Capture") { Text("Ctrl N", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
+        NavItem(state, Tab.TASKS, "✓", "Tasks", also = setOf(Tab.UPCOMING)) { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
+        NavItem(state, Tab.VAULT, "🗂", "Vault", also = VAULT_CHIPS.map { it.first }.toSet() + Tab.FIND)
         state.routine?.let { r ->
             NavItem(state, Tab.ROUTINES, "⏱", r.routine.name) { Text("${r.step + 1}/${r.routine.steps.size}", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         }
-        NavItem(state, Tab.READ, "📖", "Read later") { if (state.unread > 0) Count(state.unread) }
         Spacer(Modifier.weight(1f))
-        NavItem(state, Tab.FIND, "🔍", "Find a note") { Text("Ctrl K", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         NavItem(state, Tab.SETTINGS, "⚙", "Settings") { if (DesktopUpdate.waiting()) Box(Modifier.size(8.dp).clip(CircleShape).background(Primary)) }
+        Text("🔍 Ctrl K finds a note", fontSize = 11.sp, color = Faint, modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(8.dp)).hand().clickable { state.tab = Tab.FIND })
         Column(
             Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, Outline, RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -148,8 +169,8 @@ private fun Sidebar(state: AppState) {
 }
 
 @Composable
-private fun NavItem(state: AppState, tab: Tab, icon: String, name: String, trailing: @Composable () -> Unit = {}) {
-    val on = state.tab == tab
+private fun NavItem(state: AppState, tab: Tab, icon: String, name: String, also: Set<Tab> = emptySet(), trailing: @Composable () -> Unit = {}) {
+    val on = state.tab == tab || state.tab in also
     Row(
         Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(12.dp)).background(if (on) PrimaryTint else Color.Transparent)
             .hand().clickable { if (tab == Tab.TASKS && state.tab != Tab.TASKS) state.taskNote = null; state.tab = tab }.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -158,6 +179,26 @@ private fun NavItem(state: AppState, tab: Tab, icon: String, name: String, trail
         Text(icon, fontSize = 15.sp, color = if (on) Primary else Muted, modifier = Modifier.width(20.dp))
         Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted, modifier = Modifier.weight(1f))
         trailing()
+    }
+}
+
+/** Vault's chips (fold-doors-v1), with the tab each opens. */
+private val VAULT_CHIPS = listOf(Tab.VAULT to "Notes", Tab.PROJECTS to "💡 Projects", Tab.READ to "📖 Read later",
+    Tab.INBOX to "✉ Inbox", Tab.HOME to "🏠 Home", Tab.PEOPLE to "👥 People")
+
+@Composable
+private fun VaultChips(state: AppState) {
+    // Inbox and Home only show while their Deck cards are on (or you're on that page).
+    var hidden by remember { mutableStateOf<Set<HomeCard>>(emptySet()) }
+    LaunchedEffect(state.vault) { hidden = withContext(Dispatchers.IO) { state.vault?.let { v -> runCatching { DeckConfig.load(v).hidden }.getOrNull() } ?: emptySet() } }
+    Row(Modifier.padding(start = 28.dp, end = 28.dp, top = 14.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VAULT_CHIPS.forEach { (tab, label) ->
+            val show = when (tab) { Tab.INBOX -> HomeCard.INBOX !in hidden; Tab.HOME -> HomeCard.CHORES !in hidden; else -> true } || state.tab == tab
+            if (show) {
+                val n = when (tab) { Tab.PROJECTS -> state.activeProjects; Tab.READ -> state.unread; Tab.INBOX -> state.inboxOpen; else -> 0 }
+                Chip(if (n > 0) "$label · $n" else label, selected = state.tab == tab || (tab == Tab.VAULT && state.tab == Tab.FIND), small = true) { state.tab = tab }
+            }
+        }
     }
 }
 

@@ -116,7 +116,7 @@ Folder notes under the projects folder, grouped Active, Paused, Ideas, and Done 
 - **Cool-off** (in Hangar, Day to day): a wait before impulse buys. Add the thing (or share its shop page and pick Cool-off), and when the 48 hours are up (or 24 hours, or a week) it buzzes once and asks: buy it, wait 48 hours more, or let it go. Letting go adds to a "not spent this month" total. Anything with a link has its price checked about twice a day while it cools, shown as "now £39, was £45", and a drop buzzes once. Kept in `99 - Meta/Cool-off.md`.
 - **Refill** (in Hangar, Day to day): counts your meds down from your Did I? ticks (Meds by default, one off per tick, skipped days don't count). Ordered marks it on its way, Picked up adds the new box (28 by default), and tapping a med corrects the count. It buzzes at 09:00 a week before you'd run out, and a med to reorder shows in Right now. Kept in `99 - Meta/Refill.md`.
 - **Waiting Mode** (in Hangar, Day to day): stuck in a queue? The Quick Settings tile offers three things instead of scrolling: a task tagged ⏱ 5m or #quick (tap to tick it), an unread article under 5 minutes, or one minute of slow breathing (in 4, out 6). Shuffle swaps them.
-- **Errand Run** (in Hangar, Day to day): your @place errands as one run, every stop with something waiting, nearest first from where you are. Packed Return Radar parcels add a Post Office stop (tag it `@postoffice` in Places). Ticking an item ticks its task, a parcel is marked dropped off, and Start run opens your maps app with the stops in order.
+- **Errand Run** (Start a run, at the top of Errands): your @place errands as one run, every stop with something waiting, nearest first from where you are. Packed Return Radar parcels add a Post Office stop (tag it `@postoffice` in Places). Ticking an item ticks its task, a parcel is marked dropped off, and Start run opens your maps app with the stops in order.
 - **Ticket Rail** (in Hangar, under At the desk): prints tasks as tall tickets on the pocket printer, to hang on a rail by your desk. Up to five overdue or due-today tasks print under the morning Daily Slip (a switch turns this off), and any task's edit sheet has Print ticket. Each printed task gets a `🆔 hom042` id in its line. When it's done, spike the ticket and scan its QR (in Ticket Rail, or with the phone camera via `flightdeck://clear/<id>`) to tick it off, with Undo.
 - **Sensory Dial** (in Hangar, under At the desk): turns the room down in one move through Home Assistant. Three levels, Normal, Low and Shelter, dim the lights, start brown noise and set the phone to Do Not Disturb. The knob on the desk is an IKEA STYRBAR for now; the screen has the same three buttons for when you're away from it, and a week of turned-down minutes. Every change is logged quietly to `99 - Meta/Sensory log.md` (`- 2026-11-20 14:02 · Low · 12 min`), read from HA's history. The HA package and setup steps are in `tools/sensory-dial`.
 - **Stuck? Pick one.**: Quick, Medium and Long from the stuck menu. Start runs that item as a focus timer. Add your own lines; they are written into the note.
@@ -133,13 +133,7 @@ The app is in the Android share sheet. A shared link, or a link with only a shor
 
 ### Widgets
 
-Five home-screen widgets:
-
-- **Today's tasks**: overdue and today, ticked from the widget.
-- **Read It Later**: unread count and the newest unread article; tap to open it in the reader.
-- **Tasks & Read It Later**: those two side by side.
-- **Quick capture**: add a task or save a link in a small sheet, without opening the app.
-- **Capture**: opens the Capture tab.
+The widget picker shows **Today's tasks**, **Quick capture** (add a task or save a link in a small sheet) and **Did I?**. Next step, Read It Later, Tasks & Read It Later, Capture, Chores and Shopping leave the picker unless one is already on a home screen; Settings › Show every widget puts them back.
 
 ### Reminders
 
@@ -153,7 +147,7 @@ Flight Deck can show your day on [Piholegotchi](https://github.com/tlowndes/piho
 
 Compose Desktop, installed per user from an MSI named Flight Deck (called Vault Capture up to 1.34; the same upgrade code means it replaces the old install, and Start with Windows is moved across on first start). The window is titled Flight Deck and uses the phone's colours. Closing it leaves the app in the system tray. A second launch brings the running window forward. Start with Windows is a Settings switch.
 
-The sidebar is Deck, Tasks, Projects, Read later, Find a note (Ctrl+K) and Settings, plus a Capture button (Ctrl+N). Ctrl+R re-reads the vault.
+The sidebar is the phone's four: Deck, Capture (a box that opens quick capture, Ctrl+N, with Tower below), Tasks (Today · Upcoming) and Vault (chips for Projects, Read later, Inbox, Home and People), plus Settings. Ctrl+K finds a note. Hangar tools are phone only for now. Ctrl+R re-reads the vault.
 
 - **Tasks**: the same vault-wide `#task` list, grouped Overdue, Today, Tomorrow, This week, Later and No date, or in note order. Add a task in the box; a typed date such as `fri` or `25 oct` is taken as the due date. Tick, reschedule or remove, with Undo.
 - **Deck**: the phone's home cards in two columns, in the order and with the cards switched off in `capture-config.json`. Left: Next step (Start runs a focus timer in the card, Finish writes the focus log and asks if it's done; Later hides it until tomorrow), Bills, Top tasks and Habits. Right: Weather (the town from Settings; click for the day strip), Projects and Read it later. Today, Stuck? and Jobs stay on the phone.

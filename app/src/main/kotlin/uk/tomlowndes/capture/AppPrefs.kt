@@ -285,6 +285,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         p.edit().putBoolean("evening_week_done", true).apply()
     }
 
+    /** Show every widget in Android's picker, even the ones folded away (fold-doors-v1). */
+    var allWidgets: Boolean
+        get() = p.getBoolean("all_widgets", false)
+        set(v) { p.edit().putBoolean("all_widgets", v).apply() }
+
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean
         get() = p.getBoolean("due_on", false)

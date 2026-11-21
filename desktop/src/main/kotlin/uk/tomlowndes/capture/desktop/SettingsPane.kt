@@ -117,6 +117,8 @@ private fun GeneralPage(state: AppState) {
             Chip("+", small = true) { if (usual < 30) { usual += 1; p.reshuffleUsual = usual } }
         }
     }
+    // Hangar isn't on Windows (fold-doors-v1).
+    Setting("Hangar", "Did I?, Launch Pad, Heads Up and the other Hangar tools are phone only for now") { }
 }
 
 @Composable

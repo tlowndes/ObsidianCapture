@@ -109,6 +109,9 @@ fun HangarScreen(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var tools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
+    // Errand Run moved to the Errands list (fold-doors-v1): say so once, then forget it.
+    var hadRun by remember { mutableStateOf(Hangar.hadRun(prefs.hangarTools)) }
+    fun forgetRun() { hadRun = false; prefs.hangarTools = Hangar.format(Hangar.parse(prefs.hangarTools).orEmpty()) }
     var editing by remember { mutableStateOf(false) }
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
     var trip by remember { mutableStateOf<Trip?>(null) }
@@ -236,6 +239,9 @@ fun HangarScreen(
                     val more = Hangar.available(list).isNotEmpty()
                     // A tool, or "add" / "edit" for the two spare tiles at the end.
                     val cells: List<Any> = ordered + listOfNotNull(if (more) "add" else null, "edit")
+                    if (hadRun) Text("⇢ Errand Run moved to Errands. Tap to go there.", fontSize = 13.sp, color = Primary,
+                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PrimaryTint)
+                            .clickable { forgetRun(); onOpen(HangarTool.ERRAND_RUN) }.padding(horizontal = 12.dp, vertical = 10.dp))
                     Column(Modifier.padding(top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         cells.chunked(3).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
