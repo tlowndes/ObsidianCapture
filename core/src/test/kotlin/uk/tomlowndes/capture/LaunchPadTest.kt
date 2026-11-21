@@ -63,10 +63,12 @@ class LaunchPadTest {
         val leave = HeadsTarget(HeadsTarget.Kind.LEAVE, "Gym", day.withHour(9).withMinute(13))
         val same = HeadsTarget(HeadsTarget.Kind.EVENT, "Gym", day.withHour(9).withMinute(13))
         val late = HeadsTarget(HeadsTarget.Kind.EVENT, "Late call", day.withHour(21).withMinute(30))
-        val plan = HeadsUp.plan(listOf(same, leave, late), day)
+        val plan = HeadsUp.plan(listOf(same, leave, late), day, HeadsUp.THREE)
         assertEquals(listOf(5, 1), plan.map { it.minutes })
         assertTrue(plan.all { it.target.kind == HeadsTarget.Kind.LEAVE })
         assertEquals("1 min · time to go", HeadsUp.words(plan.last()).first)
+        // The default since quiet-day-v1 is one warning, 10 minutes before.
+        assertEquals(listOf(10), HeadsUp.plan(listOf(leave), day.withHour(8)).map { it.minutes })
     }
 
     @Test fun `night pad lists charge, bag and wear for tomorrow`() {
