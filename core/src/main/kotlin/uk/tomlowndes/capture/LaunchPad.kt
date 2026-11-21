@@ -170,7 +170,9 @@ data class HeadsAlert(val at: LocalDateTime, val minutes: Int, val target: Heads
  */
 object HeadsUp {
     val STAGES = listOf(15, 10, 5, 1)
-    val DEFAULT = listOf(10, 5, 1)
+    /** One warning by default (quiet-day-v1). Three stages are still a choice in Settings. */
+    val DEFAULT = listOf(10)
+    val THREE = listOf(10, 5, 1)
 
     fun parseStages(saved: String?): List<Int> =
         saved?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.filter { it in STAGES }?.distinct()?.sortedDescending()

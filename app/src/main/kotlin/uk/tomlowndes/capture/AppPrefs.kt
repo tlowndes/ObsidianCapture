@@ -263,6 +263,19 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = Sorting.fromJson(p.getString("jarvis_found", null))
         set(v) { p.edit().apply { if (v == null) remove("jarvis_found") else putString("jarvis_found", Sorting.toJson(v)) }.remove("capture_queue").remove("sort_model").apply() }
 
+    /**
+     * Quiet the day (quiet-day-v1), once per phone: the due-today ping folds into the morning nudge, and Heads Up's
+     * old three-stage default becomes one warning. A custom set of stages is left alone.
+     */
+    val quietDayDone get() = p.getBoolean("quiet_day_done", false)
+
+    fun quietDayOnce() {
+        if (quietDayDone) return
+        dueOn = false
+        if (headsStages == null || HeadsUp.parseStages(headsStages) == HeadsUp.THREE) headsStages = HeadsUp.formatStages(HeadsUp.DEFAULT)
+        p.edit().putBoolean("quiet_day_done", true).apply()
+    }
+
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean
         get() = p.getBoolean("due_on", false)

@@ -95,7 +95,7 @@ class LaunchPadTest {
     }
 
     @Test fun `stages and quiet hours parse`() {
-        assertEquals(listOf(10, 5, 1), HeadsUp.parseStages(null))
+        assertEquals(listOf(10), HeadsUp.parseStages(null))
         assertEquals(listOf(15, 5), HeadsUp.parseStages("5, 15, 7"))
         assertTrue(HeadsUp.quiet(LocalTime.of(23, 0), LocalTime.of(21, 0), LocalTime.of(7, 0)))
         assertTrue(!HeadsUp.quiet(LocalTime.of(8, 0), LocalTime.of(21, 0), LocalTime.of(7, 0)))

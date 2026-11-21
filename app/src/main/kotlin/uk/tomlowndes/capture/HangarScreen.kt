@@ -101,7 +101,10 @@ private fun dayNudge(d: DayStatus?, list: List<HangarTool>): DayNudge? {
  * it can be done without opening a tool; the tools you've added are listed underneath with their live status.
  */
 @Composable
-fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen: (HangarTool) -> Unit, onBack: () -> Unit) {
+fun HangarScreen(
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen: (HangarTool) -> Unit,
+    inSheet: Boolean = false, onBack: () -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -180,10 +183,11 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             sensory = withContext(Dispatchers.IO) { runCatching { Sensory.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (editing) editing = false else onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
-            Text(if (editing) "Edit Hangar" else "Hangar", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+    // In the pull-up sheet (hangar-menu-v1) the sheet scrolls and closes itself, so there's no back arrow.
+    Column((if (inSheet) Modifier.fillMaxWidth() else Modifier.fillMaxSize()).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = if (inSheet) 0.dp else 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!inSheet || editing) IconButton(onClick = { if (editing) editing = false else onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
+            Text(if (editing) "Edit Hangar" else "⌂ Hangar", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = if (inSheet && !editing) 4.dp else 0.dp))
             if (tools != null) Text(if (editing) "Done" else "Edit", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(CircleShape).clickable { editing = !editing }.padding(horizontal = 12.dp, vertical = 8.dp))
         }
@@ -225,6 +229,29 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                     night = tonight?.takeIf { due == null && nudge == null }, onNight = { onOpen(HangarTool.NIGHT_PAD) },
                     ret = due, onReturn = { onOpen(HangarTool.RETURN_RADAR) },
                     day = nudge, onDay = { onOpen(it) })
+                // In the sheet: one grid of tiles, in group order, then Add and Edit (hangar-menu-v1).
+                if (inSheet) {
+                    val ordered = listOf("Getting out", "Finding things", "Day to day", "At the desk").flatMap { g -> list.filter { it.group == g } } +
+                        list.filter { it.group !in setOf("Getting out", "Finding things", "Day to day", "At the desk") }
+                    val more = Hangar.available(list).isNotEmpty()
+                    // A tool, or "add" / "edit" for the two spare tiles at the end.
+                    val cells: List<Any> = ordered + listOfNotNull(if (more) "add" else null, "edit")
+                    Column(Modifier.padding(top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        cells.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { cell ->
+                                    when (cell) {
+                                        is HangarTool -> GridTile(cell, statusOf(cell, did, trip, prefs, rail, night, finding, day, sensory), Modifier.weight(1f)) { if (cell.ready) onOpen(cell) }
+                                        "add" -> SpareTile("＋", "Add tool", Modifier.weight(1f)) { editing = true }
+                                        else -> SpareTile("✎", "Edit", Modifier.weight(1f)) { editing = true }
+                                    }
+                                }
+                                repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                    return@Column
+                }
                 // Getting out, Finding things (hangar-phase2), Day to day (hangar-phase3), then At the desk (ticket-rail-v1).
                 listOf("Getting out", "Finding things", "Day to day", "At the desk").forEachIndexed { gi, g ->
                     val rows = list.filter { it.group == g }
@@ -426,6 +453,36 @@ private fun ToolTile(t: HangarTool, status: Pair<String, String>, onClick: () ->
             Text(status.first, color = Muted, fontSize = 12.5.sp, maxLines = 1)
         }
         if (status.second.isNotEmpty()) Text(status.second, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(end = 14.dp))
+    }
+}
+
+/** A tool as a square-ish tile in the pull-up sheet: icon, name, and its short status. */
+@Composable
+private fun GridTile(t: HangarTool, status: Pair<String, String>, modifier: Modifier, onClick: () -> Unit) {
+    val c = if (t.ready) t.colour() else Muted
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(14.dp))
+            .clickable(enabled = t.ready, onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(t.icon, fontSize = 22.sp)
+        Text(t.title, color = c, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 2.dp))
+        Text(status.second.ifEmpty { status.first }, color = Muted, fontSize = 11.sp, maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable
+private fun SpareTile(icon: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, Outline, RoundedCornerShape(14.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(icon, fontSize = 20.sp, color = Muted)
+        Text(label, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+        Text(" ", fontSize = 11.sp)
     }
 }
 

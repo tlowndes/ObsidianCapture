@@ -26,7 +26,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -88,6 +91,12 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
+        // Quiet the day (quiet-day-v1): once per phone, then the reminders and Heads Up are planned again.
+        if (!prefs.quietDayDone) {
+            prefs.quietDayOnce()
+            Reminders.scheduleAll(applicationContext, prefs)
+            Thread { runCatching { HeadsAlarms.reschedule(applicationContext) } }.start()
+        }
         setContent {
             CaptureTheme {
                 App(prefs, openRequest) { openRequest = null }
@@ -158,6 +167,7 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "RAIL") { openRequest = Tab.DECK to "rail"; return }
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
+        if (i?.getStringExtra("tab") == "PLAN") { openRequest = Tab.DECK to "plan"; return }
         if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
         // Hangar and Did I? from the app shortcuts, pinned shortcuts and the Did I? widget.
         if (i?.getStringExtra("tab") == "HANGAR") { openRequest = Tab.DECK to "hangar"; return }
@@ -238,6 +248,7 @@ private fun subFor(slot: String?) = when (slot) {
     "jobs" -> Sub.JOBS
     "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
+    "plan" -> Sub.PLAN
     "hangar" -> Sub.HANGAR
     "didi" -> Sub.DID_I
     "launch" -> Sub.LAUNCH_PAD
@@ -255,6 +266,7 @@ private fun subFor(slot: String?) = when (slot) {
     else -> null
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
@@ -269,6 +281,12 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var sub by remember { mutableStateOf(subFor(request?.second)) }
     /** Heads Up opened from a Focus buzz shows the switch view; from Hangar it shows its settings. */
     var headsSwitch by remember { mutableStateOf(request?.second == "heads_switch") }
+    // Hangar opens as a pull-up sheet over the Deck (hangar-menu-v1). Anything that asks for Sub.HANGAR
+    // (the ⌂, a tool's back arrow, the app shortcut) lands on the Deck with the sheet open.
+    var hangarOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(sub) {
+        if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
+    }
     var routineName by remember { mutableStateOf<String?>(null) }
     fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
         Focus.start(ctx, task, raw, path, minutes)
@@ -350,24 +368,6 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
             when {
-                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t ->
-                    when (t) {
-                        HangarTool.DID_I -> sub = Sub.DID_I
-                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
-                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
-                        HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
-                        HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
-                        HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
-                        HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
-                        HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
-                        HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
-                        HangarTool.REFILL -> sub = Sub.REFILL
-                        HangarTool.WAITING -> sub = Sub.WAITING
-                        HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
-                        HangarTool.SENSORY -> sub = Sub.SENSORY
-                        else -> {}
-                    }
-                }) { sub = null }
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.NIGHT_PAD -> NightPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
@@ -433,6 +433,30 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                         modifier = Modifier.clickable { tab = Tab.VAULT }.padding(start = 18.dp, top = 10.dp, end = 18.dp))
                     Box(Modifier.weight(1f)) { ReadScreen(vault, prefs, snack, openArticle) { openArticle = it } }
                 }
+            }
+        }
+        if (hangarOpen) {
+            val hangarSheet = rememberModalBottomSheetState()
+            ModalBottomSheet(onDismissRequest = { hangarOpen = false }, sheetState = hangarSheet, containerColor = Surface2) {
+            HangarScreen(vault, prefs, snack, onOpen = { t ->
+                    hangarOpen = false
+                    when (t) {
+                        HangarTool.DID_I -> sub = Sub.DID_I
+                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
+                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+                        HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
+                        HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
+                        HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
+                        HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
+                        HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
+                        HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
+                        HangarTool.REFILL -> sub = Sub.REFILL
+                        HangarTool.WAITING -> sub = Sub.WAITING
+                        HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
+                        HangarTool.SENSORY -> sub = Sub.SENSORY
+                        else -> {}
+                    }
+                }, inSheet = true) { hangarOpen = false }
             }
         }
     }
