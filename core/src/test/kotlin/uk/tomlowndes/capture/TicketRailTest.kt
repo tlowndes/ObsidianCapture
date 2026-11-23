@@ -139,4 +139,25 @@ class TicketRailTest {
         assertEquals("- [ ] #task Book the MOT 📅 2026-11-20 🆔 tsk001", note[1])
         assertEquals("Book the MOT", TaskNote.list(note).single().text)
     }
+    @Test fun `a Print now link names a task by its line`() {
+        val link = "flightdeck://print?note=00%20-%20Inbox%2FNext%20steps.md&task=%23task%20Reply%20yes%20or%20no%20to%20Sam%20%23mail%20%F0%9F%93%85%202026-11-20"
+        val ask = TicketRail.parsePrint(link)!!
+        assertEquals(PrintAsk("00 - Inbox/Next steps.md", "#task Reply yes or no to Sam #mail 📅 2026-11-20"), ask)
+        assertNull(TicketRail.parsePrint("flightdeck://clear/mai004"))
+        assertNull(TicketRail.parsePrint("flightdeck://print?note=..%2Fx.md&task=a"))
+        assertNull(TicketRail.parsePrint("flightdeck://print?note=x.md"))
+
+        val path = "00 - Inbox/Next steps.md"
+        val open = listOf(
+            task("- [ ] #task Reply yes or no to Sam later #mail 📅 2026-11-20", path),
+            task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20", "Elsewhere.md"),
+            task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20", path),
+        )
+        assertEquals(open[2], TicketRail.findForPrint(open, ask))
+        // Printed before: still found, and keeps its id.
+        val printed = task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20 🆔 mai004", path)
+        assertEquals("mai004", TicketRail.railId(TicketRail.findForPrint(listOf(printed), ask)!!.raw))
+        assertNull(TicketRail.findForPrint(open.take(2), ask))
+        assertEquals("mai", TicketRail.prefix(open[2].text))
+    }
 }

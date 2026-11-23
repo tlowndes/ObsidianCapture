@@ -11,6 +11,9 @@ import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
+/** A `flightdeck://print?note=…&task=…` link: print the open task in [note] whose line reads [task] (checkbox and 🆔 aside). */
+data class PrintAsk(val note: String, val task: String)
+
 /** One printed ticket: what goes on the paper. [id] is the task's `🆔`, [code] how it reads on the ticket. */
 data class Ticket(
     val id: String, val code: String, val slot: String, val slotNote: String, val tag: String,
@@ -28,6 +31,7 @@ object TicketRail {
     const val MORNING_MAX = 5
     const val SCHEME = "flightdeck"
     private const val CLEAR = "$SCHEME://clear/"
+    private const val PRINT = "$SCHEME://print?"
 
     private val ID = Regex("🆔\\s*([\\w-]+)")
     private val ID_PIECE = Regex("\\s*🆔\\s*[\\w-]+")
@@ -78,6 +82,31 @@ object TicketRail {
         if (!t.startsWith(CLEAR, ignoreCase = true)) return null
         return t.substring(CLEAR.length).trim('/').lowercase().takeIf { OURS.matches(it) }
     }
+
+    /**
+     * A Print now link from another app on this PC (Next Step), or null when [s] isn't one. The task is named by its
+     * line, since a task gets its id only when it's printed.
+     */
+    fun parsePrint(s: String): PrintAsk? {
+        val t = s.trim()
+        if (!t.startsWith(PRINT, ignoreCase = true)) return null
+        val q = t.substring(PRINT.length).split("&").mapNotNull { kv ->
+            val i = kv.indexOf('=').takeIf { it > 0 } ?: return@mapNotNull null
+            kv.substring(0, i) to runCatching { java.net.URLDecoder.decode(kv.substring(i + 1), Charsets.UTF_8) }.getOrNull()
+        }.toMap()
+        val note = q["note"]?.trim()?.trim('/')?.takeIf { it.endsWith(".md") && ".." !in it.split("/") } ?: return null
+        val task = q["task"]?.let(::body)?.takeIf { it.isNotEmpty() } ?: return null
+        return PrintAsk(note, task)
+    }
+
+    /** A line without its checkbox, `🆔` or `✅` date, spaces evened out: how a Print now link names it. */
+    private fun body(line: String): String =
+        line.replace(Regex("^\\s*- \\[.]\\s*"), "").replace(ID_PIECE, "").replace(Regex("\\s*✅\\s*\\d{4}-\\d{2}-\\d{2}"), "")
+            .replace(Regex("\\s+"), " ").trim()
+
+    /** The open task [ask] names, wherever its note has it. */
+    fun findForPrint(open: List<TaskItem>, ask: PrintAsk): TaskItem? =
+        open.firstOrNull { it.path.equals(ask.note, ignoreCase = true) && body(it.raw) == ask.task }
 
     /** Open tasks already on the rail (printed, not yet cleared), oldest code first. */
     fun onRail(open: List<TaskItem>): List<TaskItem> =

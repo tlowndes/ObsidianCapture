@@ -31,17 +31,22 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
+import uk.tomlowndes.capture.TicketRail
 
 private const val INSTANCE_PORT = 47615
 
 fun main(args: Array<String>) {
-    // A second launch (Start menu, or the autostart entry) just brings the running one forward.
+    // Opened for a flightdeck:// link (Print now from Next Step): print, without showing the window.
+    val link = LinkHandler.linkIn(args)
+    // A second launch (Start menu, or the autostart entry) just brings the running one forward; a link goes to it.
     val server = runCatching { ServerSocket(INSTANCE_PORT, 4, InetAddress.getLoopbackAddress()) }.getOrNull()
     if (server == null) {
-        runCatching { Socket(InetAddress.getLoopbackAddress(), INSTANCE_PORT).use { it.getOutputStream().write("show\n".toByteArray()) } }
+        val say = if (link != null) "open $link\n" else "show\n"
+        runCatching { Socket(InetAddress.getLoopbackAddress(), INSTANCE_PORT).use { it.getOutputStream().write(say.toByteArray()) } }
         exitProcess(0)
     }
-    val startHidden = "--hidden" in args
+    val startHidden = "--hidden" in args || link != null
+    LinkHandler.register()
     // The app was called Vault Capture up to 1.34: point Start with Windows at the new exe.
     Autostart.migrate()
     val state = AppState(DesktopPrefs()).apply { windowVisible = !startHidden }
@@ -50,10 +55,22 @@ fun main(args: Array<String>) {
     thread(isDaemon = true, name = "single-instance") {
         while (true) {
             val s = runCatching { server.accept() }.getOrNull() ?: break
-            runCatching { BufferedReader(InputStreamReader(s.getInputStream())).readLine() }
+            val line = runCatching { BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8)).readLine() }.getOrNull()
             s.close()
-            EventQueue.invokeLater { state.windowVisible = true; state.changed() }
+            val opened = line?.takeIf { it.startsWith("open ") }?.removePrefix("open ")?.trim()
+            if (opened != null && TicketRail.parsePrint(opened) != null) {
+                thread(isDaemon = true, name = "print-now") { PrintNow.handle(state, opened) }
+            } else {
+                EventQueue.invokeLater { state.windowVisible = true; state.changed() }
+            }
         }
+    }
+
+    // Started by a link: give the tray icon a moment to appear so the notification has somewhere to show.
+    if (link != null && TicketRail.parsePrint(link) != null) {
+        thread(isDaemon = true, name = "print-now") { Thread.sleep(1500); PrintNow.handle(state, link) }
+    } else if (link != null) {
+        state.windowVisible = true
     }
 
     application {
