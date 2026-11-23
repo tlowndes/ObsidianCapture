@@ -163,15 +163,15 @@ class TicketRailTest {
 
     @Test fun `coming up is the next week's unprinted tasks, soonest first`() {
         val open = listOf(
-            task("- [ ] #task Sat job 📅 2026-11-28"),
+            task("- [ ] #task Thu job 📅 2026-11-26"),
             task("- [ ] #task Today job 📅 2026-11-20"),
             task("- [ ] #task Sun job 📅 2026-11-22"),
             task("- [ ] #task Printed 📅 2026-11-23 🆔 err007"),
             task("- [ ] #task Far off 📅 2026-12-10"),
             task("- [ ] #task No date"),
         )
-        assertEquals(listOf("Sun job", "Sat job"), TicketRail.comingUp(open, today).map { it.text })
-        assertEquals(listOf("Sun job", "Sat job", "Far off"), TicketRail.comingUp(open, today, 30).map { it.text })
+        assertEquals(listOf("Sun job", "Thu job"), TicketRail.comingUp(open, today).map { it.text })
+        assertEquals(listOf("Sun job", "Thu job", "Far off"), TicketRail.comingUp(open, today, 30).map { it.text })
     }
 
     @Test fun `a ticket printed ahead says which day it's for`() {
