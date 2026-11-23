@@ -200,7 +200,7 @@ private fun CoolOffDesk(state: AppState, v: Vault) {
         ToolRow(c.what + (c.now?.let { " · ${money(it)}" } ?: ""),
             listOfNotNull(if (due) "Still want it?" else CoolOff.leftWords(c, now) + " left", CoolOff.priceWords(c)).joinToString(" · "),
             if (due) Amber else TextMain) {
-            c.link?.let { link -> TextAction("Open", Muted) { browse(link) } }
+            c.link?.let { link -> TextAction("Open", Muted) { state.browse(link) } }
             TextAction("Bought") { write(state, "Couldn't save") { CoolOff.update(v, c, CoolOff.bought(c, today)) } }
             TextAction("Let go") { write(state, "Couldn't save", "Let go. That's money not spent.") { CoolOff.update(v, c, CoolOff.letGo(c, today)) } }
             if (due) TextAction("Wait more", Muted) { write(state, "Couldn't save") { CoolOff.update(v, c, CoolOff.wait(c, now)) } }
