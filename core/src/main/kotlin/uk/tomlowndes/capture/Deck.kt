@@ -204,6 +204,23 @@ object DeckConfig {
         VaultIo.write(v, PATH, parse(v.read(PATH)).put(STILL_KEY, true).toString(2))
     }
 
+    // ---- Hangar order (hangar-windows-v1): the phone and Windows share it ----
+
+    /** The Hangar list as saved here ("inbox,didi,…"), or null before either device has saved one. */
+    fun hangar(json: String?): String? = parse(json).optString("hangar", "").takeIf { it.isNotBlank() }
+
+    fun withHangar(json: String?, saved: String): String = parse(json).put("hangar", saved).toString(2)
+
+    fun loadHangar(v: Vault): List<HangarTool>? = Hangar.parse(hangar(v.read(PATH)))
+
+    fun saveHangar(v: Vault, tools: List<HangarTool>) {
+        if (v.entry(PATH) == null) {
+            v.mkdirs(parentOf(PATH))
+            v.create(parentOf(PATH), nameOf(PATH).removeSuffix(".json"), "json")
+        }
+        VaultIo.write(v, PATH, withHangar(v.read(PATH), Hangar.format(tools)))
+    }
+
     fun save(v: Vault, layout: DeckLayout) {
         if (v.entry(PATH) == null) {
             v.mkdirs(parentOf(PATH))

@@ -60,6 +60,7 @@ fun MainWindow(state: AppState) {
             if (state.vault == null && state.tab != Tab.SETTINGS) Welcome(state)
             else when (state.tab) {
                 Tab.DECK -> DeckPane(state)
+                Tab.HANGAR -> HangarPane(state)
                 // Fold the extra doors (fold-doors-v1): Upcoming is a switch inside Tasks.
                 Tab.TASKS, Tab.UPCOMING -> Column(Modifier.fillMaxSize()) {
                     Pill(listOf("Today", "Upcoming"), if (state.tab == Tab.UPCOMING) 1 else 0, Modifier.padding(start = 28.dp, top = 14.dp).width(240.dp)) {
@@ -125,6 +126,7 @@ fun MainWindow(state: AppState) {
                 state.readStore()?.inbox()?.let { ReadNote.unread(it).first } ?: 0
             )
         }?.let { (o, i, u) -> state.overdue = o.first; state.tagCounts = o.second; state.activeProjects = i; state.unread = u }
+        state.vault?.let { v -> state.hangar = state.io("Couldn't read Hangar") { loadDeskHangar(state, v) } }
     }
 }
 
@@ -145,6 +147,8 @@ private fun Sidebar(state: AppState) {
         NavItem(state, Tab.JARVIS, "＋", "Capture") { Text("Ctrl N", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         NavItem(state, Tab.TASKS, "✓", "Tasks", also = setOf(Tab.UPCOMING)) { if (state.overdue > 0) Count(state.overdue, warn = true, text = "${state.overdue} overdue") }
         NavItem(state, Tab.VAULT, "🗂", "Vault", also = VAULT_CHIPS.map { it.first }.toSet() + Tab.FIND)
+        // Hangar under Vault, on every page: the PC's version of the phone's Hangar (hangar-windows-v1).
+        SidebarHangar(state)
         state.routine?.let { r ->
             NavItem(state, Tab.ROUTINES, "⏱", r.routine.name) { Text("${r.step + 1}/${r.routine.steps.size}", fontSize = 11.sp, color = Faint, fontWeight = FontWeight.SemiBold) }
         }

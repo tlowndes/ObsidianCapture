@@ -334,9 +334,22 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var dockDots by remember { mutableStateOf(emptySet<HangarTool>()) }
     LaunchedEffect(vault, hangarOpen, sub) {
         if (hangarOpen) return@LaunchedEffect
+        val uri = vault
+        // Windows can reorder Hangar (hangar-windows-v1): take its order when it holds the same tools, and keep the
+        // vault's copy up to date with the phone's otherwise.
+        val phone = Hangar.parse(prefs.hangarTools)
+        if (uri != null && phone != null) withContext(Dispatchers.IO) {
+            runCatching {
+                val v = appVault(ctx, uri)
+                val saved = DeckConfig.loadHangar(v)
+                val now = Hangar.merged(phone, saved)
+                if (now != phone) prefs.hangarTools = Hangar.format(now)
+                if (now != saved) DeckConfig.saveHangar(v, now)
+            }
+        }
         val t = Hangar.parse(prefs.hangarTools)
         dockTools = t
-        val uri = vault ?: return@LaunchedEffect
+        uri ?: return@LaunchedEffect
         dockDots = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, t.orEmpty()) }.getOrDefault(emptySet()) }
     }
     fun openTool(t: HangarTool) {

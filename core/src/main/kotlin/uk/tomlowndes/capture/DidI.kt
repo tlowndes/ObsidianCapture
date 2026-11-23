@@ -257,6 +257,20 @@ object Hangar {
         return list
     }
 
+    /**
+     * Which order wins when the phone's list meets the vault's (hangar-windows-v1). Windows only reorders, so when
+     * both hold the same tools the vault's order is taken; when the tools differ the phone's list stands (it's
+     * where tools are added and hidden, and where their buzzes are set up).
+     */
+    fun merged(phone: List<HangarTool>, vault: List<HangarTool>?): List<HangarTool> =
+        if (vault != null && vault.toSet() == phone.toSet()) vault else phone
+
+    /** Puts the tool at [from] at [to], the rest shuffling along. */
+    fun moved(tools: List<HangarTool>, from: Int, to: Int): List<HangarTool> {
+        if (from == to || from !in tools.indices || to !in tools.indices) return tools
+        return tools.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
     /** Tools not added yet, ready ones first. */
     fun available(tools: List<HangarTool>) = HangarTool.values().filter { it !in tools && it != HangarTool.ERRAND_RUN }.sortedBy { !it.ready }
 }

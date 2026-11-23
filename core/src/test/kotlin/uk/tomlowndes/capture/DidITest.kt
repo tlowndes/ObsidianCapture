@@ -98,4 +98,19 @@ class DidITest {
         assertEquals(listOf(HangarTool.INBOX, HangarTool.HOME, HangarTool.ERRANDS, HangarTool.PROJECTS, HangarTool.MEALS), Hangar.withDeckTools(null))
         assertEquals("Around home", HangarTool.MEALS.group)
     }
+
+    @Test
+    fun hangarOrderSharedWithWindows() {
+        val phone = listOf(HangarTool.DID_I, HangarTool.INBOX, HangarTool.HOME)
+        val pc = listOf(HangarTool.INBOX, HangarTool.HOME, HangarTool.DID_I)
+        assertEquals(pc, Hangar.merged(phone, pc))
+        assertEquals(phone, Hangar.merged(phone, null))
+        assertEquals(phone, Hangar.merged(phone, listOf(HangarTool.INBOX)))
+        assertEquals(pc, Hangar.moved(phone, 0, 2))
+        assertEquals(phone, Hangar.moved(phone, 1, 9))
+        val json = DeckConfig.withHangar("""{"cards":["TODAY"]}""", Hangar.format(pc))
+        assertEquals(pc, Hangar.parse(DeckConfig.hangar(json)))
+        assertTrue(json.contains("TODAY"))
+        assertNull(DeckConfig.hangar("{}"))
+    }
 }
