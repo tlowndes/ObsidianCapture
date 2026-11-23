@@ -28,8 +28,10 @@ import uk.tomlowndes.capture.TaskItem
 import uk.tomlowndes.capture.TicketRail
 import uk.tomlowndes.capture.Trip
 import uk.tomlowndes.capture.Vault
+import uk.tomlowndes.capture.WaitingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -167,6 +169,30 @@ internal fun LastSeenDesk(state: AppState, v: Vault) {
 
 // ---- Ticket Rail ----
 
+/** Prints [tasks] as tickets on the PC's printer (the Daily Slip one), then gives each its rail id, like the phone. */
+private fun printTickets(state: AppState, tasks: List<TaskItem>) = state.scope.launch {
+    val port = state.prefs.printerAddress
+    if (port == null) { state.say("Pick your printer in Daily Slip first"); return@launch }
+    val n = state.io("Couldn't reach the printer. Is it on?") {
+        val w = state.writer()!!
+        val lists = w.listTaskLists()
+        val taken = TicketRail.taken(lists.open, lists.done).toMutableSet()
+        val today = LocalDate.now()
+        val now = LocalTime.now()
+        var printed = 0
+        tasks.forEach { t ->
+            val had = TicketRail.railId(t.raw)
+            val id = had ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it }
+            DesktopPrinter.send(port, DesktopSlip.job(DesktopTicket.draw(TicketRail.ticket(t, id, today, now))))
+            if (had == null) runCatching { w.giveTicketId(t, id) }
+            printed++
+        }
+        printed
+    } ?: return@launch
+    state.changed()
+    state.say(if (n == 1) "Printed 1 ticket" else "Printed $n tickets")
+}
+
 @Composable
 internal fun TicketRailDesk(state: AppState, v: Vault) {
     val lists = loaded(state, "Couldn't read your tasks") { state.writer()!!.listTaskLists() } ?: return
@@ -187,6 +213,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
         val (slot, note) = TicketRail.slot(t.due, today)
         ToolRow("${TicketRail.code(id)} · ${t.text}", listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
             if (slot.startsWith("LATE")) Warn else TextMain) {
+            TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
             PrimaryButton("Clear") { clear(t) }
         }
     }
@@ -208,8 +235,9 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
     if (morning.isNotEmpty()) {
         GroupLabel("Morning run · not printed yet")
         morning.forEach { t -> ToolRow(t.text, TicketRail.slot(t.due, today).first, Muted) }
+        PrimaryButton("Print morning run (${morning.size})", Modifier.padding(top = 4.dp)) { printTickets(state, morning) }
     }
-    Sub("Tickets print from your phone, since the printer is Bluetooth.")
+    Sub(if (state.prefs.printerAddress == null) "To print here, pick your printer in Daily Slip first." else "Prints on the Daily Slip printer.")
 }
 
 // ---- Sensory Dial ----
@@ -232,4 +260,34 @@ internal fun SensoryDesk(state: AppState, v: Vault) {
     }
     Sub("Turn the dial or use your phone to change it. Windows reads the log. Levels: " +
         SensoryLevel.values().joinToString(", ") { it.option } + ".")
+}
+
+// ---- Waiting Mode ----
+
+@Composable
+internal fun WaitingDesk(state: AppState, v: Vault) {
+    val data = loaded(state, "Couldn't read your tasks") {
+        WaitingMode.quickTasks(state.writer()!!.listTasks()) to
+            runCatching { WaitingMode.shortReads(state.readStore()!!.inbox()) }.getOrDefault(emptyList())
+    } ?: return
+    val (quick, reads) = data
+    if (quick.isEmpty() && reads.isEmpty()) Sub("Nothing quick waiting. Enjoy the break.")
+    if (quick.isNotEmpty()) GroupLabel("Quick tasks")
+    quick.forEach { t ->
+        ToolRow(t.text, t.due?.format(DAY2)) {
+            PrimaryButton("Done") {
+                state.scope.launch {
+                    val c = state.io("Couldn't tick it") { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
+                    state.changed()
+                    state.offerUndo("Task completed") { state.io { state.writer()!!.restoreTask(t, c) }; state.changed() }
+                }
+            }
+        }
+    }
+    if (reads.isNotEmpty()) GroupLabel("Short reads")
+    reads.forEach { a ->
+        ToolRow(a.title, "${WaitingMode.readMinutes(a.words)} min read") {
+            PrimaryButton("Read") { state.openArticle(a.ref) }
+        }
+    }
 }

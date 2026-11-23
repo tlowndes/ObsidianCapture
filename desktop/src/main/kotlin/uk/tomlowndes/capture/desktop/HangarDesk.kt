@@ -81,17 +81,31 @@ internal fun HangarTool.deskColour(): Color = when (this) {
 }
 
 /** What the Hangar page and sidebar show on Windows: the shared order, what needs you, and each tile's line. */
-class DeskHangar(val tools: List<HangarTool>, val needs: Set<HangarTool>, val lines: Map<HangarTool, String>, val did: List<DidStatus>, val rail: Int? = null)
+/** [tools] is what Windows shows; [all] is the shared order, phone-only tools included, so a reorder here keeps them. */
+class DeskHangar(
+    val tools: List<HangarTool>, val needs: Set<HangarTool>, val lines: Map<HangarTool, String>, val did: List<DidStatus>,
+    val rail: Int? = null, val all: List<HangarTool> = tools,
+)
+
+/** Tools that can't be used on a PC: Heads Up buzzes you on the phone. Hidden on Windows, kept in the shared order. */
+internal val PHONE_ONLY = setOf(HangarTool.HEADS_UP)
+
+/** Puts Windows' new order of [shown] back into [all], leaving each phone-only tool in its place. */
+internal fun withPhoneOnly(all: List<HangarTool>, shown: List<HangarTool>): List<HangarTool> {
+    val q = ArrayDeque(shown)
+    return all.map { t -> if (t in PHONE_ONLY) t else q.removeFirstOrNull() ?: t }.distinct() + q
+}
 
 /**
  * Until the phone has shared its Hangar list, Windows shows every ready tool, so Hangar is never missing from the
  * sidebar. The phone's list replaces this as soon as it lands in the vault.
  */
-internal val DESK_FALLBACK: List<HangarTool> = HangarTool.values().filter { it.ready && it != HangarTool.ERRAND_RUN }
+internal val DESK_FALLBACK: List<HangarTool> = HangarTool.values().filter { it.ready && it != HangarTool.ERRAND_RUN && it !in PHONE_ONLY }
 
 /** Reads the Hangar list the phone shares through the vault, and each tool's status. Off the UI thread. */
 internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
-    val tools = DeckConfig.loadHangar(v)?.takeIf { it.isNotEmpty() } ?: DESK_FALLBACK
+    val all = DeckConfig.loadHangar(v)?.takeIf { it.isNotEmpty() } ?: DESK_FALLBACK
+    val tools = all - PHONE_ONLY
     val today = LocalDate.now()
     val now = LocalDateTime.now()
     val needs = mutableSetOf<HangarTool>()
@@ -138,7 +152,7 @@ internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
         rail = TicketRail.onRail(state.writer()!!.listTaskLists().open).size
         lines[HangarTool.TICKET_RAIL] = "$rail on the rail"
     }
-    return DeskHangar(tools, needs, lines, did, rail)
+    return DeskHangar(tools, needs, lines, did, rail, all)
 }
 
 /** Opens a tool: the ones with a Windows page go there; the rest are on the phone for now. */
@@ -239,11 +253,12 @@ private fun HangarGridDesk(state: AppState, h: DeskHangar) {
 
     fun move(from: Int, to: Int) {
         val v = state.vault ?: return
-        val before = list
+        val before = h.all
         val after = Hangar.moved(list, from, to)
-        state.hangar = DeskHangar(after, h.needs, h.lines, h.did, h.rail)
+        val saved = withPhoneOnly(h.all, after)
+        state.hangar = DeskHangar(after, h.needs, h.lines, h.did, h.rail, saved)
         state.scope.launch {
-            state.io("Couldn't save the Hangar order") { DeckConfig.saveHangar(v, after) }
+            state.io("Couldn't save the Hangar order") { DeckConfig.saveHangar(v, saved) }
             state.offerUndo("Order saved · phone too") {
                 state.io("Couldn't undo") { DeckConfig.saveHangar(v, before) }
                 state.changed()
