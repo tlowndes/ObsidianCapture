@@ -1,6 +1,13 @@
 package uk.tomlowndes.capture.desktop
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxWidth
+import uk.tomlowndes.capture.TaskNote
+import uk.tomlowndes.capture.Tags
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -193,51 +200,158 @@ private fun printTickets(state: AppState, tasks: List<TaskItem>) = state.scope.l
     state.say(if (n == 1) "Printed 1 ticket" else "Printed $n tickets")
 }
 
+/** New ticket for later (ticket-rail-future-v1): adds the job to Quick Task with its 📅 and tag, then prints it when [print]. */
+private fun addJob(state: AppState, text: String, tag: String?, day: LocalDate, print: Boolean, done: () -> Unit) = state.scope.launch {
+    val job = TicketRail.jobText(text, tag)
+    val line = TaskNote.newTask(job, day.toString())
+    val t = state.io("Couldn't save it") {
+        val w = state.writer()!!
+        w.addTask(job, day.toString())
+        w.listQuickTasks().lastOrNull { it.raw.trimEnd() == line }
+    }
+    state.changed()
+    done()
+    when {
+        !print -> state.say("Saved. It's in Coming up.")
+        t == null -> state.say("Saved, but couldn't find it to print. Print it from Coming up")
+        else -> printTickets(state, listOf(t))
+    }
+}
+
 @Composable
 internal fun TicketRailDesk(state: AppState, v: Vault) {
     val lists = loaded(state, "Couldn't read your tasks") { state.writer()!!.listTaskLists() } ?: return
     val today = LocalDate.now()
     val rail = TicketRail.onRail(lists.open)
+    val later = rail.filter { TicketRail.isLater(it, today) }
+    val railNow = rail - later.toSet()
     val cleared = TicketRail.clearedOn(lists.done, today).size
     fun clear(t: TaskItem) = state.scope.launch {
         val c = state.io("Couldn't clear it") { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
         state.changed()
         state.offerUndo("Ticket cleared") { state.io { state.writer()!!.restoreTask(t, c) }; state.changed() }
     }
-    Sub(when {
-        rail.isEmpty() -> "Nothing on the rail" + if (cleared > 0) " · $cleared cleared today" else ""
-        else -> "${rail.size} on the rail" + if (cleared > 0) " · $cleared cleared today" else ""
-    })
-    rail.forEach { t ->
-        val id = TicketRail.railId(t.raw) ?: return@forEach
-        val (slot, note) = TicketRail.slot(t.due, today)
-        ToolRow("${TicketRail.code(id)} · ${t.text}", listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
-            if (slot.startsWith("LATE")) Warn else TextMain) {
-            TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
-            PrimaryButton("Clear") { clear(t) }
+    Sub(listOfNotNull(
+        if (rail.isEmpty()) "Nothing on the rail" else "${rail.size} on the rail",
+        later.size.takeIf { it > 0 }?.let { "$it for later" },
+        cleared.takeIf { it > 0 }?.let { "$it cleared today" },
+    ).joinToString(" · "))
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            GroupLabel("On the rail")
+            if (rail.isEmpty()) Sub("Nothing hanging yet.")
+            railNow.forEach { t ->
+                val id = TicketRail.railId(t.raw) ?: return@forEach
+                val (slot, note) = TicketRail.slot(t.due, today)
+                ToolRow("${TicketRail.code(id)} · ${t.text}", listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
+                    if (slot.startsWith("LATE")) Warn else TextMain) {
+                    TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
+                    PrimaryButton("Clear") { clear(t) }
+                }
+            }
+            if (later.isNotEmpty()) {
+                Sub("Hanging for later", Modifier.padding(top = 6.dp))
+                later.forEach { t ->
+                    val id = TicketRail.railId(t.raw) ?: return@forEach
+                    val (slot, note) = TicketRail.slot(t.due, today)
+                    ToolRow("${TicketRail.code(id)} · ${t.text} · ${TicketRail.dayTag(t.due!!, today)}",
+                        listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · ") + " · printed early", Muted) {
+                        TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
+                        PrimaryButton("Clear") { clear(t) }
+                    }
+                }
+            }
+            var code by remember { mutableStateOf("") }
+            GroupLabel("Clear by code")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Field(code, { code = it }, Modifier.width(200.dp), placeholder = "HOM 042")
+                PrimaryButton("Clear", enabled = code.isNotBlank()) {
+                    val id = TicketRail.parseLink(code) ?: code.lowercase(Locale.UK).filter { it.isLetterOrDigit() }
+                    val t = TicketRail.find(lists.open, id)
+                    when {
+                        t != null -> { clear(t); code = "" }
+                        TicketRail.findDone(lists.done, id) != null -> state.say("Already cleared")
+                        else -> state.say("No ticket with that code")
+                    }
+                }
+            }
+            val morning = TicketRail.morningRun(lists.open, today)
+            if (morning.isNotEmpty()) {
+                GroupLabel("Morning run · not printed yet")
+                morning.forEach { t -> ToolRow(t.text, TicketRail.slot(t.due, today).first, Muted) }
+                PrimaryButton("Print morning run (${morning.size})", Modifier.padding(top = 4.dp)) { printTickets(state, morning) }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            NewTicketCard(state, today)
+            ComingUpCard(state, lists.open, today)
         }
     }
-    var code by remember { mutableStateOf("") }
-    GroupLabel("Clear by code")
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field(code, { code = it }, Modifier.width(200.dp), placeholder = "HOM 042")
-        PrimaryButton("Clear", enabled = code.isNotBlank()) {
-            val id = TicketRail.parseLink(code) ?: code.lowercase(Locale.UK).filter { it.isLetterOrDigit() }
-            val t = TicketRail.find(lists.open, id)
-            when {
-                t != null -> { clear(t); code = "" }
-                TicketRail.findDone(lists.done, id) != null -> state.say("Already cleared")
-                else -> state.say("No ticket with that code")
+    Sub(if (state.prefs.printerAddress == null) "To print here, pick your printer in Daily Slip first." else "Prints on the Daily Slip printer.",
+        Modifier.padding(top = 10.dp))
+}
+
+/** New ticket for later: the job, its day (chips for the next six days, 📅 for further), its tag, then Save only or Print now. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NewTicketCard(state: AppState, today: LocalDate) {
+    val chips = remember(today) { TicketRail.dayChips(today) }
+    var text by remember { mutableStateOf("") }
+    var day by remember(today) { mutableStateOf(chips.first()) }
+    var tag by remember { mutableStateOf<String?>(TicketRail.JOB_TAGS.first()) }
+    var picking by remember { mutableStateOf(false) }
+    Card {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            GroupLabel("New ticket for later")
+            Field(text, { text = it }, Modifier.fillMaxWidth(), placeholder = "What's the job?")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.forEach { d -> Chip(TicketRail.chipLabel(d, today) + if (d == day && d != chips.first()) " ${d.dayOfMonth}" else "", d == day, small = true) { day = d } }
+                val custom = day !in chips
+                Chip(if (custom) "📅 ${dayChip(day)}" else "📅 Pick", custom, small = true) { picking = true }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TicketRail.JOB_TAGS.forEach { t -> Chip(t, tag == t, small = true) { tag = t } }
+                Chip("None", tag == null, small = true) { tag = null }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("Save only", if (text.isBlank()) Muted else TextMain) {
+                    if (text.isNotBlank()) addJob(state, text, tag, day, false) { text = "" }
+                }
+                PrimaryButton("Print now", enabled = text.isNotBlank()) { addJob(state, text, tag, day, true) { text = "" } }
             }
         }
     }
-    val morning = TicketRail.morningRun(lists.open, today)
-    if (morning.isNotEmpty()) {
-        GroupLabel("Morning run · not printed yet")
-        morning.forEach { t -> ToolRow(t.text, TicketRail.slot(t.due, today).first, Muted) }
-        PrimaryButton("Print morning run (${morning.size})", Modifier.padding(top = 4.dp)) { printTickets(state, morning) }
+    if (picking) PickDateDialog(day, { d -> picking = false; if (d != null && d.isAfter(today)) day = d }, { picking = false })
+}
+
+/** Coming up: open tasks due in the next 7, 14 or 30 days that aren't printed yet. Tick, then Print N now. */
+@Composable
+private fun ComingUpCard(state: AppState, open: List<TaskItem>, today: LocalDate) {
+    var days by remember { mutableStateOf(7) }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    val up = TicketRail.comingUp(open, today, days)
+    Card {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { GroupLabel("Coming up") }
+                listOf(7, 14, 30).forEach { n -> Chip("$n days", days == n, Modifier.padding(start = 4.dp), small = true) { days = n } }
+            }
+            if (up.isEmpty()) Sub("Nothing due in the next $days days that isn't printed.")
+            up.forEach { t ->
+                val on = t.raw in picked
+                Row(Modifier.fillMaxWidth().hand().clickable { picked = if (on) picked - t.raw else picked + t.raw }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(if (on) "☑" else "☐", fontSize = 18.sp, color = if (on) Primary else Muted)
+                    Text(Tags.strip(t.text), fontSize = 14.sp, color = TextMain, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text(TicketRail.upChip(t.due!!), fontSize = 12.sp, color = Muted)
+                }
+            }
+            val chosen = up.filter { it.raw in picked }
+            if (chosen.isNotEmpty()) PrimaryButton("Print ${chosen.size} now", Modifier.padding(top = 4.dp)) {
+                printTickets(state, chosen); picked = emptySet()
+            }
+        }
     }
-    Sub(if (state.prefs.printerAddress == null) "To print here, pick your printer in Daily Slip first." else "Prints on the Daily Slip printer.")
 }
 
 // ---- Sensory Dial ----

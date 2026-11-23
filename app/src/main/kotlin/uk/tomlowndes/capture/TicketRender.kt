@@ -77,11 +77,18 @@ object TicketRender {
         y += 20f
         val slot = listOf(t.slot, t.slotNote, t.tag).filter { it.isNotBlank() }.joinToString(" · ")
         y = text(c, slot, paint(30f), y, 1) + 14f
+        // Printed ahead of its day (ticket-rail-future-v1): white words on a black bar, so it can't pass for today's.
+        if (t.early.isNotBlank()) {
+            c.drawRect(M, y, W - M, y + 48f, ink)
+            val bar = paint(30f, monoBold).apply { color = 0xFFFFFFFF.toInt(); textAlign = Paint.Align.CENTER }
+            c.drawText(t.early, W / 2f, y + 35f, bar)
+            y += 62f
+        }
         c.drawRect(M, y, W - M, y + 4f, ink)
         y += 18f
         y = text(c, "TASK", paint(22f), y, 1) + 4f
         val hasSteps = t.steps.isNotEmpty()
-        y = text(c, t.text, paint(if (hasSteps) 44f else 50f, monoBold), y, if (hasSteps) 3 else 5) + 10f
+        y = text(c, t.text, paint(if (hasSteps) 44f else 50f, monoBold), y, if (hasSteps) 3 else if (t.early.isNotBlank()) 4 else 5) + 10f
         y = text(c, t.source, paint(26f), y, 1) + 16f
         // Sub-tasks as tick boxes (four-fixes-v1), as many as fit above the QR, then "+N more".
         if (hasSteps) {
@@ -104,7 +111,7 @@ object TicketRender {
         c.drawRect(M, qrTop - 22f, W - M, qrTop - 18f, ink)
         qr(c, TicketRail.qr(t.id), W - M - QR, qrTop, QR)
         val small = paint(28f)
-        c.drawText("PRT ${t.printed.format(HM)}", M, qrTop + 30f, small)
+        c.drawText("PRT ${t.printedAt.ifBlank { t.printed.format(HM) }}", M, qrTop + 30f, small)
         c.drawRect(M + 3f, qrTop + 56f, M + 103f, qrTop + 156f, stroke(6f))
         c.drawText("CLR", M, qrTop + 196f, small)
     }
