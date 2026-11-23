@@ -141,6 +141,7 @@ internal fun openDeskTool(state: AppState, t: HangarTool) {
         HangarTool.INBOX -> state.tab = Tab.INBOX
         HangarTool.HOME, HangarTool.ERRANDS, HangarTool.MEALS -> state.tab = Tab.HOME
         HangarTool.PROJECTS -> state.openProjects(null)
+        in DESK_TOOLS -> { state.hangarTool = t; state.tab = Tab.HANGAR }
         else -> state.say("${t.title} opens on your phone for now. Its Windows page is coming next.")
     }
 }
@@ -156,7 +157,7 @@ internal fun SidebarHangar(state: AppState) {
         Text("⌂ HANGAR", fontSize = 10.5.sp, letterSpacing = 1.1.sp, color = if (state.tab == Tab.HANGAR) Primary else Muted,
             fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         Text("All ${h.tools.size}", fontSize = 12.sp, color = Primary, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)).hand().clickable { state.tab = Tab.HANGAR }.padding(horizontal = 6.dp, vertical = 2.dp))
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).hand().clickable { state.hangarTool = null; state.tab = Tab.HANGAR }.padding(horizontal = 6.dp, vertical = 2.dp))
     }
     h.tools.take(SIDE_SLOTS).forEach { t ->
         Row(
@@ -174,6 +175,7 @@ internal fun SidebarHangar(state: AppState) {
 /** The Hangar page on Windows (hangar-windows-v1): Right now, then every tool in your order, five across. */
 @Composable
 fun HangarPane(state: AppState) {
+    state.hangarTool?.let { t -> HangarToolPane(state, t); return }
     val h = state.hangar
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 22.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
