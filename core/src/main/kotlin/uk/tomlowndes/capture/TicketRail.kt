@@ -20,6 +20,10 @@ data class Ticket(
     val text: String, val source: String, val printed: LocalTime, val pattern: Int,
     /** The task's open sub-tasks, printed as tick boxes under the title (four-fixes-v1). */
     val steps: List<String> = emptyList(),
+    /** For a job printed ahead of its day (ticket-rail-future-v1): the black bar, "FOR FRI · PRINTED MON". Blank otherwise. */
+    val early: String = "",
+    /** The print time as it reads on the ticket: "21:59", or "MON 21:59" when printed early. */
+    val printedAt: String = "",
 )
 
 /**
@@ -40,6 +44,7 @@ object TicketRail {
     /** Ids this app hands out: three letters and three digits ("hom042"). Other ids are the Tasks plugin's own. */
     private val OURS = Regex("^([a-z]{3})(\\d{3})$")
     private val DM = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
+    private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
     /** The line's `🆔`, if it has one. */
     fun idOf(line: String): String? = ID.find(line)?.groupValues?.get(1)
@@ -137,6 +142,42 @@ object TicketRail {
             .sortedBy { it.due }
             .take(max)
 
+    /**
+     * Coming up (ticket-rail-future-v1): open tasks due after [today] and within [days], not printed yet, soonest
+     * first. Each task counts once.
+     */
+    fun comingUp(open: List<TaskItem>, today: LocalDate, days: Int = 7): List<TaskItem> {
+        val last = today.plusDays(days.toLong())
+        return open.distinctBy { it.raw }
+            .filter { railId(it.raw) == null && it.due != null && it.due.isAfter(today) && !it.due.isAfter(last) }
+            .sortedBy { it.due }
+    }
+
+    /** True when [t] was printed ahead of its day and that day hasn't come yet: it hangs under "Hanging for later". */
+    fun isLater(t: TaskItem, today: LocalDate): Boolean = t.due?.isAfter(today) == true
+
+    /** The day chips on New ticket for later: tomorrow and the five days after. */
+    fun dayChips(today: LocalDate): List<LocalDate> = (1L..6L).map { today.plusDays(it) }
+
+    /** A chip's words: "Tomorrow", then "Wed", "Thu"… */
+    fun chipLabel(day: LocalDate, today: LocalDate): String =
+        if (day == today.plusDays(1)) "Tomorrow" else day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.UK)
+
+    /** The short day tag on a later ticket's row: "FRI" this week, else "5 DEC". */
+    fun dayTag(due: LocalDate, today: LocalDate): String =
+        if (ChronoUnit.DAYS.between(today, due) < 7) dow(due) else due.format(DM).uppercase(Locale.UK)
+
+    /** The date chip on a Coming up row: "WED 25". */
+    fun upChip(due: LocalDate): String = "${dow(due)} ${due.dayOfMonth}"
+
+    /** Tags offered on New ticket for later; they set the code's letters (HOM, WRK, ERR, JOB). */
+    val JOB_TAGS = listOf("#home", "#work", "#errand", "#job")
+
+    /** The task text for a new ticket: [tag] (when given) then [text]. */
+    fun jobText(text: String, tag: String?): String = listOfNotNull(tag?.takeIf { it.isNotBlank() }, text.trim()).joinToString(" ")
+
+    private fun dow(d: LocalDate) = d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.UK).uppercase(Locale.UK)
+
     /** The slot words: "TODAY", "LATE 2D" (with "WAS WED"), a weekday, or "ANY TIME" for no due date. */
     fun slot(due: LocalDate?, today: LocalDate): Pair<String, String> {
         if (due == null) return "ANY TIME" to ""
@@ -159,9 +200,13 @@ object TicketRail {
     fun ticket(t: TaskItem, id: String, today: LocalDate, now: LocalTime, steps: List<String> = emptyList()): Ticket {
         val (slot, note) = slot(t.due, today)
         val tag = Tags.inText(t.text).firstOrNull { it != "#task" }?.removePrefix("#")?.uppercase(Locale.UK) ?: ""
+        val ahead = t.due != null && t.due.isAfter(today)
+        val hm = now.format(HM)
         return Ticket(
             id, code(id), slot, note, tag, Tags.strip(t.text), source(t.path), now,
             pattern = Math.floorMod(id.take(3).hashCode(), 3), steps = steps,
+            early = if (ahead) "FOR ${dayTag(t.due!!, today)} · PRINTED ${dow(today)}" else "",
+            printedAt = if (ahead) "${dow(today)} $hm" else hm,
         )
     }
 

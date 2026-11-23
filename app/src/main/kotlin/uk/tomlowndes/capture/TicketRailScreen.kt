@@ -7,11 +7,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarDuration
@@ -38,6 +43,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -113,6 +121,22 @@ object TicketPrint {
         return ids.size
     }
 
+    /**
+     * New ticket for later (ticket-rail-future-v1): adds the job to Quick Task with its 📅 and tag, then prints it
+     * when [print]. Returns how many tickets printed (0 for Save only).
+     */
+    suspend fun addJob(ctx: Context, vault: Uri, text: String, tag: String?, day: LocalDate, print: Boolean, status: (String) -> Unit = {}): Int {
+        val job = TicketRail.jobText(text, tag)
+        val line = TaskNote.newTask(job, day.toString())
+        val task = withContext(Dispatchers.IO) {
+            val w = VaultWriter(ctx, vault)
+            w.addTask(job, day.toString())
+            w.listQuickTasks().lastOrNull { it.raw.trimEnd() == line }
+        }
+        if (!print) return 0
+        return print(ctx, vault, listOfNotNull(task ?: error("Saved, but couldn't find it to print. Print it from Coming up")), status = status)
+    }
+
     /** The morning run for [today], from the vault. */
     suspend fun morning(ctx: Context, vault: Uri, today: LocalDate = LocalDate.now()): List<TaskItem> =
         withContext(Dispatchers.IO) { TicketRail.morningRun(VaultWriter(ctx, vault).listTasks(), today) }
@@ -166,6 +190,10 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
     var status by remember { mutableStateOf<String?>(null) }
     var cleared by remember { mutableStateOf<ClearResult.Cleared?>(null) }
     var withSlip by remember { mutableStateOf(prefs.ticketsWithSlip) }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    var upDays by remember { mutableIntStateOf(7) }
+    var rangeOpen by remember { mutableStateOf(false) }
+    var newOpen by remember { mutableStateOf(false) }
     val today = LocalDate.now()
 
     LaunchedEffect(vault, reload) {
@@ -210,10 +238,31 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
             val r = runCatching { TicketPrint.print(ctx, uri, tasks) { status = it } }
             busy = false
             status = r.fold({ n -> if (n == 1) "1 ticket printed." else "$n tickets printed." }, { it.message ?: "Printing failed" })
-            if (r.isFailure) snack.showSnackbar(status!!)
+            if (r.isFailure) snack.showSnackbar(status!!) else picked = picked - tasks.map { it.raw }.toSet()
             reload++
         }
     }
+
+    fun addJob(text: String, tag: String?, day: LocalDate, print: Boolean) {
+        val uri = vault ?: return
+        if (busy) return
+        busy = true
+        scope.launch {
+            val r = runCatching { TicketPrint.addJob(ctx, uri, text, tag, day, print) { status = it } }
+            busy = false
+            reload++
+            r.onSuccess { n ->
+                newOpen = false
+                status = if (n > 0) "Printed. It hangs under Hanging for later." else "Saved. It's in Coming up."
+            }.onFailure {
+                status = it.message ?: "Printing failed"
+                newOpen = false
+                snack.showSnackbar(status!!)
+            }
+        }
+    }
+
+    if (newOpen) TicketLaterSheet(busy, { t, tag, d, p -> addJob(t, tag, d, p) }, { if (!busy) newOpen = false })
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -224,19 +273,34 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         if (vault == null) { Text("Pick your vault in Settings first.", color = Muted, modifier = Modifier.padding(top = 12.dp)); return@Column }
         if (l == null) { Text("Loading…", color = Muted, modifier = Modifier.padding(start = 4.dp, top = 8.dp)); return@Column }
         val rail = TicketRail.onRail(l.open)
+        val later = rail.filter { TicketRail.isLater(it, today) }
+        val railNow = rail - later.toSet()
         val clearedToday = TicketRail.clearedOn(l.done, today)
         val run = TicketRail.morningRun(l.open, today)
-        Text("${rail.size} on the rail · ${clearedToday.size} cleared today", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
+        val up = TicketRail.comingUp(l.open, today, upDays)
+        Text("${rail.size} on the rail${if (later.isNotEmpty()) " · ${later.size} for later" else ""} · ${clearedToday.size} cleared today", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
 
         cleared?.let { ClearedCard(it) }
 
         GroupLabel("On the rail")
         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (rail.isEmpty()) Text("Nothing hanging yet. Print the morning run, or Print ticket from any task.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(4.dp))
-            rail.forEach { t ->
+            railNow.forEach { t ->
                 val id = TicketRail.railId(t.raw)!!
-                RailRow(TicketRail.code(id), Tags.strip(t.text), TicketRail.slot(t.due, today).first,
+                RailRow(TicketRail.code(id), Tags.strip(t.text), TicketRail.slot(t.due, today).let { (a, b) -> listOf(a, b).filter { it.isNotBlank() }.joinToString(" · ") },
                     onReprint = { print(listOf(t)) }, onClear = { clear(id) })
+            }
+            if (later.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Hanging for later", color = Muted, fontSize = 12.sp)
+                    Box(Modifier.weight(1f).padding(start = 8.dp).height(1.dp).background(Outline))
+                }
+                later.forEach { t ->
+                    val id = TicketRail.railId(t.raw)!!
+                    val (slot, note) = TicketRail.slot(t.due, today)
+                    RailRow(TicketRail.code(id), Tags.strip(t.text), listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
+                        dayTag = TicketRail.dayTag(t.due!!, today), onReprint = { print(listOf(t)) }, onClear = { clear(id) })
+                }
             }
         }
 
@@ -256,6 +320,47 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
                     .clickable(enabled = !busy) { print(run) }.padding(vertical = 12.dp)
             )
         }
+        // Coming up (ticket-rail-future-v1): print later jobs now, so they're ready to hang.
+        Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { GroupLabel("Coming up") }
+            Box {
+                Text("Next $upDays days ▾", color = Paper, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(CircleShape).clickable { rangeOpen = true }.padding(horizontal = 6.dp, vertical = 4.dp))
+                DropdownMenu(rangeOpen, { rangeOpen = false }) {
+                    listOf(7, 14, 30).forEach { n -> DropdownMenuItem({ Text("Next $n days") }, { upDays = n; rangeOpen = false }) }
+                }
+            }
+        }
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (up.isEmpty()) Text("Nothing due in the next $upDays days that isn't printed.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(4.dp))
+            up.forEach { t ->
+                val on = t.raw in picked
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface1)
+                    .clickable { picked = if (on) picked - t.raw else picked + t.raw }.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(if (on) Paper else Color.Transparent)
+                        .border(2.dp, if (on) Paper else Muted, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+                        if (on) Text("✓", color = PaperInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text(Tags.strip(t.text), fontSize = 14.sp, modifier = Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 2)
+                    Text(TicketRail.upChip(t.due!!), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.border(1.dp, Outline, RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp))
+                }
+            }
+            val chosen = up.filter { it.raw in picked }
+            if (chosen.isNotEmpty()) Text(
+                if (busy) "Printing…" else "Print ${chosen.size} now",
+                color = PaperInk, fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(CircleShape).background(if (busy) Paper.copy(alpha = 0.5f) else Paper)
+                    .clickable(enabled = !busy) { print(chosen) }.padding(vertical = 12.dp)
+            )
+            Text(
+                "+ New ticket for later", color = Paper, fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(CircleShape).border(1.5.dp, Paper, CircleShape)
+                    .clickable(enabled = !busy) { newOpen = true }.padding(vertical = 12.dp)
+            )
+        }
+
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp)).background(Surface1).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Print with the Daily Slip", fontSize = 14.sp)
@@ -281,11 +386,23 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
 }
 
 @Composable
-private fun RailRow(code: String, text: String, slot: String, onReprint: () -> Unit, onClear: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFFBFAF6)).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun RailRow(code: String, text: String, slot: String, dayTag: String? = null, onReprint: () -> Unit, onClear: () -> Unit) {
+    // A ticket printed ahead of its day (dayTag set) sits on darker paper with a dashed edge and its day as a black tag.
+    val later = dayTag != null
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (later) Color(0xFFEFE6D0) else Color(0xFFFBFAF6))
+        .then(if (later) Modifier.drawBehind {
+            val w = 4.dp.toPx()
+            var y = 0f
+            while (y < size.height) { drawRect(Color(0xFFB49A5E), Offset(0f, y), Size(w, 6.dp.toPx())); y += 10.dp.toPx() }
+        } else Modifier)
+        .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(code, color = PaperInk, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(76.dp))
         Column(Modifier.weight(1f)) {
-            Text(text, color = PaperInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text, color = PaperInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, modifier = Modifier.weight(1f, fill = false))
+                if (dayTag != null) Text(dayTag, color = Paper, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(5.dp)).background(PaperInk).padding(horizontal = 6.dp, vertical = 1.dp))
+            }
             Text(slot, color = Color(0xFF4A5368), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         }
         Text("Reprint", color = Color(0xFF4A5368), fontSize = 12.sp, modifier = Modifier.clip(CircleShape).clickable(onClick = onReprint).padding(8.dp))

@@ -160,4 +160,38 @@ class TicketRailTest {
         assertNull(TicketRail.findForPrint(open.take(2), ask))
         assertEquals("mai", TicketRail.prefix(open[2].text))
     }
+
+    @Test fun `coming up is the next week's unprinted tasks, soonest first`() {
+        val open = listOf(
+            task("- [ ] #task Sat job 📅 2026-11-28"),
+            task("- [ ] #task Today job 📅 2026-11-20"),
+            task("- [ ] #task Sun job 📅 2026-11-22"),
+            task("- [ ] #task Printed 📅 2026-11-23 🆔 err007"),
+            task("- [ ] #task Far off 📅 2026-12-10"),
+            task("- [ ] #task No date"),
+        )
+        assertEquals(listOf("Sun job", "Sat job"), TicketRail.comingUp(open, today).map { it.text })
+        assertEquals(listOf("Sun job", "Sat job", "Far off"), TicketRail.comingUp(open, today, 30).map { it.text })
+    }
+
+    @Test fun `a ticket printed ahead says which day it's for`() {
+        val t = task("- [ ] #task #errand Pick up parcel 📅 2026-11-24") // Tuesday
+        val k = TicketRail.ticket(t, "err007", today, LocalTime.of(21, 59))
+        assertEquals("FOR TUE · PRINTED FRI", k.early)
+        assertEquals("FRI 21:59", k.printedAt)
+        assertTrue(TicketRail.isLater(t, today))
+        val now = TicketRail.ticket(task("- [ ] #task Bins 📅 2026-11-20"), "hom001", today, LocalTime.of(7, 5))
+        assertEquals("", now.early)
+        assertEquals("07:05", now.printedAt)
+        val far = TicketRail.ticket(task("- [ ] #task Far 📅 2026-12-05"), "tsk001", today, LocalTime.of(7, 5))
+        assertEquals("FOR 5 DEC · PRINTED FRI", far.early)
+    }
+
+    @Test fun `new ticket words`() {
+        assertEquals("#home Fix the shed door", TicketRail.jobText(" Fix the shed door ", "#home"))
+        assertEquals("Fix it", TicketRail.jobText("Fix it", null))
+        assertEquals("hom", TicketRail.prefix(TicketRail.jobText("Fix", "#home")))
+        assertEquals(listOf("Tomorrow", "Sun", "Mon"), TicketRail.dayChips(today).take(3).map { TicketRail.chipLabel(it, today) })
+        assertEquals("WED 25", TicketRail.upChip(LocalDate.of(2026, 11, 25)))
+    }
 }

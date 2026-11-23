@@ -57,10 +57,19 @@ object DesktopTicket {
         y += 20f
         val slot = listOf(t.slot, t.slotNote, t.tag).filter { it.isNotBlank() }.joinToString(" · ")
         y = text(g, slot, mono(30f), y, 1) + 14f
+        // Printed ahead of its day (ticket-rail-future-v1): white words on a black bar.
+        if (t.early.isNotBlank()) {
+            rect(g, M, y, W - M, y + 48f)
+            g.font = mono(30f, true)
+            g.color = Color.WHITE
+            g.drawString(t.early, (W - g.fontMetrics.stringWidth(t.early)) / 2f, y + 35f)
+            g.color = Color.BLACK
+            y += 62f
+        }
         rect(g, M, y, W - M, y + 4f)
         y += 18f
         y = text(g, "TASK", mono(22f), y, 1) + 4f
-        y = text(g, t.text, mono(50f, true), y, 5) + 10f
+        y = text(g, t.text, mono(50f, true), y, if (t.early.isNotBlank()) 4 else 5) + 10f
         text(g, t.source, mono(26f), y, 1)
 
         // Bottom: print time and a CLR box on the left, the QR on the right.
@@ -69,7 +78,7 @@ object DesktopTicket {
         rect(g, M, qrTop - 22f, W - M, qrTop - 18f)
         qr(g, TicketRail.qr(t.id), W - M - QR, qrTop, QR)
         g.font = mono(28f)
-        g.drawString("PRT ${t.printed.format(HM)}", M, qrTop + 30f)
+        g.drawString("PRT ${t.printedAt.ifBlank { t.printed.format(HM) }}", M, qrTop + 30f)
         g.stroke = BasicStroke(6f)
         g.draw(Rectangle2D.Float(M + 3f, qrTop + 56f, 100f, 100f))
         g.drawString("CLR", M, qrTop + 196f)
