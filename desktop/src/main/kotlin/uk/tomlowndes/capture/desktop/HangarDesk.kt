@@ -81,7 +81,7 @@ internal fun HangarTool.deskColour(): Color = when (this) {
 }
 
 /** What the Hangar page and sidebar show on Windows: the shared order, what needs you, and each tile's line. */
-internal class DeskHangar(val tools: List<HangarTool>, val needs: Set<HangarTool>, val lines: Map<HangarTool, String>, val did: List<DidStatus>, val rail: Int? = null)
+class DeskHangar(val tools: List<HangarTool>, val needs: Set<HangarTool>, val lines: Map<HangarTool, String>, val did: List<DidStatus>, val rail: Int? = null)
 
 /** Reads the Hangar list the phone shares through the vault, and each tool's status. Off the UI thread. */
 internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
