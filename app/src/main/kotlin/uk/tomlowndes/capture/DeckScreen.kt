@@ -510,13 +510,13 @@ fun DeckScreen(
                         tileTools.forEach { t ->
                             tiles.add {
                                 val sub = if (t == HangarTool.TICKET_RAIL) railOn?.let { "$it on the rail" } else if (t in tileNeeds) "needs you" else null
-                                Tile(t.icon, t.title, sub, dot = t in tileNeeds) { onOpenTool(t) }
+                                Tile(t.icon, t.title, sub, dot = t in tileNeeds, colour = t.colour()) { onOpenTool(t) }
                             }
                         }
                     }
                     tiles.add { Tile("＋", "Add", "any Hangar tool", onClick = onAddTile) }
-                    // Three to a row; a short last row keeps the same tile width.
-                    val perRow = if (tiles.size == 4) 2 else 3
+                    // Four to a row, like Hangar; a short last row keeps the same tile width.
+                    val perRow = 4
                     tiles.chunked(perRow).forEachIndexed { i, chunk ->
                         if (i > 0) Box(Modifier.height(8.dp))
                         TileRow {
