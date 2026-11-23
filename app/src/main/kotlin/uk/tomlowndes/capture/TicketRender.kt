@@ -25,6 +25,7 @@ object TicketRender {
     private const val GRIP = 84f
     private const val TEAR = 70
     private const val QR = 240f
+    private const val STEP_ROW = 46f
     private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
     private val mono = Typeface.MONOSPACE
@@ -79,8 +80,23 @@ object TicketRender {
         c.drawRect(M, y, W - M, y + 4f, ink)
         y += 18f
         y = text(c, "TASK", paint(22f), y, 1) + 4f
-        y = text(c, t.text, paint(50f, monoBold), y, 5) + 10f
-        text(c, t.source, paint(26f), y, 1)
+        val hasSteps = t.steps.isNotEmpty()
+        y = text(c, t.text, paint(if (hasSteps) 44f else 50f, monoBold), y, if (hasSteps) 3 else 5) + 10f
+        y = text(c, t.source, paint(26f), y, 1) + 16f
+        // Sub-tasks as tick boxes (four-fixes-v1), as many as fit above the QR, then "+N more".
+        if (hasSteps) {
+            val room = (top + HEIGHT - 24f - QR - 40f) - y
+            val rows = (room / STEP_ROW).toInt().coerceAtLeast(1)
+            val shown = if (t.steps.size > rows) rows - 1 else t.steps.size
+            c.drawRect(M, y, W - M, y + 3f, ink)
+            y += 14f
+            t.steps.take(shown.coerceAtLeast(0)).forEach { step ->
+                c.drawRect(M + 2f, y + 6f, M + 30f, y + 34f, stroke(4f))
+                c.drawText(step.take(22), M + 44f, y + 32f, paint(32f))
+                y += STEP_ROW
+            }
+            if (t.steps.size > shown) text(c, "+${t.steps.size - shown} more", paint(28f), y, 1)
+        }
 
         // Bottom: print time and a CLR box on the left, the QR on the right. It's what your hand is on when you tear.
         val bottom = top + HEIGHT - 24f

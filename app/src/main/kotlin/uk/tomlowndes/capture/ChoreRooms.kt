@@ -56,7 +56,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** List · Upcoming · Chores across the top of Tasks (chores-rooms-v1). */
-internal enum class TasksView(val label: String) { LIST("List"), UPCOMING("Upcoming"), CHORES("Chores") }
+/** The Tasks tab's views (four-fixes-v1): Tasks, Chores, Bills, Upcoming. */
+internal enum class TasksView(val label: String) { LIST("Tasks"), CHORES("Chores"), BILLS("Bills"), UPCOMING("Upcoming") }
 
 private val RESET_DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 private val ROOM_ICONS = listOf("🛁", "🍳", "🛏️", "🛋️", "🧺", "🚗", "🌱", "🏠", "🧸", "🖥️")

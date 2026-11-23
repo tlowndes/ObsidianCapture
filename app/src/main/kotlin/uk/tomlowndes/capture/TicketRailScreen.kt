@@ -84,8 +84,11 @@ object TicketPrint {
         val writer = VaultWriter(ctx, vault)
         val today = LocalDate.now()
         val now = LocalTime.now()
+        val wantSteps = AppPrefs(ctx).ticketSteps
+        var openLines: List<TaskItem> = emptyList()
         val ids = withContext(Dispatchers.IO) {
             val lists = writer.listTaskLists()
+            openLines = lists.open
             val taken = TicketRail.taken(lists.open, lists.done).toMutableSet()
             tasks.distinctBy { it.raw }.map { t ->
                 t to (TicketRail.railId(t.raw) ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it })
@@ -94,7 +97,7 @@ object TicketPrint {
         if (ids.isEmpty() && before == null) return 0
         status("Connecting to ${pr.name}…")
         val bmp = withContext(Dispatchers.Default) {
-            val tickets = ids.takeIf { it.isNotEmpty() }?.let { l -> TicketRender.draw(l.map { (t, id) -> TicketRail.ticket(t, id, today, now) }) }
+            val tickets = ids.takeIf { it.isNotEmpty() }?.let { l -> TicketRender.draw(l.map { (t, id) -> TicketRail.ticket(t, id, today, now, if (wantSteps) TicketRail.stepsOf(t, openLines) else emptyList()) }) }
             when {
                 before != null && tickets != null -> TicketRender.stack(before, tickets)
                 tickets != null -> tickets

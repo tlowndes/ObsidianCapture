@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -109,9 +110,10 @@ fun TasksScreen(
     val tagData = rememberTagData(vault)
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var view by remember { mutableStateOf(if (prefs.tasksChores) TasksView.CHORES else if (prefs.tasksUpcoming) TasksView.UPCOMING else TasksView.LIST) }
+    var view by remember { mutableStateOf(if (prefs.tasksChores) TasksView.CHORES else if (prefs.tasksBills) TasksView.BILLS else if (prefs.tasksUpcoming) TasksView.UPCOMING else TasksView.LIST) }
     val upcoming = view == TasksView.UPCOMING
     val chores = view == TasksView.CHORES
+    val billsView = view == TasksView.BILLS
     val swipe = remember { prefs.taskSwipe }
     val swipes = remember { Triple(prefs.swipeRight, prefs.swipeLeft, prefs.swipeLongLeft) }
     // Select mode (multiselect-swipes-v1): long-press a row; the selected lines, by their raw text.
@@ -486,7 +488,7 @@ fun TasksScreen(
         val triage = Triage.candidates(tasks, today).size
         // One control row (tidy-v1): List / Upcoming and a Filter button; the chips open in a sheet.
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TasksViewSwitch(view, Modifier.weight(1f)) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; selected.clear() }
+            TasksViewSwitch(view, Modifier.weight(1f)) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; prefs.tasksBills = it == TasksView.BILLS; selected.clear() }
             val active: String? = note?.let { VaultTasks.noteName(it) } ?: when (filter) {
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
@@ -494,7 +496,7 @@ fun TasksScreen(
                 TaskFilter.URGENT -> "High+"
                 else -> null
             } ?: tag ?: if (sort == TaskSort.PRIORITY && !upcoming) "priority" else null
-            if (!chores) Row(
+            if (!chores && !billsView) Row(
                 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, if (active != null) Primary else Outline, RoundedCornerShape(12.dp))
                     .clickable { filtering = true }.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -509,7 +511,7 @@ fun TasksScreen(
         // ! Ideas and ? Explore (capture-compact-v3): one tap to see just those.
         val ideaCount = tasks.count { TaskViews.IDEA_TAG in TaskViews.tags(it) }
         val exploreCount = tasks.count { TaskViews.EXPLORE_TAG in TaskViews.tags(it) }
-        if (!upcoming && !chores && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!upcoming && !chores && !billsView && (ideaCount > 0 || exploreCount > 0)) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (ideaCount > 0) MiniChip("! Ideas · $ideaCount", tag == TaskViews.IDEA_TAG, Amber) { pickTag(if (tag == TaskViews.IDEA_TAG) null else TaskViews.IDEA_TAG) }
             if (exploreCount > 0) MiniChip("? Explore · $exploreCount", tag == TaskViews.EXPLORE_TAG, Purple) { pickTag(if (tag == TaskViews.EXPLORE_TAG) null else TaskViews.EXPLORE_TAG) }
         }
@@ -560,6 +562,11 @@ fun TasksScreen(
         val calColours = sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))
         if (chores) {
             ChoreRoomsView(vault, snack)
+        } else if (billsView) {
+            // Bills (four-fixes-v1): this month's bills with a tick for paid, the same card Upcoming used to carry.
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 16.dp)) {
+                BillsMonthCard(TaskViews.billsMonth(tasks, ticked, today), true, {}, { addingBill = true }) { b -> complete(b.task) }
+            }
         } else if (upcoming && mode == UpcomingMode.MONTH) {
             MonthView(month, { month = it }, pickedDay, { pickedDay = it }, shown, rangeEvents, birthdays, calColours,
                 onTask = { editing = it }, onEvent = { openEvent = it }, onAdd = onAddOn)
@@ -570,15 +577,10 @@ fun TasksScreen(
             DayTimeline(shown, cal.flatMap { it.events }, (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), now) { t, time -> setTime(t, time) }
         } else if (upcoming) {
             val events = cal.flatMap { it.events }
-            val bills = TaskViews.billsMonth(tasks, ticked, today)
-            val billsTop: (@Composable () -> Unit) = {
-                BillsMonthCard(bills, billsOpen, { billsOpen = !billsOpen }, { addingBill = true }) { b -> complete(b.task) }
-            }
             UpcomingList(
                 days = Upcoming.days(shown, events, now, Upcoming.LIST_DAYS), next = Upcoming.nextUp(events, now), now = now,
                 colours = (sources.associate { it.id to hexColour(it.colour) } + (AppEvents.CAL_ID to hexColour(AppEvents.COLOUR))), names = sources.associate { it.id to it.name } + (AppEvents.CAL_ID to AppEvents.NAME),
                 travel = travel, onFit = { fitting = it },
-                top = billsTop,
                 // One week on the list (energy-reshuffle-v1); the second week is a line that opens Month.
                 bottom = Upcoming.later(shown, events, today).takeIf { it.first + it.second > 0 }?.let { (e, t) ->
                     { LaterLine(e, t) { pickedDay = today.plusDays(Upcoming.LIST_DAYS.toLong()); month = java.time.YearMonth.from(pickedDay); mode = UpcomingMode.MONTH; prefs.upcomingMode = mode.name } }
@@ -765,6 +767,8 @@ fun TasksScreen(
             onRemove = { editing = null; remove(t) },
             onDismiss = { editing = null },
             onBreakDown = { editing = null; breaking = t },
+            steps = vault?.let { StepOps(ctx, it, t) },
+            onSnack = { m -> scope.launch { snack.showSnackbar(m) } },
             onPrintTicket = if (Hangar.parse(prefs.hangarTools)?.contains(HangarTool.TICKET_RAIL) == true) ({
                 editing = null
                 val uri = vault
