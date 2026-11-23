@@ -447,7 +447,7 @@ fun DeckPane(state: AppState) {
             Column(Modifier.weight(1f).onGloballyPositioned { drag.split = it.positionInRoot().x }) {
                 DeckDragColumn(Modifier.fillMaxWidth(), rightCards, false, drag, pickUp, ::drop) { Show(it) }
                 // Ticket Rail on the Deck too (hangar-dock-v2), when it's in Hangar.
-                railOn?.let { n -> RowCard("▤ Ticket Rail", "$n on the rail ›") { state.hangarTool = null; state.tab = Tab.HANGAR } }
+                railOn?.let { n -> RowCard("▤ Ticket Rail", "$n on the rail ›") { state.hangarTool = uk.tomlowndes.capture.HangarTool.TICKET_RAIL; state.tab = Tab.HANGAR } }
             }
         }
     }

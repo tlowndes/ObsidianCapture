@@ -142,7 +142,7 @@ internal fun openDeskTool(state: AppState, t: HangarTool) {
         HangarTool.HOME, HangarTool.ERRANDS, HangarTool.MEALS -> state.tab = Tab.HOME
         HangarTool.PROJECTS -> state.openProjects(null)
         in DESK_TOOLS -> { state.hangarTool = t; state.tab = Tab.HANGAR }
-        else -> state.say("${t.title} opens on your phone for now. Its Windows page is coming next.")
+        else -> state.say("${t.title} works on your phone only, as it needs its alarms and buzzes.")
     }
 }
 

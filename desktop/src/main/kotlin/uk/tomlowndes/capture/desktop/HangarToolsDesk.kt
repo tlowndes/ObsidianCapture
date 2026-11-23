@@ -53,7 +53,10 @@ import java.time.format.DateTimeFormatter
  */
 
 /** The Hangar tools that have a Windows page so far. */
-internal val DESK_TOOLS = setOf(HangarTool.DID_I, HangarTool.REFILL, HangarTool.COOL_OFF, HangarTool.RETURN_RADAR, HangarTool.POCKET_PASS)
+internal val DESK_TOOLS = setOf(
+    HangarTool.DID_I, HangarTool.REFILL, HangarTool.COOL_OFF, HangarTool.RETURN_RADAR, HangarTool.POCKET_PASS,
+    HangarTool.LAUNCH_PAD, HangarTool.NIGHT_PAD, HangarTool.LAST_SEEN, HangarTool.TICKET_RAIL, HangarTool.SENSORY,
+)
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -74,6 +77,11 @@ internal fun HangarToolPane(state: AppState, t: HangarTool) {
                 HangarTool.COOL_OFF -> CoolOffDesk(state, v)
                 HangarTool.RETURN_RADAR -> ReturnsDesk(state, v)
                 HangarTool.POCKET_PASS -> PocketPassDesk(state, v)
+                HangarTool.LAUNCH_PAD -> LaunchPadDesk(state, v)
+                HangarTool.NIGHT_PAD -> NightPadDesk(state, v)
+                HangarTool.LAST_SEEN -> LastSeenDesk(state, v)
+                HangarTool.TICKET_RAIL -> TicketRailDesk(state, v)
+                HangarTool.SENSORY -> SensoryDesk(state, v)
                 else -> Sub("${t.title} is on your phone for now.")
             }
         }
@@ -82,14 +90,14 @@ internal fun HangarToolPane(state: AppState, t: HangarTool) {
 
 /** Loads [load] off the UI thread whenever the vault changes. */
 @Composable
-private fun <T> loaded(state: AppState, failure: String, load: () -> T): T? {
+internal fun <T> loaded(state: AppState, failure: String, load: () -> T): T? {
     var value by remember { mutableStateOf<T?>(null) }
     LaunchedEffect(state.vault, state.changes) { value = state.io(failure) { load() } }
     return value
 }
 
 /** Writes off the UI thread, then refreshes every page (and the Hangar dots). */
-private fun write(state: AppState, failure: String, done: String? = null, work: () -> Unit) {
+internal fun write(state: AppState, failure: String, done: String? = null, work: () -> Unit) {
     state.scope.launch {
         if (state.io(failure) { work() } != null) {
             state.changed()
@@ -100,7 +108,7 @@ private fun write(state: AppState, failure: String, done: String? = null, work: 
 
 /** One line in a tool: a title, a muted line under it, and actions on the right. */
 @Composable
-private fun ToolRow(title: String, sub: String?, colour: Color = TextMain, actions: @Composable () -> Unit = {}) {
+internal fun ToolRow(title: String, sub: String?, colour: Color = TextMain, actions: @Composable () -> Unit = {}) {
     Card {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
