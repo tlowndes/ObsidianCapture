@@ -27,7 +27,7 @@ fun obsidianOpenUrl(vaultName: String, path: String): String {
     return "obsidian://open?vault=${enc(vaultName)}&file=${enc(path.removeSuffix(".md"))}"
 }
 
-enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS, HOME, INBOX, PEOPLE }
+enum class Tab { DECK, TASKS, UPCOMING, PROJECTS, VAULT, READ, FIND, SETTINGS, WEEKLY, ROUTINES, JOBS, JARVIS, HOME, INBOX, PEOPLE, HANGAR }
 
 /** Everything the windows share: the vault, settings, and a nudge to reload when the vault changed elsewhere. */
 class AppState(val prefs: DesktopPrefs) {
@@ -73,6 +73,8 @@ class AppState(val prefs: DesktopPrefs) {
     var unread by mutableIntStateOf(0)
     /** Emails that need Tom, from the box digest (Stage 4). */
     var inboxOpen by mutableIntStateOf(0)
+    /** Hangar's tools in the order shared with the phone, and what needs you (hangar-windows-v1). Null until the phone shares one. */
+    var hangar by mutableStateOf<DeskHangar?>(null)
     /** Tags for the sidebar under Tasks (Work, Personal, then the most used), and the one the Tasks pane is filtered by. */
     var tagCounts by mutableStateOf<List<Pair<String, Int>>>(emptyList())
     var taskTag by mutableStateOf<String?>(null)

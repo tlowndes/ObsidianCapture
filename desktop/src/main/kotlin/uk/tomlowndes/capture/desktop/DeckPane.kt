@@ -158,6 +158,7 @@ fun DeckPane(state: AppState) {
     var cardsDue by remember { mutableStateOf<Int?>(null) }
     // Stage 4: the email digest from the box, and spend from receipts.
     var inbox by remember { mutableStateOf<DeskInbox?>(null) }
+    val railOn = state.hangar?.rail
     var mailOpen by remember { mutableStateOf<List<uk.tomlowndes.capture.Mail>?>(null) }
     var spend by remember { mutableStateOf<Pair<uk.tomlowndes.capture.MonthSpend, uk.tomlowndes.capture.MonthSpend>?>(null) }
     var stageFour by remember { mutableStateOf(0) }
@@ -316,11 +317,12 @@ fun DeckPane(state: AppState) {
         HomeCard.TOP_TASKS -> top.isNotEmpty()
         HomeCard.HABITS -> data.habits != null
         HomeCard.WEATHER -> weather != null || state.prefs.weatherLatLon == null
-        HomeCard.PROJECTS -> data.project != null
+        // Inbox and Projects moved into Hangar (hangar-dock-v2, hangar-windows-v1).
+        HomeCard.PROJECTS -> false
         HomeCard.JOBS -> data.jobs > 0
         HomeCard.CHORES -> uk.tomlowndes.capture.Chores.due(data.chores, today).isNotEmpty()
         HomeCard.READING -> passageIdx < data.passages.size
-        HomeCard.INBOX -> inbox?.digest != null
+        HomeCard.INBOX -> false
         HomeCard.SPEND -> spend?.first?.receipts?.isNotEmpty() == true
         else -> false
     }
@@ -442,10 +444,11 @@ fun DeckPane(state: AppState) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
             val pickUp = { runCatching { keys.requestFocus() }; Unit }
             DeckDragColumn(Modifier.weight(1f), leftCards, true, drag, pickUp, ::drop) { Show(it) }
-            DeckDragColumn(
-                Modifier.weight(1f).onGloballyPositioned { drag.split = it.positionInRoot().x },
-                rightCards, false, drag, pickUp, ::drop
-            ) { Show(it) }
+            Column(Modifier.weight(1f).onGloballyPositioned { drag.split = it.positionInRoot().x }) {
+                DeckDragColumn(Modifier.fillMaxWidth(), rightCards, false, drag, pickUp, ::drop) { Show(it) }
+                // Ticket Rail on the Deck too (hangar-dock-v2), when it's in Hangar.
+                railOn?.let { n -> RowCard("▤ Ticket Rail", "$n on the rail ›") { state.tab = Tab.HANGAR } }
+            }
         }
     }
     drag.card?.let { c -> LiftedCard(drag, origin) { Show(c) } }

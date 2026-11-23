@@ -160,6 +160,8 @@ fun HangarScreen(
 
     fun save(t: List<HangarTool>) {
         tools = t; prefs.hangarTools = Hangar.format(t)
+        // Shared with Windows through the vault (hangar-windows-v1).
+        vault?.let { uri -> scope.launch(Dispatchers.IO) { runCatching { DeckConfig.saveHangar(appVault(ctx, uri), t) } } }
         // Heads Up only buzzes while it's in Hangar.
         val heads = HangarTool.HEADS_UP in t
         if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
