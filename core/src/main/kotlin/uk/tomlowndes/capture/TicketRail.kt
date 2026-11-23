@@ -15,6 +15,8 @@ import java.util.Locale
 data class Ticket(
     val id: String, val code: String, val slot: String, val slotNote: String, val tag: String,
     val text: String, val source: String, val printed: LocalTime, val pattern: Int,
+    /** The task's open sub-tasks, printed as tick boxes under the title (four-fixes-v1). */
+    val steps: List<String> = emptyList(),
 )
 
 /**
@@ -125,13 +127,19 @@ object TicketRail {
         path.removeSuffix(".md").split("/").takeLast(2).joinToString(" / ") { it.replace(Regex("^\\d+\\s*-\\s*"), "").replace(Regex("^[^\\p{L}\\p{N}]+"), "") }
 
     /** What [t] prints as, with [id] already chosen. [pattern] picks the tag's hatch (thermal paper is black only). */
-    fun ticket(t: TaskItem, id: String, today: LocalDate, now: LocalTime): Ticket {
+    fun ticket(t: TaskItem, id: String, today: LocalDate, now: LocalTime, steps: List<String> = emptyList()): Ticket {
         val (slot, note) = slot(t.due, today)
         val tag = Tags.inText(t.text).firstOrNull { it != "#task" }?.removePrefix("#")?.uppercase(Locale.UK) ?: ""
         return Ticket(
             id, code(id), slot, note, tag, Tags.strip(t.text), source(t.path), now,
-            pattern = Math.floorMod(id.take(3).hashCode(), 3),
+            pattern = Math.floorMod(id.take(3).hashCode(), 3), steps = steps,
         )
+    }
+
+    /** The open sub-tasks of [t] (indented lines under it), in note order, as plain text for a ticket. */
+    fun stepsOf(t: TaskItem, open: List<TaskItem>): List<String> {
+        val parent = Subtasks.parents(open)
+        return open.filter { parent[it]?.raw == t.raw && parent[it]?.path == t.path }.map { Tags.strip(it.text) }.filter { it.isNotBlank() }
     }
 
     /** The QR for [id] as rows of dark (true) modules, with no quiet zone. */

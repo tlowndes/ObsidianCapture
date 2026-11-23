@@ -60,4 +60,22 @@ object Breakdown {
         val tag = Regex("(^|\\s)#task(\\s|$)").containsMatchIn(raw)
         lines.addAll(end, steps.map { line(it, indent, tag) })
     }
+
+    private fun blockEnd(lines: List<String>, at: Int): Int {
+        val depth = Subtasks.depth(lines[at])
+        var end = at + 1
+        while (end < lines.size && lines[end].isNotBlank() && Subtasks.depth(lines[end]) > depth) end++
+        return end
+    }
+
+    /** Moves the line [raw] (with anything indented under it) before or [after] the line [targetRaw]. Throws when either has gone. */
+    fun move(lines: MutableList<String>, raw: String, targetRaw: String, after: Boolean) {
+        val a = lines.indexOfFirst { it.trimEnd() == raw.trimEnd() }
+        require(a >= 0 && lines.any { it.trimEnd() == targetRaw.trimEnd() } && raw.trimEnd() != targetRaw.trimEnd()) { "Task moved in Obsidian, refreshed" }
+        val end = blockEnd(lines, a)
+        val moved = lines.subList(a, end).toList()
+        repeat(end - a) { lines.removeAt(a) }
+        val b = lines.indexOfFirst { it.trimEnd() == targetRaw.trimEnd() }
+        lines.addAll(if (after) blockEnd(lines, b) else b, moved)
+    }
 }

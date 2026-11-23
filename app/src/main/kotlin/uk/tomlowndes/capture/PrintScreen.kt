@@ -110,7 +110,22 @@ internal object SlipText {
 }
 
 /** Which printout the screen is making: the Daily Slip, the Week slip, the Bills slip or a list (printables-v1). */
-private enum class SlipMode(val label: String) { DAILY("Daily"), WEEK("Week"), BILLS("Bills"), LIST("List") }
+private enum class SlipMode(val label: String) { DAILY("Daily"), WEEK("Week"), BILLS("Bills"), LIST("List"), TICKETS("Tickets") }
+
+/** Which open tasks the Tickets mode offers (four-fixes-v1). */
+private enum class TicketRange(val label: String) {
+    TODAY("Today"), TOMORROW("Tomorrow"), WEEK("This week"), OVERDUE("Overdue"), ALL("All open");
+
+    fun has(due: LocalDate?, today: LocalDate): Boolean = when (this) {
+        TODAY -> due == today
+        TOMORROW -> due == today.plusDays(1)
+        WEEK -> due != null && !due.isBefore(today) && !due.isAfter(today.plusDays(6))
+        OVERDUE -> due != null && due.isBefore(today)
+        ALL -> true
+    }
+}
+
+private fun taskKey(t: TaskItem) = "${t.path}|${t.raw}"
 
 /** What the slip is built from: loaded once when the screen opens. */
 private data class SlipSources(
@@ -148,6 +163,11 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var byHeading by remember { mutableStateOf(true) }
     var skipTicked by remember { mutableStateOf(true) }
     var listImg by remember { mutableStateOf<Bitmap?>(null) }
+    // Tickets: a range of open tasks, each ticked to print (four-fixes-v1).
+    var range by remember { mutableStateOf(TicketRange.TODAY) }
+    var picked by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var ticketsImg by remember { mutableStateOf<Bitmap?>(null) }
+    var reload by remember { mutableStateOf(0) }
     var nextWeek by remember { mutableStateOf(WeekSlip.startsOnNext(today)) }
     var wopts by remember { mutableStateOf(WeekPrefs.load(ctx)) }
     var weekImg by remember { mutableStateOf<Bitmap?>(null) }
@@ -181,7 +201,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         if (allowed) then() else { afterAllow = then; ask.launch(SlipPrinter.permissions) }
     }
 
-    LaunchedEffect(vault) {
+    LaunchedEffect(vault, reload) {
         sources = withContext(Dispatchers.IO) {
             val lists = vault?.let { runCatching { VaultWriter(ctx, it).listTaskLists() }.getOrNull() }
             val tasks = lists?.open.orEmpty()
@@ -260,7 +280,30 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         } else PrintDocs.typed(typed, today)
         listImg = doc?.let { d -> withContext(Dispatchers.Default) { runCatching { SlipRender.drawList(d) }.getOrNull() } }
     }
-    val shown = when (mode) { SlipMode.DAILY -> slip; SlipMode.WEEK -> weekImg; SlipMode.BILLS -> billsImg; SlipMode.LIST -> listImg }
+    // Tickets: top-level open tasks in the range that aren't already hanging on the rail.
+    val candidates = remember(sources, range) {
+        val open = sources?.tasks.orEmpty()
+        Subtasks.nest(open, open).top.filter { TicketRail.railId(it.raw) == null && range.has(it.due, today) }
+            .sortedWith(compareBy({ it.due ?: LocalDate.MAX }, { it.text }))
+    }
+    LaunchedEffect(candidates) { picked = candidates.map { taskKey(it) }.toSet() }
+    var ticketSteps by remember { mutableStateOf(prefs.ticketSteps) }
+    LaunchedEffect(sources, picked, candidates, ticketSteps, large) {
+        val src = sources ?: return@LaunchedEffect
+        val chosen = candidates.filter { taskKey(it) in picked }
+        if (chosen.isEmpty()) { ticketsImg = null; return@LaunchedEffect }
+        ticketsImg = withContext(Dispatchers.Default) {
+            runCatching {
+                val taken = TicketRail.taken(src.tasks, src.done).toMutableSet()
+                val now = java.time.LocalTime.now()
+                TicketRender.draw(chosen.map { t ->
+                    val id = TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it }
+                    TicketRail.ticket(t, id, today, now, if (ticketSteps) TicketRail.stepsOf(t, src.tasks) else emptyList())
+                })
+            }.getOrNull()
+        }
+    }
+    val shown = when (mode) { SlipMode.DAILY -> slip; SlipMode.WEEK -> weekImg; SlipMode.BILLS -> billsImg; SlipMode.LIST -> listImg; SlipMode.TICKETS -> ticketsImg }
 
     fun printSlip() {
         val pr = printer ?: run { picking = true; return }
@@ -274,6 +317,13 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 Hangar.parse(app.hangarTools)?.contains(HangarTool.TICKET_RAIL) == true
             var tickets = 0
             val r = runCatching {
+                if (mode == SlipMode.TICKETS) {
+                    val chosen = candidates.filter { taskKey(it) in picked }
+                    val before = if (app.ticketsWithSlip) slip else null
+                    tickets = TicketPrint.print(ctx, vault!!, chosen, before = before) { status = it }
+                    reload++
+                    return@runCatching
+                }
                 val run = if (withTickets) runCatching { TicketPrint.morning(ctx, vault!!, today) }.getOrDefault(emptyList()) else emptyList()
                 if (run.isNotEmpty()) tickets = TicketPrint.print(ctx, vault!!, run, before = bmp) { status = it }
                 else {
@@ -282,7 +332,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 }
             }
             busy = false
-            status = r.fold({ if (tickets > 0) "Printed on ${pr.name}, with $tickets ticket${if (tickets == 1) "" else "s"} for the rail." else "Printed on ${pr.name}." }, { it.message ?: "Printing failed" })
+            status = r.fold({ if (mode == SlipMode.TICKETS) "$tickets ticket${if (tickets == 1) "" else "s"} printed." else if (tickets > 0) "Printed on ${pr.name}, with $tickets ticket${if (tickets == 1) "" else "s"} for the rail." else "Printed on ${pr.name}." }, { it.message ?: "Printing failed" })
             if (r.isFailure) snack.showSnackbar(status!!)
         }
     }
@@ -290,19 +340,45 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Text("‹ Deck", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.clickable(onClick = onBack).padding(top = 10.dp))
-        Text(when (mode) { SlipMode.DAILY -> "Daily Slip"; SlipMode.WEEK -> "Week slip"; SlipMode.BILLS -> "Bills slip"; SlipMode.LIST -> "Print a list" }, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+        Text(when (mode) { SlipMode.DAILY -> "Daily Slip"; SlipMode.WEEK -> "Week slip"; SlipMode.BILLS -> "Bills slip"; SlipMode.LIST -> "Print a list"; SlipMode.TICKETS -> "Print tickets" }, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         val dayName = day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.UK)
         Text(when {
             mode == SlipMode.WEEK -> "The week ahead, one day under another."
             mode == SlipMode.BILLS -> "The month's bills: left to pay, and paid."
             mode == SlipMode.LIST -> "From a vault note, or type one now."
+            mode == SlipMode.TICKETS -> "Task tickets for the rail: pick a range, tick what to print."
             day == today -> "Today's weather, calendar and to-dos on your pocket printer."
             else -> "$dayName's weather, calendar and to-dos."
         }, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(bottom = 10.dp))
         ModeSwitch(SlipMode.values().map { it.label }, mode.ordinal) { mode = SlipMode.values()[it] }
         Spacer(Modifier.height(4.dp))
 
-        if (mode == SlipMode.BILLS) {
+        if (mode == SlipMode.TICKETS) {
+            GroupLabel("Which tasks")
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TicketRange.values().forEach { r -> AppChip(range == r, { range = r }, { Text(r.label) }) }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${candidates.size} task${if (candidates.size == 1) "" else "s"} · not already on the rail", fontSize = 12.sp, color = Muted, modifier = Modifier.weight(1f))
+                val all = candidates.isNotEmpty() && picked.size == candidates.size
+                TextButton(onClick = { picked = if (all) emptySet() else candidates.map { taskKey(it) }.toSet() }) { Text(if (all) "Untick all" else "Tick all", color = Primary) }
+            }
+            if (candidates.isEmpty()) Text(if (sources == null) "Reading the vault…" else "Nothing open in that range.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
+            candidates.forEach { t ->
+                val k = taskKey(t)
+                Row(Modifier.fillMaxWidth().clickable { picked = if (k in picked) picked - k else picked + k }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TickBox(k in picked, { picked = if (k in picked) picked - k else picked + k }, size = 22.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(Tags.strip(t.text), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(t.due?.let { TicketRail.slot(it, today).first } ?: "No date", fontSize = 12.sp, color = Muted)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            SettingRow("Print steps on the ticket", "Sub-tasks as tick boxes") { AppSwitch(ticketSteps) { ticketSteps = it; prefs.ticketSteps = it } }
+            var withSlip by remember { mutableStateOf(prefs.ticketsWithSlip) }
+            SettingRow("Also print with the Daily Slip", "Slip first, tickets after it") { AppSwitch(withSlip) { withSlip = it; prefs.ticketsWithSlip = it } }
+        } else if (mode == SlipMode.BILLS) {
             GroupLabel("Month")
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val m = today.withDayOfMonth(1)
@@ -396,6 +472,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 weekMode -> if (nextWeek) "Print next week" else "Print this week"
                 mode == SlipMode.BILLS -> "Print " + today.withDayOfMonth(1).plusMonths(if (billsNext) 1 else 0).format(java.time.format.DateTimeFormatter.ofPattern("MMMM", java.util.Locale.UK)) + "'s bills"
                 mode == SlipMode.LIST -> "Print list"
+                mode == SlipMode.TICKETS -> "Print ${picked.size} ticket${if (picked.size == 1) "" else "s"}"
                 else -> Slip.printLabel(day, today)
             }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
         }
@@ -414,6 +491,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 SlipMode.LIST -> if (sources == null) "Reading the vault…" else "Pick a list or type one."
                 SlipMode.BILLS -> "Getting your bills…"
                 SlipMode.DAILY -> "Getting the day's details…"
+                SlipMode.TICKETS -> "Tick some tasks to see their tickets."
             }, color = Color.DarkGray, fontSize = 13.sp, modifier = Modifier.padding(24.dp))
             else Image(b.asImageBitmap(), "Preview of the slip", Modifier.fillMaxWidth(0.86f),
                 contentScale = ContentScale.FillWidth, filterQuality = FilterQuality.Medium)

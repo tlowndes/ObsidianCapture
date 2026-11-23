@@ -15,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.semantics.contentDescription
@@ -296,6 +301,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var hangarOpen by remember { mutableStateOf(false) }
     // Edit Deck sheet from the Deck's More row (bottom-dock-v1 A); deckRev makes the Deck re-read its layout after.
     var editDeck by remember { mutableStateOf(false) }
+    // Task peek (four-fixes-v1): long-press Tasks, or the ✓ pill on screens with no tab bar.
+    var peek by remember { mutableStateOf(false) }
+    var dueN by remember { mutableStateOf(0) }
     var addTiles by remember { mutableStateOf(false) }
     var deckRev by remember { mutableIntStateOf(0) }
     LaunchedEffect(sub) {
@@ -420,7 +428,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         bottomBar = {
             // One bar (bottom-dock-v1 A): Deck, Capture, Tasks, Vault and Hangar, with a badge for what needs you.
             if (!hideNav) NavBar(if (hangarOpen) null else if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab,
-                hangarOpen = hangarOpen, needs = dockDots.size, onHangar = { hangarOpen = true }) {
+                hangarOpen = hangarOpen, needs = dockDots.size, onHangar = { hangarOpen = true }, onPeek = { peek = true }) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -428,6 +436,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     ) { pad ->
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
+            if (hideNav) LaunchedEffect(vault, peek) { vault?.let { dueN = dueCount(ctx, it) } }
             when {
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
@@ -495,7 +504,10 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     Box(Modifier.weight(1f)) { ReadScreen(vault, prefs, snack, openArticle) { openArticle = it } }
                 }
             }
+            // No tab bar here (reader, idea, note edit): a small ✓ pill opens the task peek.
+            if (hideNav) TaskPeekPill(dueN, { peek = true }, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
         }
+        if (peek) TaskPeekSheet(vault, snack, onAll = { tab = Tab.TASKS; tasksNote = null; settings = false; cards = false; search = false; sub = null; hangarOpen = false }, onDismiss = { peek = false })
         if (addTiles) {
             ModalBottomSheet(onDismissRequest = { addTiles = false; deckRev++ }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
                 AddTilesSheet(prefs) { addTiles = false; deckRev++ }
@@ -518,8 +530,9 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: () -> Unit, onSelect: (Tab) -> Unit) {
+private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: () -> Unit, onPeek: () -> Unit, onSelect: (Tab) -> Unit) {
     Column(Modifier.fillMaxWidth().background(NavBg)) {
         HorizontalDivider(color = Outline)
         Row(
@@ -528,7 +541,7 @@ private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: ()
         ) {
             Tab.NAV.forEach { t ->
                 val on = t == selected
-                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.combinedClickable(onLongClick = if (t == Tab.TASKS) onPeek else null) { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
@@ -541,8 +554,10 @@ private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: ()
                     Box(Modifier.clip(CircleShape).background(if (hangarOpen) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
                         Text("⌂", fontSize = 18.sp, color = if (hangarOpen) Primary else Muted)
                     }
-                    if (needs > 0) Box(Modifier.align(Alignment.TopEnd).size(16.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
-                        Text("$needs", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A12))
+                    // Badge clear of the icon, at the pill's top-right corner, with a ring in the bar's colour (four-fixes-v1 A).
+                    if (needs > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp).defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                        .border(2.dp, NavBg, CircleShape).clip(CircleShape).background(Green).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                        Text("$needs", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A12))
                     }
                 }
                 Text("Hangar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (hangarOpen) Primary else Muted)

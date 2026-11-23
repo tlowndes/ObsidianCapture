@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -165,27 +166,33 @@ internal fun JournalSheet(vault: Uri?, events: Int, snack: SnackbarHostState, on
         )
     }
     if (list != null) {
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (listening) "■ Stop" else "🎤", fontSize = 13.sp, color = if (listening) Warn else TextMain,
-                modifier = Modifier.clip(CircleShape).background(if (listening) OverdueTint else Color.Transparent)
+        // Pinned footer (four-fixes-v1): a round mic, + Note, and a Save that fills the rest, all 46dp tall.
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                Modifier.height(46.dp).then(if (listening) Modifier.padding(0.dp) else Modifier.width(46.dp)).clip(CircleShape)
+                    .background(if (listening) OverdueTint else Color.Transparent)
                     .border(1.dp, if (listening) Warn else Outline, CircleShape).clickable { toggleMic() }
-                    .padding(horizontal = 12.dp, vertical = 7.dp))
-            if (!noteOpen) Text("+ Note", fontSize = 12.5.sp, modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape)
-                .clickable { noteOpen = true }.padding(horizontal = 12.dp, vertical = 7.dp))
-            Box(Modifier.weight(1f))
-            DeckButton(if (saving) "Saving…" else "Save", primary = true) {
-                val uri = vault ?: return@DeckButton
-                if (saving) return@DeckButton
-                saving = true
-                scope.launch {
-                    val r = withContext(Dispatchers.IO) {
-                        runCatching { Journal.saveWithMood(appVault(ctx, uri), today, list, JournalEntry(answers, note), facts) }
+                    .padding(horizontal = if (listening) 16.dp else 0.dp),
+                contentAlignment = Alignment.Center
+            ) { Text(if (listening) "■ Stop" else "🎤", fontSize = if (listening) 13.sp else 17.sp, color = if (listening) Warn else TextMain) }
+            if (!noteOpen) Box(Modifier.height(46.dp).clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { noteOpen = true }.padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center) { Text("+ Note", fontSize = 13.5.sp) }
+            Box(
+                Modifier.weight(1f).height(46.dp).clip(CircleShape).background(Primary).clickable {
+                    val uri = vault ?: return@clickable
+                    if (saving) return@clickable
+                    saving = true
+                    scope.launch {
+                        val r = withContext(Dispatchers.IO) {
+                            runCatching { Journal.saveWithMood(appVault(ctx, uri), today, list, JournalEntry(answers, note), facts) }
+                        }
+                        saving = false
+                        r.onSuccess { onSaved(); snack.showSnackbar("Saved to ${Journal.path(today).substringAfterLast('/')}") }
+                            .onFailure { snack.showSnackbar("Failed: ${it.message}") }
                     }
-                    saving = false
-                    r.onSuccess { onSaved(); snack.showSnackbar("Saved to ${Journal.path(today).substringAfterLast('/')}") }
-                        .onFailure { snack.showSnackbar("Failed: ${it.message}") }
-                }
-            }
+                },
+                contentAlignment = Alignment.Center
+            ) { Text(if (saving) "Saving…" else "Save", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = OnPrimary) }
         }
         if (listening) Text(heardNow.ifBlank { "Listening…" }, fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
         Text("Saves to ${Journal.path(today)}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 10.dp))

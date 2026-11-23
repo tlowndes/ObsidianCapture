@@ -56,6 +56,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksChores: Boolean
         get() = p.getBoolean("tasks_chores", false)
         set(v) { p.edit().putBoolean("tasks_chores", v).apply() }
+    /** Tasks shows Bills (four-fixes-v1). */
+    var tasksBills: Boolean
+        get() = p.getBoolean("tasks_bills", false)
+        set(v) { p.edit().putBoolean("tasks_bills", v).apply() }
     /** Upcoming's mode (calendar-view-v1): LIST, DAY, WEEK or MONTH. Null falls back to [upcomingDay]. */
     var upcomingMode: String?
         get() = p.getString("upcoming_mode", null)
@@ -167,6 +171,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("tickets_with_slip", true)
         set(v) { p.edit().putBoolean("tickets_with_slip", v).apply() }
 
+    /** Tickets: sub-tasks print as tick boxes on the ticket. */
+    var ticketSteps: Boolean
+        get() = p.getBoolean("ticket_steps", true)
+        set(v) { p.edit().putBoolean("ticket_steps", v).apply() }
+
     /** The Did I? check the Quick Settings tile stamps; blank means the first check. */
     var didTile: String
         get() = p.getString("did_tile", "Door") ?: "Door"
@@ -177,6 +186,11 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = if (p.getString("launch_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("launch_ticks", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("launch_ticks", v).putString("launch_day", java.time.LocalDate.now().toString()).apply() }
+    /** Launch Pad: kit items skipped for today only (four-fixes-v1). Reset each morning; the kit note is untouched. */
+    var launchSkips: Set<String>
+        get() = if (p.getString("launch_skips_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_skips", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_skips", v).putString("launch_skips_day", java.time.LocalDate.now().toString()).apply() }
     var launchSkip: String?
         get() = p.getString("launch_skip", null)
         set(v) { p.edit().putString("launch_skip", v).apply() }

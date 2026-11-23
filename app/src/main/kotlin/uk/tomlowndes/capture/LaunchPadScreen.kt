@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +48,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +98,8 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
     // Bag items ticked in Night Pad last night start done, marked ☾.
     val night = remember { prefs.packedLastNight }
     var ticked by remember { mutableStateOf(prefs.launchTicks + night) }
+    // Items skipped for today only (four-fixes-v1).
+    var skipped by remember { mutableStateOf(prefs.launchSkips) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var showKit by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
@@ -107,6 +114,7 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
     BackHandler { if (showKit) showKit = false else onBack() }
 
     fun tick(name: String) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); ticked = ticked + name; prefs.launchTicks = ticked }
+    fun skip(name: String) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); skipped = skipped + name; prefs.launchSkips = skipped }
     fun stamp(c: DidCheck) {
         val uri = vault ?: return
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -123,7 +131,7 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
     val late = (timing?.lateBy ?: 0) > 0
     val all = if (t != null && k != null) LaunchPad.itemsFor(k, t) else emptyList()
     val items = if (late) LaunchPad.essentials(all) else all
-    val nextItem = items.firstOrNull { it.name !in ticked }
+    val nextItem = items.firstOrNull { it.name !in ticked && it.name !in skipped }
     val nextDid = did.firstOrNull { it.at == null }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
@@ -144,12 +152,16 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
                         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
                 }
                 val fromNight = items.count { it.name in night }
-                if (fromNight > 0 && !late) Text("☾ $fromNight packed last night · ${items.count { it.name !in ticked }} to go", color = Violet, fontSize = 13.sp,
+                if (fromNight > 0 && !late) Text("☾ $fromNight packed last night · ${items.count { it.name !in ticked && it.name !in skipped }} to go", color = Violet, fontSize = 13.sp,
                     modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-                TripPass(t, items, ticked, did, onTick = ::tick, onStamp = ::stamp, night = night)
+                TripPass(t, items, ticked, did, onTick = ::tick, onStamp = ::stamp, night = night, skipped = skipped, onSkip = ::skip)
                 Spacer(Modifier.height(14.dp))
                 when {
-                    nextItem != null -> Big("Next: ${nextItem.name.lowercase(Locale.UK)}", Amber) { tick(nextItem.name) }
+                    nextItem != null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { Big("Next: ${nextItem.name.lowercase(Locale.UK)}", Amber) { tick(nextItem.name) } }
+                        Text("Skip", color = Muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                            modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { skip(nextItem.name) }.padding(horizontal = 22.dp, vertical = 15.dp))
+                    }
                     nextDid != null -> Big("Next: ${nextDid.check.question}", Green) { stamp(nextDid.check) }
                     else -> Big("All set, go", Amber) { scope.launch { snack.showSnackbar("Have a good one") }; onBack() }
                 }
@@ -157,8 +169,8 @@ fun LaunchPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBa
                     if (t.start != null) Text("Not going", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
                         prefs.launchSkip = t.start.toString(); ticked = night; prefs.launchTicks = ticked; reload++
                     }.padding(vertical = 8.dp)) else Spacer(Modifier)
-                    if ((ticked - night).isNotEmpty()) Text("Start again", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
-                        ticked = night; prefs.launchTicks = ticked
+                    if ((ticked - night).isNotEmpty() || skipped.isNotEmpty()) Text("Start again", color = Muted, fontSize = 14.sp, modifier = Modifier.clickable {
+                        ticked = night; prefs.launchTicks = ticked; skipped = emptySet(); prefs.launchSkips = skipped
                     }.padding(vertical = 8.dp))
                 }
                 Text("Tip: write flightdeck://launch to an NFC tag (any NFC writer app does it) and stick it by the door. Tapping it opens this screen.",
@@ -183,10 +195,11 @@ private fun LateBanner(timing: Timing, trimmed: Int) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TripPass(
     t: Trip, items: List<KitItem>, ticked: Set<String>, did: List<DidStatus>, onTick: (String) -> Unit, onStamp: (DidCheck) -> Unit,
-    night: Set<String> = emptySet(),
+    night: Set<String> = emptySet(), skipped: Set<String> = emptySet(), onSkip: (String) -> Unit = {},
 ) {
     val by = LaunchPad.leaveBy(t)
     Column(
@@ -206,12 +219,25 @@ private fun TripPass(
         Box(Modifier.fillMaxWidth().height(2.dp).background(PassRule))
         items.forEach { i ->
             val done = i.name in ticked
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(enabled = !done) { onTick(i.name) }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${i.emoji}  ${i.name.uppercase(Locale.UK)}", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontSize = 14.sp, fontFamily = FontFamily.Monospace)
-                if (i.name in night) Text("  ☾ last night", color = PassViolet, fontSize = 10.sp)
-                else if (i.reason != null) Text("  ${i.reason}", color = PassAmber, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                Text(if (done) "✓" else "—", color = PassInk.copy(alpha = if (done) 1f else 0.5f), fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            val skip = i.name in skipped
+            var menu by remember { mutableStateOf(false) }
+            val ink = PassInk.copy(alpha = if (done) 1f else 0.5f)
+            Box {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(enabled = !done && !skip, onLongClick = { menu = true }) { onTick(i.name) }
+                    .padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i.emoji}  ${i.name.uppercase(Locale.UK)}", color = if (skip) PassInk.copy(alpha = 0.35f) else ink, fontSize = 14.sp, fontFamily = FontFamily.Monospace,
+                        textDecoration = if (skip) TextDecoration.LineThrough else null)
+                    if (skip) Text("  SKIPPED", color = PassAmber, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    else if (i.name in night) Text("  ☾ last night", color = PassViolet, fontSize = 10.sp)
+                    else if (i.reason != null) Text("  ${i.reason}", color = PassAmber, fontSize = 10.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text(if (done) "✓" else "—", color = ink, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+                DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem(text = { Text("Tick") }, onClick = { menu = false; onTick(i.name) })
+                    DropdownMenuItem(text = { Text("Skip today") }, onClick = { menu = false; onSkip(i.name) })
+                }
             }
         }
         if (did.isNotEmpty()) {
