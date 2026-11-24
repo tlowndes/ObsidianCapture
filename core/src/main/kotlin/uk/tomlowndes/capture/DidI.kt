@@ -206,14 +206,16 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     HOME("home", "Home", "🏠", "Chores by room, when they need doing", true),
     PROJECTS("projects", "Projects", "💡", "Your active project and ideas", true),
     ERRANDS("errands", "Errands", "📍", "Errands and shopping, by place", true),
-    MEALS("meals", "Meals", "🍽", "This week's meals and the shop", true);
+    MEALS("meals", "Meals", "🍽", "This week's meals and the shop", true),
+    /** The morning email as a page, read or listened to (daily-brief-v1). Opens its own screen. */
+    BRIEF("brief", "Daily Brief", "☀", "Your morning brief, to read or listen to", true);
 
     /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
         TICKET_RAIL, SENSORY -> "At the desk"
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
         COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
-        INBOX, HOME, PROJECTS, ERRANDS, MEALS -> "Around home"
+        INBOX, HOME, PROJECTS, ERRANDS, MEALS, BRIEF -> "Around home"
         else -> "Getting out"
     }
 

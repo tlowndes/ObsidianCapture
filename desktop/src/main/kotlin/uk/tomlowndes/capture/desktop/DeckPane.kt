@@ -405,13 +405,8 @@ fun DeckPane(state: AppState) {
                     color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
             }
-            if (hasClaude(state)) BriefingButton(state, hasWeather = weather != null) {
-                uk.tomlowndes.capture.Briefing.prompt(
-                    uk.tomlowndes.capture.Slip.build(today, data.tasks, data.events, weather, uk.tomlowndes.capture.SlipOptions(), today),
-                    next?.let { TaskViews.plainText(it) },
-                    listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }),
-                )
-            }
+            // The morning briefing is the Daily Brief now (daily-brief-v1): this opens its page in Hangar.
+            BriefDeckButton(state)
             Text("🧾", fontSize = 17.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.slipOpen = true }.padding(8.dp))
             Text("⟳", fontSize = 18.sp, color = Muted, modifier = Modifier.clip(CircleShape).hand().clickable { state.changed() }.padding(8.dp))
         }

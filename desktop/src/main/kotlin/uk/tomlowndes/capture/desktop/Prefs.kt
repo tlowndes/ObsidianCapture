@@ -157,6 +157,13 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var weatherStrip: Boolean
         get() = p.getBoolean("weather_strip", false)
         set(v) { p.putBoolean("weather_strip", v); p.flush() }
+    /** Daily Brief's player (daily-brief-v1): Full or Short, and the reading speed. */
+    var briefFull: Boolean
+        get() = p.getBoolean("brief_full", true)
+        set(v) { p.putBoolean("brief_full", v); p.flush() }
+    var briefSpeed: Float
+        get() = p.getFloat("brief_speed", 1f)
+        set(v) { p.putFloat("brief_speed", v); p.flush() }
 
     /** The town the weather is for, as typed in Settings, and where Open-Meteo found it. */
     var weatherPlace: String

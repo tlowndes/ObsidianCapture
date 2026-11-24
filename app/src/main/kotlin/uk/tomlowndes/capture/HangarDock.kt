@@ -49,6 +49,7 @@ internal fun HangarTool.dockLabel(): String = when (this) {
     HangarTool.ERRAND_RUN -> "Errands"
     HangarTool.TICKET_RAIL -> "Rail"
     HangarTool.SENSORY -> "Sensory"
+    HangarTool.BRIEF -> "Brief"
     else -> title
 }
 

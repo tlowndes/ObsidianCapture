@@ -56,7 +56,7 @@ import java.util.Locale
  * slipped before, goes to Tomorrow, gets a date, or is dropped; then the check-in, then Night Pad if it's in Hangar.
  */
 @Composable
-fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: () -> Unit) {
+fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpenBrief: () -> Unit = {}, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = remember { LocalDateTime.now() }
@@ -67,8 +67,6 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
     val sorted = remember { mutableStateListOf<String>() }
     var dating by remember { mutableStateOf<TaskItem?>(null) }
     val events = remember { CalendarSync.cached(ctx).flatMap { it.events } }
-    val hasClaude = remember { claudeKey(ctx, prefs) != null }
-    var briefing by remember { mutableStateOf(false) }
     // Shut down in steps (evening-week-v1): 1 what's left, 2 check in, 3 tomorrow (only with Night Pad in Hangar).
     var step by remember { mutableIntStateOf(1) }
     var journalDone by remember { mutableStateOf(false) }
@@ -156,14 +154,9 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
             Text(if (evening) "Shut down" else "Plan today", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (evening && steps.size > 1) Text("1 of ${steps.size}", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(end = 6.dp))
-            // Morning briefing lives here now (care-welcome-v1), not as its own Deck card. Needs Claude on.
-            if (!evening && hasClaude) Text(if (briefing) "Hide briefing" else "▶ Briefing", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary,
-                modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { briefing = !briefing }.padding(horizontal = 12.dp, vertical = 6.dp))
-        }
-        if (!evening && briefing) tasks?.let { all ->
-            BriefingCard(vault, prefs, hasWeather = false) {
-                Briefing.prompt(Slip.build(today, all, events, null, SlipOptions(), today), DayPlan.candidates(all, today).firstOrNull()?.let { TaskViews.plainText(it) }, emptyList())
-            }
+            // The morning briefing is the Daily Brief now (daily-brief-v1): this opens its page.
+            if (!evening) Text("☀️ Brief", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary,
+                modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable(onClick = onOpenBrief).padding(horizontal = 12.dp, vertical = 6.dp))
         }
         if (evening && steps.size > 1) StepBar(steps, step)
         Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
