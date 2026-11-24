@@ -166,6 +166,20 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("hangar_deck_tools", false)
         set(v) { p.edit().putBoolean("hangar_deck_tools", v).apply() }
 
+    /** Daily Brief has been added to the front of an existing Hangar once (daily-brief-v1). */
+    var hangarBriefAdded: Boolean
+        get() = p.getBoolean("hangar_brief_added", false)
+        set(v) { p.edit().putBoolean("hangar_brief_added", v).apply() }
+
+    /** Daily Brief's player: Full (every section) or Short (the 2-minute rundown), and the reading speed. */
+    var briefFull: Boolean
+        get() = p.getBoolean("brief_full", true)
+        set(v) { p.edit().putBoolean("brief_full", v).apply() }
+
+    var briefSpeed: Float
+        get() = p.getFloat("brief_speed", 1f)
+        set(v) { p.edit().putFloat("brief_speed", v).apply() }
+
     /** Ticket Rail: print the morning's task tickets on the end of the Daily Slip. */
     var ticketsWithSlip: Boolean
         get() = p.getBoolean("tickets_with_slip", true)

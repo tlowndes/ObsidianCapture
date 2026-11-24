@@ -544,6 +544,8 @@ fun DeckScreen(
         CapBanner(prefs, vault, refresh)
         ServerCopyChip(onClick = onOpenSettings)
         NowLine(nowItems, nowIdx) { nowIdx++ }
+        // Daily Brief (daily-brief-v1): the morning email as a card; shrinks to a row once heard or read.
+        if (HomeCard.BRIEF !in hidden) DailyBriefCard(vault, prefs, weather, refresh) { onOpenSub(Sub.BRIEF) }
 
         if (HomeCard.NEXT_STEP !in hidden) {
             val meta = next?.let { t -> listOfNotNull(firstTag(t), t.due?.let { duePhrase(it) }, Deck.minutes(t)?.let { TaskRules.minutesLabel(it) }).joinToString(" · ") }.orEmpty()
@@ -554,7 +556,6 @@ fun DeckScreen(
             )
         }
         // Talk me through it now lives in Stuck? (care-welcome-v1), not as a surprise card here.
-        // The morning briefing moved to Plan today's ▶ Briefing button (care-welcome-v1).
         // What helps you (wellbeing-v1): first week of the month, until closed.
         helps?.let { p ->
             HelpsCard(p, onAll = { helpsOpen = true }) {

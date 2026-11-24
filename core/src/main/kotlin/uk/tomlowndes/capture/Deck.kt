@@ -15,7 +15,9 @@ enum class HomeCard(val label: String) {
     // Added in Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest and spend from receipts.
     INBOX("Inbox"), SPEND("Spent this month"),
     // Tiles under More that used to always show (care-welcome-v1); Errands keeps its tile.
-    MEALS("Meals tile"), PEOPLE("People tile"), LEARN("Learn tile")
+    MEALS("Meals tile"), PEOPLE("People tile"), LEARN("Learn tile"),
+    // The morning email as a card at the top (daily-brief-v1).
+    BRIEF("Daily Brief")
 }
 
 /**
@@ -31,7 +33,7 @@ val QUIET_CARDS = setOf(HomeCard.PROJECTS, HomeCard.JOBS, HomeCard.INBOX, HomeCa
 val QUIET_STILL = setOf(HomeCard.READ_LATER, HomeCard.MOOD, HomeCard.HIGHLIGHTS, HomeCard.MEALS, HomeCard.PEOPLE, HomeCard.LEARN)
 
 /** Cards that pop up at the top at their time of day rather than sitting in the order. */
-val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD)
+val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD, HomeCard.BRIEF)
 
 /** Card order and which cards are switched off, from Settings › Cards on home. */
 /** Newer cards that belong somewhere other than the end: the Inbox under Today, Spend after Top tasks. */

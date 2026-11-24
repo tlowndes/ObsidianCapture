@@ -56,13 +56,15 @@ import java.time.format.DateTimeFormatter
 internal val DESK_TOOLS = setOf(
     HangarTool.DID_I, HangarTool.REFILL, HangarTool.COOL_OFF, HangarTool.RETURN_RADAR, HangarTool.POCKET_PASS,
     HangarTool.LAUNCH_PAD, HangarTool.NIGHT_PAD, HangarTool.LAST_SEEN, HangarTool.TICKET_RAIL, HangarTool.SENSORY,
-    HangarTool.WAITING,
+    HangarTool.WAITING, HangarTool.BRIEF,
 )
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
 internal fun HangarToolPane(state: AppState, t: HangarTool) {
+    // Daily Brief (daily-brief-v1) uses the full width: the brief in two columns and the player on the right.
+    if (t == HangarTool.BRIEF) { BriefDeskPage(state); return }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 22.dp)) {
         TextAction("‹ Hangar", Muted) { state.hangarTool = null }
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN, SENSORY }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN, SENSORY, BRIEF }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
 
     private fun readOpenRequest(i: Intent?) {
         if (i?.getStringExtra("tab") == "RAIL") { openRequest = Tab.DECK to "rail"; return }
+        if (i?.getStringExtra("tab") == "BRIEF") { openRequest = Tab.DECK to "brief"; return }
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
         if (i?.getStringExtra("tab") == "PLAN") { openRequest = Tab.DECK to "plan"; return }
@@ -278,6 +279,7 @@ private fun subFor(slot: String?) = when (slot) {
     "waiting" -> Sub.WAITING
     "run" -> Sub.ERRAND_RUN
     "sensory" -> Sub.SENSORY
+    "brief" -> Sub.BRIEF
     else -> null
 }
 
@@ -329,6 +331,11 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             Hangar.parse(prefs.hangarTools)?.let { prefs.hangarTools = Hangar.format(Hangar.withDeckTools(it)) }
             prefs.hangarDeckToolsAdded = true
         }
+        // Daily Brief (daily-brief-v1): added once to the front of a Hangar set up before it existed.
+        if (!prefs.hangarBriefAdded) {
+            Hangar.parse(prefs.hangarTools)?.let { prefs.hangarTools = Hangar.format(listOf(HangarTool.BRIEF) + (it - HangarTool.BRIEF)) }
+            prefs.hangarBriefAdded = true
+        }
     }
     var dockTools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
     var dockDots by remember { mutableStateOf(emptySet<HangarTool>()) }
@@ -373,6 +380,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             HangarTool.HOME -> sub = Sub.CHORES
             HangarTool.ERRANDS -> sub = Sub.ERRANDS
             HangarTool.MEALS -> sub = Sub.MEALS
+            HangarTool.BRIEF -> sub = Sub.BRIEF
             HangarTool.PROJECTS -> { sub = null; openIdea = null; tab = Tab.PROJECTS }
         }
     }
@@ -480,7 +488,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
                 sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
-                sub == Sub.PLAN -> PlanScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.PLAN -> PlanScreen(vault, prefs, snack, onOpenBrief = { sub = Sub.BRIEF }) { sub = null }
+                sub == Sub.BRIEF -> BriefScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
                 sub == Sub.STUCK -> StuckScreen(vault, snack, prefs, onFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }

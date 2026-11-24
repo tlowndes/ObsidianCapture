@@ -78,6 +78,7 @@ internal fun HangarTool.deskColour(): Color = when (this) {
     HangarTool.ERRAND_RUN, HangarTool.ERRANDS -> Color(0xFFFFB36B)
     HangarTool.TICKET_RAIL -> Color(0xFFE9D9B4)
     HangarTool.SENSORY -> Color(0xFFE8963A)
+    HangarTool.BRIEF -> Amber
 }
 
 /** What the Hangar page and sidebar show on Windows: the shared order, what needs you, and each tile's line. */
@@ -117,6 +118,11 @@ internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
         did = DidI.today(v)
         lines[HangarTool.DID_I] = DidI.progress(did)
         if (DidI.nextOpen(did) != null) needs += HangarTool.DID_I
+    }
+    look(HangarTool.BRIEF) {
+        val d = uk.tomlowndes.capture.DailyBrief.load(v, today)
+        lines[HangarTool.BRIEF] = when { d == null -> "Not written yet"; d.heard -> "Heard ✓"; d.opened -> "Read"; else -> "Ready" }
+        if (d != null && !d.heard && !d.opened) needs += HangarTool.BRIEF
     }
     look(HangarTool.INBOX) {
         val n = state.inboxOpen

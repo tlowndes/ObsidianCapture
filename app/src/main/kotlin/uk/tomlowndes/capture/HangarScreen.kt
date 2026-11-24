@@ -87,6 +87,7 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.PROJECTS -> Lime
     HangarTool.ERRANDS -> Orange
     HangarTool.MEALS -> Sand
+    HangarTool.BRIEF -> Amber
 }
 
 internal val GreenTint = Color(0xFF0D2A1D)
@@ -327,6 +328,7 @@ private fun statusOf(
     sensory: List<SensoryChange>? = null, around: AroundStatus? = null,
 ): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
+    t == HangarTool.BRIEF -> "Read or listen to today's" to ""
     t.group == "Around home" && around == null -> "Loading…" to ""
     t == HangarTool.INBOX -> (if (around!!.mail > 0) "${around.mail} need you" else "All caught up") to ""
     t == HangarTool.HOME -> (if (around!!.chores > 0) "${around.chores} need doing" else "All fresh") to ""
