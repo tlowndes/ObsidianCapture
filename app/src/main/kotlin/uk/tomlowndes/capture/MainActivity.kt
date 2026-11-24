@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Screens opened from Flight Deck that sit over the tabs. */
-enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN, SENSORY, BRIEF }
+enum class Sub { FOCUS, STUCK, HABITS, WEEKLY, JOBS, MIGRATE, SCAN, TRIAGE, PLAN, ROUTINE, PRINT, CHORES, RECIPES, SNAP, LEARN, INBOX, PEOPLE, ERRANDS, MEALS, HANGAR, DID_I, LAUNCH_PAD, HEADS_UP, TICKET_RAIL, NIGHT_PAD, POCKET_PASS, LAST_SEEN, RETURN_RADAR, COOL_OFF, REFILL, WAITING, ERRAND_RUN, SENSORY, BRIEF, BILLS, PLACES }
 
 enum class Tab(val label: String, val icon: String) {
     DECK("Deck", "◎"), CAPTURE("Capture", "＋"), TASKS("Tasks", "✓"), READ("Read", "📖"), VAULT("Vault", "🗂"), PROJECTS("Projects", "💡");
@@ -280,6 +280,7 @@ private fun subFor(slot: String?) = when (slot) {
     "run" -> Sub.ERRAND_RUN
     "sensory" -> Sub.SENSORY
     "brief" -> Sub.BRIEF
+    "bills" -> Sub.BILLS
     else -> null
 }
 
@@ -324,6 +325,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var unread by remember { mutableStateOf(0) }
     var jobsOpen by remember { mutableStateOf(0) }
     val snack = remember { SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     // The Hangar dock (hangar-dock-v1): tools in Hangar's order, re-read when the sheet closes (Edit may have changed them).
     // Inbox, Home, Projects, Errands and Meals moved off the Deck into Hangar (hangar-dock-v2): added once to a Hangar set up before.
     remember {
@@ -344,14 +346,25 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         val uri = vault
         // Windows can reorder Hangar (hangar-windows-v1): take its order when it holds the same tools, and keep the
         // vault's copy up to date with the phone's otherwise.
+        // Where things live (where-things-live-v1): the one-off move (Bills to Hangar only), then a list Windows
+        // changed later than the phone did wins outright, tools added or removed there included.
+        if (uri != null && prefs.hangarTools != null) withContext(Dispatchers.IO) { runCatching { PhonePlaces.moveOnce(ctx, uri, prefs) } }
         val phone = Hangar.parse(prefs.hangarTools)
         if (uri != null && phone != null) withContext(Dispatchers.IO) {
             runCatching {
                 val v = appVault(ctx, uri)
-                val saved = DeckConfig.loadHangar(v)
-                val now = Hangar.merged(phone, saved)
-                if (now != phone) prefs.hangarTools = Hangar.format(now)
+                val json = v.read(DeckConfig.PATH)
+                val saved = Hangar.parse(DeckConfig.hangar(json))
+                val vaultAt = Places.hangarAt(json)
+                val now = Places.synced(phone, prefs.hangarAt, saved, vaultAt)
+                if (now != phone) {
+                    prefs.hangarTools = Hangar.format(now)
+                    if (vaultAt > prefs.hangarAt) prefs.hangarAt = vaultAt
+                    withContext(Dispatchers.Main) { hangarChanged(ctx, prefs, now) }
+                }
                 if (now != saved) DeckConfig.saveHangar(v, now)
+                // More tiles live in the vault too, so Windows can set them.
+                Places.tiles(json)?.let { t -> if (Hangar.format(t) != prefs.deckTiles) prefs.deckTiles = Hangar.format(t) }
             }
         }
         val t = Hangar.parse(prefs.hangarTools)
@@ -382,6 +395,12 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             HangarTool.MEALS -> sub = Sub.MEALS
             HangarTool.BRIEF -> sub = Sub.BRIEF
             HangarTool.PROJECTS -> { sub = null; openIdea = null; tab = Tab.PROJECTS }
+            HangarTool.BILLS -> sub = Sub.BILLS
+            HangarTool.HABITS -> sub = Sub.HABITS
+            HangarTool.PEOPLE -> sub = Sub.PEOPLE
+            HangarTool.LEARN -> sub = Sub.LEARN
+            HangarTool.JOBS -> sub = Sub.JOBS
+            HangarTool.PLAN -> sub = Sub.PLAN
         }
     }
 
@@ -490,10 +509,12 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PLAN -> PlanScreen(vault, prefs, snack, onOpenBrief = { sub = Sub.BRIEF }) { sub = null }
                 sub == Sub.BRIEF -> BriefScreen(vault, prefs, snack) { sub = null }
+                sub == Sub.BILLS -> BillsScreen(vault, prefs, snack) { sub = Sub.HANGAR }
+                sub == Sub.PLACES -> PlacesScreen(vault, prefs, snack) { sub = null; settings = true; deckRev++ }
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
                 sub == Sub.STUCK -> StuckScreen(vault, snack, prefs, onFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }
-                settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY }, onOpenPrint = { settings = false; sub = Sub.PRINT })
+                settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenPlaces = { settings = false; sub = Sub.PLACES }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY }, onOpenPrint = { settings = false; sub = Sub.PRINT })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
                     vault, prefs, snack, deckRev, onEditDeck = { editDeck = true }, onAddTile = { addTiles = true }, onOpenTool = { openTool(it) }, onOpenTab = { tab = it }, onOpenSub = { sub = it },
@@ -507,6 +528,7 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     onOpenTriage = { sub = Sub.TRIAGE },
                     onOpenGuardBackups = { settingsBackups = true; settings = true },
                     onAddOn = { d -> CapturePreset.date = d; prefs.captureMode = 0; tab = Tab.CAPTURE },
+                    onOpenBills = { sub = Sub.BILLS },
                 )
                 tab == Tab.VAULT -> VaultScreen(
                     vault, prefs, snack, unread, jobsOpen, onOpenRead = { tab = Tab.READ }, onOpenProjects = { openIdea = null; tab = Tab.PROJECTS },
@@ -531,8 +553,14 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
         if (peek) TaskPeekSheet(vault, snack, onAll = { tab = Tab.TASKS; tasksNote = null; settings = false; cards = false; search = false; sub = null; hangarOpen = false }, onDismiss = { peek = false })
         if (addTiles) {
-            ModalBottomSheet(onDismissRequest = { addTiles = false; deckRev++ }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
-                AddTilesSheet(prefs) { addTiles = false; deckRev++ }
+            // More tiles are shared with Windows through the vault (where-things-live-v1).
+            fun tilesDone() {
+                addTiles = false; deckRev++
+                val uri = vault ?: return
+                scope.launch(Dispatchers.IO) { runCatching { PhonePlaces.save(ctx, uri, prefs, PhonePlaces.load(ctx, uri, prefs).copy(tiles = deckTiles(prefs))) } }
+            }
+            ModalBottomSheet(onDismissRequest = { tilesDone() }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                AddTilesSheet(prefs) { tilesDone() }
             }
         }
         if (editDeck) {

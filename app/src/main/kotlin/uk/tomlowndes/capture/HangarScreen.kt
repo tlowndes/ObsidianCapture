@@ -88,6 +88,12 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.ERRANDS -> Orange
     HangarTool.MEALS -> Sand
     HangarTool.BRIEF -> Amber
+    HangarTool.BILLS -> Amber
+    HangarTool.HABITS -> Green
+    HangarTool.PEOPLE -> Pink
+    HangarTool.LEARN -> Violet
+    HangarTool.JOBS -> Teal
+    HangarTool.PLAN -> Primary
 }
 
 internal val GreenTint = Color(0xFF0D2A1D)
@@ -100,16 +106,18 @@ private val HM = DateTimeFormatter.ofPattern("HH:mm")
 private class DayStatus(val cools: List<CoolItem>, val meds: List<Pair<Med, Int>>, val quick: Int, val reads: Int, val stops: List<RunStop>)
 
 /** What the Around home tiles show (hangar-dock-v2): the Deck's old Inbox card and tiles. */
-internal class AroundStatus(val mail: Int, val chores: Int, val project: String?, val errands: Int, val planned: Int)
+internal class AroundStatus(val mail: Int, val chores: Int, val project: String?, val errands: Int, val planned: Int, val bills: String? = null, val billsDue: Boolean = false)
 
 internal fun loadAround(ctx: Context, uri: Uri, prefs: AppPrefs, tools: List<HangarTool>): AroundStatus {
     val today = LocalDate.now()
     val home = if (HangarTool.ERRANDS in tools || HangarTool.MEALS in tools) runCatching { loadHomeBits(ctx, uri, prefs, today) }.getOrNull() else null
+    val bills = if (HangarTool.BILLS in tools) runCatching { VaultWriter(ctx, uri).listTasks() }.getOrNull() else null
     return AroundStatus(
         mail = if (HangarTool.INBOX in tools) runCatching { loadInbox(ctx, uri).open(today).size }.getOrDefault(0) else 0,
         chores = if (HangarTool.HOME in tools) runCatching { Chores.due(Chores.load(appVault(ctx, uri), today), today).size }.getOrDefault(0) else 0,
         project = if (HangarTool.PROJECTS in tools) runCatching { IdeaStore(ctx, uri, prefs).list().firstOrNull { it.status == "active" }?.title }.getOrNull() else null,
         errands = home?.errands ?: 0, planned = home?.planned ?: 0,
+        bills = bills?.let { BillPage.nextLine(it, today) }, billsDue = bills?.let { BillPage.needsYou(it, today) } == true,
     )
 }
 
@@ -161,17 +169,16 @@ fun HangarScreen(
 
     fun save(t: List<HangarTool>) {
         tools = t; prefs.hangarTools = Hangar.format(t)
-        // Shared with Windows through the vault (hangar-windows-v1).
-        vault?.let { uri -> scope.launch(Dispatchers.IO) { runCatching { DeckConfig.saveHangar(appVault(ctx, uri), t) } } }
-        // Heads Up only buzzes while it's in Hangar.
-        val heads = HangarTool.HEADS_UP in t
-        if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
-        // Cool-off checks prices in the background, and its and Refill's buzzes are planned with Heads Up's.
-        CoolPrices.keep(ctx, HangarTool.COOL_OFF in t)
-        // Home Did I? asks the house every 15 minutes while Did I? is in Hangar (it stops early when nothing's linked).
-        HomeHouse.keep(ctx, HangarTool.DID_I in t)
-        SensorySync.keep(ctx, HangarTool.SENSORY in t && SensoryHa.setup(ctx) != null)
-        HeadsAlarms.changed(ctx)
+        val at = System.currentTimeMillis()
+        prefs.hangarAt = at
+        // Shared with Windows through the vault (hangar-windows-v1), stamped so Windows takes it (where-things-live-v1).
+        vault?.let { uri -> scope.launch(Dispatchers.IO) { runCatching { DeckConfig.saveHangar(appVault(ctx, uri), t, at) } } }
+        hangarChanged(ctx, prefs, t)
+    }
+    // Long-press a tile and let go without moving it: where should it live? (where-things-live-v1)
+    var placing by remember { mutableStateOf<Element?>(null) }
+    placing?.let { e ->
+        PlaceSheet(vault, prefs, snack, e, onDone = { placing = null; tools = Hangar.parse(prefs.hangarTools) }) { placing = null }
     }
 
     LaunchedEffect(vault, tools, reload) {
@@ -218,7 +225,7 @@ fun HangarScreen(
                     )
                 }.getOrNull()
             }
-        if (tools?.any { it.group == "Around home" } == true)
+        if (tools?.any { it.group == "Around home" || it == HangarTool.BILLS } == true)
             around = withContext(Dispatchers.IO) { runCatching { loadAround(ctx, uri, prefs, tools.orEmpty()) }.getOrNull() }
         if (tools?.contains(HangarTool.TICKET_RAIL) == true)
             rail = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri) }.getOrNull() }
@@ -299,12 +306,13 @@ fun HangarScreen(
                                 undoOrder = list
                                 save(list.toMutableList().apply { add(to, removeAt(from)) })
                             },
+                            onHold = { t -> Element.forTool(t)?.let { placing = it } },
                             onOpen = { t -> if (t.ready) onOpen(t) })
                     }
                     return@Column
                 }
                 // Getting out, Finding things (hangar-phase2), Day to day (hangar-phase3), then At the desk (ticket-rail-v1).
-                listOf("Getting out", "Finding things", "Day to day", "At the desk", "Around home").forEachIndexed { gi, g ->
+                listOf("Getting out", "Finding things", "Day to day", "At the desk", "Around home", "Your day").forEachIndexed { gi, g ->
                     val rows = list.filter { it.group == g }
                     if (rows.isNotEmpty()) {
                         Box(Modifier.padding(top = if (gi == 0) 0.dp else 16.dp)) { GroupLabel(g) }
@@ -321,6 +329,20 @@ fun HangarScreen(
     }
 }
 
+/**
+ * What changes when the Hangar list does: Heads Up only buzzes while it's in Hangar, Cool-off checks prices in the
+ * background (its and Refill's buzzes are planned with Heads Up's), Home Did I? asks the house every 15 minutes while
+ * Did I? is in Hangar, and Sensory Dial keeps in step with Home Assistant.
+ */
+internal fun hangarChanged(ctx: Context, prefs: AppPrefs, t: List<HangarTool>) {
+    val heads = HangarTool.HEADS_UP in t
+    if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
+    CoolPrices.keep(ctx, HangarTool.COOL_OFF in t)
+    HomeHouse.keep(ctx, HangarTool.DID_I in t)
+    SensorySync.keep(ctx, HangarTool.SENSORY in t && SensoryHa.setup(ctx) != null)
+    HeadsAlarms.changed(ctx)
+}
+
 /** Status line and the right-hand label for a tool's tile. */
 private fun statusOf(
     t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null,
@@ -329,6 +351,8 @@ private fun statusOf(
 ): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
     t == HangarTool.BRIEF -> "Read or listen to today's" to ""
+    t == HangarTool.BILLS && around == null -> "Loading…" to ""
+    t == HangarTool.BILLS -> (around!!.bills ?: "Nothing to pay") to ""
     t.group == "Around home" && around == null -> "Loading…" to ""
     t == HangarTool.INBOX -> (if (around!!.mail > 0) "${around.mail} need you" else "All caught up") to ""
     t == HangarTool.HOME -> (if (around!!.chores > 0) "${around.chores} need doing" else "All fresh") to ""
@@ -628,7 +652,7 @@ internal data class RailStatus(val onRail: Int, val cleared: Int, val toPrint: I
 private fun HangarGrid(
     list: List<HangarTool>, needs: Set<HangarTool>, statusFor: (HangarTool) -> Pair<String, String>,
     spare: @Composable (Int, Modifier) -> Unit, spareCount: Int,
-    onMoved: (Int, Int) -> Unit, onOpen: (HangarTool) -> Unit,
+    onMoved: (Int, Int) -> Unit, onHold: (HangarTool) -> Unit = {}, onOpen: (HangarTool) -> Unit,
 ) {
     val bounds = remember { mutableStateMapOf<Int, Rect>() }
     var dragging by remember { mutableStateOf<Int?>(null) }
@@ -660,7 +684,12 @@ private fun HangarGrid(
                                         val at = (bounds[i] ?: return@drag).center + offset
                                         bounds.entries.firstOrNull { (k, r) -> k < list.size && r.contains(at) }?.let { target = it.key }
                                     },
-                                    onDragEnd = { val from = dragging; val to = target; reset(); if (from != null && to != null && from != to) onMoved(from, to) },
+                                    onDragEnd = {
+                                        val from = dragging; val to = target; val still = offset.getDistance() < 24f
+                                        reset()
+                                        if (from != null && to != null && from != to) onMoved(from, to)
+                                        else if (from != null && still) onHold(list[from])
+                                    },
                                     onDragCancel = { reset() },
                                 )
                             }

@@ -77,12 +77,15 @@ private val GapTint = Color(0x0D7AA2FF)
 
 /** The slim List · Upcoming switch under the Tasks title. */
 @Composable
-internal fun TasksViewSwitch(view: TasksView, modifier: Modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), onPick: (TasksView) -> Unit) {
+internal fun TasksViewSwitch(
+    view: TasksView, modifier: Modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+    views: List<TasksView> = TasksView.values().toList(), onPick: (TasksView) -> Unit,
+) {
     Row(
         modifier.clip(RoundedCornerShape(12.dp)).background(Surface1)
             .border(1.dp, Outline, RoundedCornerShape(12.dp)).padding(3.dp)
     ) {
-        TasksView.values().forEach { v ->
+        views.forEach { v ->
             val label = v.label
             val on = v == view
             Box(

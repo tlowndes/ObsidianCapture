@@ -170,6 +170,7 @@ private fun DeckPage(state: AppState) {
             Chip(if (finding) "Finding…" else "Set", small = true) { findTown() }
         }
     }
+    PlacesSection(state)
     Text("CARDS ON THE DECK", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
     Sub("Shared with the phone through the vault. ↑ ↓ to reorder.", Modifier.padding(bottom = 6.dp))
     val l = layout

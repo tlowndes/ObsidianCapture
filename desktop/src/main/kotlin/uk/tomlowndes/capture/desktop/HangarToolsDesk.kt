@@ -56,7 +56,7 @@ import java.time.format.DateTimeFormatter
 internal val DESK_TOOLS = setOf(
     HangarTool.DID_I, HangarTool.REFILL, HangarTool.COOL_OFF, HangarTool.RETURN_RADAR, HangarTool.POCKET_PASS,
     HangarTool.LAUNCH_PAD, HangarTool.NIGHT_PAD, HangarTool.LAST_SEEN, HangarTool.TICKET_RAIL, HangarTool.SENSORY,
-    HangarTool.WAITING, HangarTool.BRIEF,
+    HangarTool.WAITING, HangarTool.BRIEF, HangarTool.BILLS,
 )
 
 private val HM = DateTimeFormatter.ofPattern("HH:mm")
@@ -86,6 +86,7 @@ internal fun HangarToolPane(state: AppState, t: HangarTool) {
                 HangarTool.TICKET_RAIL -> TicketRailDesk(state, v)
                 HangarTool.SENSORY -> SensoryDesk(state, v)
                 HangarTool.WAITING -> WaitingDesk(state, v)
+                HangarTool.BILLS -> BillsDesk(state, v)
                 else -> Sub("${t.title} is on your phone for now.")
             }
         }
