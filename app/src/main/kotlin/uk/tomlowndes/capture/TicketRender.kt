@@ -13,19 +13,22 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Draws Ticket Rail tickets (ticket-rail-v1): tall kitchen-style tickets, one per task, straight down the roll at
- * the same [SlipRender.WIDTH] as the Daily Slip (about 12 dots per mm). Each is the same height so they hang
- * level on the rail; a dashed tear line sits between them, since the pocket printer has no cutter.
+ * the same [SlipRender.WIDTH] as the Daily Slip (about 12 dots per mm). Each is as long as its job
+ * (ticket-adaptive-v1), never shorter than [MIN_HEIGHT]; tops still hang level since the rail grips the top.
+ * A dashed tear line sits between them, since the pocket printer has no cutter.
  */
 object TicketRender {
     private const val W = SlipRender.WIDTH
     private const val M = 12f
-    /** About 110 mm. */
-    const val HEIGHT = 1320
+    /** The shortest ticket: about 60 mm, so the code, QR and CLR box stay easy to grab and scan. */
+    const val MIN_HEIGHT = 720
     /** The rail grips the top: about 7 mm left blank. */
     private const val GRIP = 84f
     private const val TEAR = 70
     private const val QR = 240f
     private const val STEP_ROW = 46f
+    /** The rule, QR and CLR box at the bottom, with the margin under it. */
+    private const val FOOT = 22f + QR + 24f
     private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
     private val mono = Typeface.MONOSPACE
@@ -35,17 +38,31 @@ object TicketRender {
     private val ink = Paint().apply { color = 0xFF000000.toInt(); style = Paint.Style.FILL }
     private fun stroke(w: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF000000.toInt(); style = Paint.Style.STROKE; strokeWidth = w }
 
+    /** How long [t] prints, in dots: its content, or [MIN_HEIGHT] when that's shorter. */
+    fun heightOf(t: Ticket): Int {
+        val scratch = Canvas(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+        val end = body(scratch, t, 0f)
+        return maxOf(MIN_HEIGHT, (end + 20f + FOOT).toInt())
+    }
+
+    /** The paper [tickets] take, tear gaps included, in dots. */
+    fun lengthOf(tickets: List<Ticket>): Int =
+        if (tickets.isEmpty()) 0 else tickets.sumOf { heightOf(it) } + (tickets.size - 1) * TEAR
+
     /** [tickets] one under another, with a tear line between each. */
     fun draw(tickets: List<Ticket>): Bitmap {
         require(tickets.isNotEmpty())
-        val h = tickets.size * HEIGHT + (tickets.size - 1) * TEAR
+        val heights = tickets.map { heightOf(it) }
+        val h = heights.sum() + (tickets.size - 1) * TEAR
         val b = Bitmap.createBitmap(W, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         c.drawColor(0xFFFFFFFF.toInt())
+        var top = 0f
         tickets.forEachIndexed { i, t ->
-            val top = i * (HEIGHT + TEAR).toFloat()
-            if (i > 0) tear(c, top - TEAR / 2f)
-            ticket(c, t, top)
+            if (i > 0) { tear(c, top + TEAR / 2f); top += TEAR }
+            body(c, t, top)
+            foot(c, t, top + heights[i])
+            top += heights[i]
         }
         return b
     }
@@ -66,7 +83,8 @@ object TicketRender {
         c.drawLine(M, y, W - M, y, p)
     }
 
-    private fun ticket(c: Canvas, t: Ticket, top: Float) {
+    /** Everything above the footer, from [top]; returns the y under it. Titles and steps print in full. */
+    private fun body(c: Canvas, t: Ticket, top: Float): Float {
         var y = top + GRIP
         // The tag as a hatch, since thermal paper is black only.
         hatch(c, t.pattern, y, y + 18f)
@@ -88,26 +106,24 @@ object TicketRender {
         y += 18f
         y = text(c, "TASK", paint(22f), y, 1) + 4f
         val hasSteps = t.steps.isNotEmpty()
-        y = text(c, t.text, paint(if (hasSteps) 44f else 50f, monoBold), y, if (hasSteps) 3 else if (t.early.isNotBlank()) 4 else 5) + 10f
+        y = text(c, t.text, paint(if (hasSteps) 44f else 50f, monoBold), y, Int.MAX_VALUE) + 10f
         y = text(c, t.source, paint(26f), y, 1) + 16f
-        // Sub-tasks as tick boxes (four-fixes-v1), as many as fit above the QR, then "+N more".
+        // Sub-tasks as tick boxes (four-fixes-v1), every one of them.
         if (hasSteps) {
-            val room = (top + HEIGHT - 24f - QR - 40f) - y
-            val rows = (room / STEP_ROW).toInt().coerceAtLeast(1)
-            val shown = if (t.steps.size > rows) rows - 1 else t.steps.size
             c.drawRect(M, y, W - M, y + 3f, ink)
             y += 14f
-            t.steps.take(shown.coerceAtLeast(0)).forEach { step ->
+            t.steps.forEach { step ->
                 c.drawRect(M + 2f, y + 6f, M + 30f, y + 34f, stroke(4f))
-                c.drawText(step.take(22), M + 44f, y + 32f, paint(32f))
-                y += STEP_ROW
+                val end = text(c, step, paint(32f), y + 4f, Int.MAX_VALUE, x = M + 44f)
+                y = maxOf(y + STEP_ROW, end + 8f)
             }
-            if (t.steps.size > shown) text(c, "+${t.steps.size - shown} more", paint(28f), y, 1)
         }
+        return y
+    }
 
-        // Bottom: print time and a CLR box on the left, the QR on the right. It's what your hand is on when you tear.
-        val bottom = top + HEIGHT - 24f
-        val qrTop = bottom - QR
+    /** Print time and a CLR box on the left, the QR on the right, ending at [bottom]. It's what your hand is on when you tear. */
+    private fun foot(c: Canvas, t: Ticket, bottom: Float) {
+        val qrTop = bottom - 24f - QR
         c.drawRect(M, qrTop - 22f, W - M, qrTop - 18f, ink)
         qr(c, TicketRail.qr(t.id), W - M - QR, qrTop, QR)
         val small = paint(28f)
@@ -117,11 +133,11 @@ object TicketRender {
     }
 
     /** Wrapped text from [y], at most [lines] lines; returns the y under it. */
-    private fun text(c: Canvas, s: String, p: TextPaint, y: Float, lines: Int): Float {
-        val w = (W - 2 * M).toInt()
+    private fun text(c: Canvas, s: String, p: TextPaint, y: Float, lines: Int, x: Float = M): Float {
+        val w = (W - M - x).toInt()
         val l = StaticLayout.Builder.obtain(s, 0, s.length, p, w).setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, 1.05f).setMaxLines(lines).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
-        c.save(); c.translate(M, y); l.draw(c); c.restore()
+        c.save(); c.translate(x, y); l.draw(c); c.restore()
         return y + l.height
     }
 

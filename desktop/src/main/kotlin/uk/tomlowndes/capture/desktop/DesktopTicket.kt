@@ -20,12 +20,15 @@ import java.time.format.DateTimeFormatter
 
 /**
  * A Ticket Rail ticket drawn with Java2D: the phone's TicketRender, line for line, so a ticket printed from the PC
- * looks the same on the rail. 576 dots across, the same height as the phone's so they hang level.
+ * looks the same on the rail. 576 dots across, as long as its job (ticket-adaptive-v1) like the phone's.
  */
 object DesktopTicket {
     private const val W = DesktopSlip.WIDTH
     private const val M = 12f
-    const val HEIGHT = 1320
+    /** The shortest ticket: about 60 mm, the same as the phone's. */
+    const val MIN_HEIGHT = 720
+    private const val FOOT = 22f + 240f + 24f
+    private const val STEP_ROW = 46f
     private const val GRIP = 84f
     private const val QR = 240f
     private val HM = DateTimeFormatter.ofPattern("HH:mm")
@@ -36,19 +39,31 @@ object DesktopTicket {
         return Font(name, if (bold) Font.BOLD else Font.PLAIN, 1).deriveFont(size)
     }
 
+    /** How long [t] prints, in dots: its content, or [MIN_HEIGHT] when that's shorter. */
+    fun heightOf(t: Ticket): Int {
+        val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB).createGraphics()
+        val end = body(g, t)
+        g.dispose()
+        return maxOf(MIN_HEIGHT, (end + 20f + FOOT).toInt())
+    }
+
     fun draw(t: Ticket): BufferedImage {
-        val img = BufferedImage(W, HEIGHT, BufferedImage.TYPE_INT_RGB)
+        val h = heightOf(t)
+        val img = BufferedImage(W, h, BufferedImage.TYPE_INT_RGB)
         val g = img.createGraphics()
-        g.color = Color.WHITE; g.fillRect(0, 0, W, HEIGHT)
+        g.color = Color.WHITE; g.fillRect(0, 0, W, h)
         g.color = Color.BLACK
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-        ticket(g, t)
+        body(g, t)
+        foot(g, t, h.toFloat())
         g.dispose()
         return img
     }
 
-    private fun ticket(g: Graphics2D, t: Ticket) {
+    /** Everything above the footer; returns the y under it. Titles and steps print in full. */
+    private fun body(g: Graphics2D, t: Ticket): Float {
+        g.color = Color.BLACK
         var y = GRIP
         hatch(g, t.pattern, y, y + 18f)
         y += 18f + 22f + 92f
@@ -69,12 +84,25 @@ object DesktopTicket {
         rect(g, M, y, W - M, y + 4f)
         y += 18f
         y = text(g, "TASK", mono(22f), y, 1) + 4f
-        y = text(g, t.text, mono(50f, true), y, if (t.early.isNotBlank()) 4 else 5) + 10f
-        text(g, t.source, mono(26f), y, 1)
+        val hasSteps = t.steps.isNotEmpty()
+        y = text(g, t.text, mono(if (hasSteps) 44f else 50f, true), y, Int.MAX_VALUE) + 10f
+        y = text(g, t.source, mono(26f), y, 1) + 16f
+        if (hasSteps) {
+            rect(g, M, y, W - M, y + 3f)
+            y += 14f
+            t.steps.forEach { step ->
+                g.stroke = BasicStroke(4f)
+                g.draw(Rectangle2D.Float(M + 2f, y + 6f, 28f, 28f))
+                val end = text(g, step, mono(32f), y + 4f, Int.MAX_VALUE, x = M + 44f)
+                y = maxOf(y + STEP_ROW, end + 8f)
+            }
+        }
+        return y
+    }
 
-        // Bottom: print time and a CLR box on the left, the QR on the right.
-        val bottom = HEIGHT - 24f
-        val qrTop = bottom - QR
+    /** Print time and a CLR box on the left, the QR on the right, ending at [bottom]. */
+    private fun foot(g: Graphics2D, t: Ticket, bottom: Float) {
+        val qrTop = bottom - 24f - QR
         rect(g, M, qrTop - 22f, W - M, qrTop - 18f)
         qr(g, TicketRail.qr(t.id), W - M - QR, qrTop, QR)
         g.font = mono(28f)
@@ -85,19 +113,20 @@ object DesktopTicket {
     }
 
     /** Wrapped text from [top], at most [max] lines (the last one cut with "…"); returns the y under it. */
-    private fun text(g: Graphics2D, s: String, f: Font, top: Float, max: Int): Float {
+    private fun text(g: Graphics2D, s: String, f: Font, top: Float, max: Int, x: Float = M): Float {
         g.font = f
         val fm = g.fontMetrics
-        val lines = wrap(s, W - 2 * M) { fm.stringWidth(it).toFloat() }
+        val room = W - M - x
+        val lines = wrap(s, room) { fm.stringWidth(it).toFloat() }
         val shown = lines.take(max).toMutableList()
         if (lines.size > max) {
             var last = shown.last()
-            while (last.isNotEmpty() && fm.stringWidth("$last…") > W - 2 * M) last = last.dropLast(1)
+            while (last.isNotEmpty() && fm.stringWidth("$last…") > room) last = last.dropLast(1)
             shown[shown.lastIndex] = last.trimEnd() + "…"
         }
         val lh = fm.height * 1.05f
         var y = top
-        shown.forEach { l -> g.drawString(l, M, y + fm.ascent); y += lh }
+        shown.forEach { l -> g.drawString(l, x, y + fm.ascent); y += lh }
         return y
     }
 

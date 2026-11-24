@@ -278,6 +278,12 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         val clearedToday = TicketRail.clearedOn(l.done, today)
         val run = TicketRail.morningRun(l.open, today)
         val up = TicketRail.comingUp(l.open, today, upDays)
+        // Paper each print will take (ticket-adaptive-v1): tickets are as long as their job now.
+        fun paper(ts: List<TaskItem>): String {
+            val now = LocalTime.now()
+            val wantSteps = prefs.ticketSteps
+            return TicketRail.paperLabel(TicketRender.lengthOf(ts.map { TicketRail.ticket(it, "tsk000", today, now, if (wantSteps) TicketRail.stepsOf(it, l.open) else emptyList()) }))
+        }
         Text("${rail.size} on the rail${if (later.isNotEmpty()) " · ${later.size} for later" else ""} · ${clearedToday.size} cleared today", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
 
         cleared?.let { ClearedCard(it) }
@@ -314,7 +320,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
                 }
             }
             if (run.isNotEmpty()) Text(
-                if (busy) "Printing…" else "Print ${run.size} ticket${if (run.size == 1) "" else "s"}",
+                if (busy) "Printing…" else "Print ${run.size} ticket${if (run.size == 1) "" else "s"} · ${paper(run)}",
                 color = PaperInk, fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(CircleShape).background(if (busy) Paper.copy(alpha = 0.5f) else Paper)
                     .clickable(enabled = !busy) { print(run) }.padding(vertical = 12.dp)
@@ -349,7 +355,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
             }
             val chosen = up.filter { it.raw in picked }
             if (chosen.isNotEmpty()) Text(
-                if (busy) "Printing…" else "Print ${chosen.size} now",
+                if (busy) "Printing…" else "Print ${chosen.size} now · ${paper(chosen)}",
                 color = PaperInk, fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(CircleShape).background(if (busy) Paper.copy(alpha = 0.5f) else Paper)
                     .clickable(enabled = !busy) { print(chosen) }.padding(vertical = 12.dp)

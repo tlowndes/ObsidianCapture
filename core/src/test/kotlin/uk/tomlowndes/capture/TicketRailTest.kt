@@ -187,6 +187,12 @@ class TicketRailTest {
         assertEquals("FOR 5 DEC · PRINTED FRI", far.early)
     }
 
+    @Test fun `paper length reads in whole centimetres`() {
+        assertEquals("about 6 cm", TicketRail.paperLabel(745))
+        assertEquals("about 17 cm", TicketRail.paperLabel(2030))
+        assertEquals("about 1 cm", TicketRail.paperLabel(10))
+    }
+
     @Test fun `new ticket words`() {
         assertEquals("#home Fix the shed door", TicketRail.jobText(" Fix the shed door ", "#home"))
         assertEquals("Fix it", TicketRail.jobText("Fix it", null))
