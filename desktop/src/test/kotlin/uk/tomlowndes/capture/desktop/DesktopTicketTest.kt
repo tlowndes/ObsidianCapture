@@ -37,7 +37,8 @@ class DesktopTicketTest {
         val c = DesktopTicket.heightOf(steps)
         assertTrue("short job near the minimum: $a", a in DesktopTicket.MIN_HEIGHT until 900)
         assertTrue("long title should be taller: $b", b > a)
-        assertTrue("12 steps should be taller still: $c", c > b + 12 * 40)
+        val six = DesktopTicket.heightOf(long.copy(steps = (1..6).map { "Step number $it" }))
+        assertTrue("12 steps should be taller than 6 by 6 rows: $c vs $six", c - six >= 6 * 46)
         assertEquals(c, DesktopTicket.draw(steps).height)
     }
 }
