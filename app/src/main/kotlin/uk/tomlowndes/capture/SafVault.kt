@@ -73,17 +73,19 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
         } // null when the provider can't open it: never pass that off as an empty note
     }
 
-    override fun writeOnce(path: String, text: String) = writeBytes(path, text.toByteArray())
+    // Notes: VaultIo.write reads them back itself and tells a sync landing on top from a short write.
+    override fun writeOnce(path: String, text: String) = put(path, text.toByteArray(), verify = false)
+
+    override fun writeBytes(path: String, bytes: ByteArray) = put(path, bytes, verify = true)
 
     /**
      * Writes straight into the note, so it keeps the same file the whole time. It used to write a sibling and swap
      * names, but while the note was renamed away Obsidian Sync could put it back, and Android then gave the app's
      * copy a free name instead: "⚡ Quick Task (1).md", with every task in it twice (2026-11-24). Sync also took the
      * swap as a delete plus a new file and merged old and new copies together. An edit in place is what Sync expects.
-     * [VaultIo.write] reads the note back and writes again if only part of it landed; if the write itself fails,
-     * the bytes from before go back.
+     * If the write fails, the bytes from before go back. With [verify], a read-back that differs throws.
      */
-    override fun writeBytes(path: String, bytes: ByteArray) {
+    private fun put(path: String, bytes: ByteArray, verify: Boolean) {
         heal(path)
         val target = find(path) ?: error("${nameOf(path)} not found")
         if (target.isDirectory) error("${nameOf(path)} is a folder")
@@ -94,6 +96,10 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
             if (before != null) runCatching { target.writeBytes(before) }
             throw e
         }
+        if (!verify) return
+        // A different read-back may be a sync landing on top, so it isn't undone: the caller tries again.
+        val back = runCatching { target.open()?.use { it.readBytes() } }.getOrNull()
+        if (back == null || !back.contentEquals(bytes)) error("Cannot write ${target.name}")
     }
 
     /** Puts a note back if an old-style swap (before 1.63) stopped halfway, and drops leftover temp files. */
