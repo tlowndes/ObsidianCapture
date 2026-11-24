@@ -200,6 +200,13 @@ private fun printTickets(state: AppState, tasks: List<TaskItem>) = state.scope.l
     state.say(if (n == 1) "Printed 1 ticket" else "Printed $n tickets")
 }
 
+/** The paper [tasks] will take as tickets (ticket-adaptive-v1): "about 17 cm". */
+private fun paperFor(tasks: List<TaskItem>): String {
+    val today = LocalDate.now()
+    val now = LocalTime.now()
+    return TicketRail.paperLabel(tasks.sumOf { DesktopTicket.heightOf(TicketRail.ticket(it, "tsk000", today, now)) })
+}
+
 /** New ticket for later (ticket-rail-future-v1): adds the job to Quick Task with its 📅 and tag, then prints it when [print]. */
 private fun addJob(state: AppState, text: String, tag: String?, day: LocalDate, print: Boolean, done: () -> Unit) = state.scope.launch {
     val job = TicketRail.jobText(text, tag)
@@ -279,7 +286,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
             if (morning.isNotEmpty()) {
                 GroupLabel("Morning run · not printed yet")
                 morning.forEach { t -> ToolRow(t.text, TicketRail.slot(t.due, today).first, Muted) }
-                PrimaryButton("Print morning run (${morning.size})", Modifier.padding(top = 4.dp)) { printTickets(state, morning) }
+                PrimaryButton("Print morning run (${morning.size}) · ${paperFor(morning)}", Modifier.padding(top = 4.dp)) { printTickets(state, morning) }
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -347,7 +354,7 @@ private fun ComingUpCard(state: AppState, open: List<TaskItem>, today: LocalDate
                 }
             }
             val chosen = up.filter { it.raw in picked }
-            if (chosen.isNotEmpty()) PrimaryButton("Print ${chosen.size} now", Modifier.padding(top = 4.dp)) {
+            if (chosen.isNotEmpty()) PrimaryButton("Print ${chosen.size} now · ${paperFor(chosen)}", Modifier.padding(top = 4.dp)) {
                 printTickets(state, chosen); picked = emptySet()
             }
         }

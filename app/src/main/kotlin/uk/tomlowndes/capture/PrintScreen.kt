@@ -472,7 +472,7 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
                 weekMode -> if (nextWeek) "Print next week" else "Print this week"
                 mode == SlipMode.BILLS -> "Print " + today.withDayOfMonth(1).plusMonths(if (billsNext) 1 else 0).format(java.time.format.DateTimeFormatter.ofPattern("MMMM", java.util.Locale.UK)) + "'s bills"
                 mode == SlipMode.LIST -> "Print list"
-                mode == SlipMode.TICKETS -> "Print ${picked.size} ticket${if (picked.size == 1) "" else "s"}"
+                mode == SlipMode.TICKETS -> "Print ${picked.size} ticket${if (picked.size == 1) "" else "s"}" + (ticketsImg?.let { " · " + TicketRail.paperLabel(it.height) } ?: "")
                 else -> Slip.printLabel(day, today)
             }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
         }

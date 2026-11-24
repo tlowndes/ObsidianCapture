@@ -81,9 +81,14 @@ internal fun TicketLaterSheet(busy: Boolean, onDone: (text: String, tag: String?
                 PaperChip("None", tag == null) { tag = null }
             }
 
-            Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
                 PaperPreview(text, tag, day, today)
             }
+            val paper = remember(text, tag, day) {
+                TicketRail.paperLabel(TicketRender.heightOf(TicketRail.ticket(TaskItem("", TicketRail.jobText(text.ifBlank { "Your job" }, tag), day), "tsk000", today, java.time.LocalTime.now())))
+            }
+            Text(paper.replaceFirstChar { it.uppercase() } + " of paper", color = Paper, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Save only", color = if (ready) TextMain else Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,

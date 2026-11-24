@@ -170,6 +170,12 @@ object TicketRail {
     /** The date chip on a Coming up row: "WED 25". */
     fun upChip(due: LocalDate): String = "${dow(due)} ${due.dayOfMonth}"
 
+    /** Printer dots per mm (576 dots across 48 mm paper). */
+    const val DOTS_PER_MM = 12
+
+    /** How much paper [dots] of tickets take, as the print buttons say it: "about 17 cm" (ticket-adaptive-v1). */
+    fun paperLabel(dots: Int): String = "about ${maxOf(1, Math.round(dots / (DOTS_PER_MM * 10f)))} cm"
+
     /** Tags offered on New ticket for later; they set the code's letters (HOM, WRK, ERR, JOB). */
     val JOB_TAGS = listOf("#home", "#work", "#errand", "#job")
 
