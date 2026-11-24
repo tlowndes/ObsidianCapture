@@ -16,12 +16,14 @@ object TaskNote {
 
     fun newTask(text: String, due: String?) = "- [ ] #task ${text.trim()}" + (due?.let { " 📅 $it" } ?: "")
 
-    /** Inserts [line] at the end of the "## Active" list. */
+    /**
+     * Inserts [line] at the end of the "## Active" list: before the next `## ` heading, so a section of its own
+     * between Active and Archive (such as "## Recurring" for bills) keeps only what was put there.
+     */
     fun insertActive(lines: MutableList<String>, line: String) {
         val active = lines.activeStart()
-        val archive = lines.archiveStart()
         val at = if (active >= 0) {
-            var i = if (archive > active) archive else lines.size
+            var i = (active + 1 until lines.size).firstOrNull { lines[it].startsWith("## ") } ?: lines.size
             while (i > active + 1 && lines[i - 1].isBlank()) i--
             i
         } else lines.size
