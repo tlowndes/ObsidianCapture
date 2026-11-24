@@ -13,8 +13,22 @@ enum class HomeCard(val label: String) {
     // Added in Stage 1 (home-life-v1): chores that decay, and one passage from your reading.
     CHORES("Home chores"), READING("From your reading"),
     // Added in Stage 4 (proton-inbox-v1, meals-spend-v1): the email digest and spend from receipts.
-    INBOX("Inbox"), SPEND("Spent this month")
+    INBOX("Inbox"), SPEND("Spent this month"),
+    // Tiles under More that used to always show (care-welcome-v1); Errands keeps its tile.
+    MEALS("Meals tile"), PEOPLE("People tile"), LEARN("Learn tile")
 }
+
+/**
+ * Cards that start switched off (quiet-day-v1). New installs get them off; an existing layout is asked once
+ * ([DeckConfig.quietAsked]) and keeps whatever it already had until then.
+ */
+val QUIET_CARDS = setOf(HomeCard.PROJECTS, HomeCard.JOBS, HomeCard.INBOX, HomeCard.SPEND, HomeCard.READING, HomeCard.ROUTINES)
+
+/**
+ * The second, later round (care-welcome-v1, "A bit quieter still?"): Shut down covers mood and the journal, and the
+ * More tiles that always showed. Asked once too ([DeckConfig.quietStillAsked]), after the first round.
+ */
+val QUIET_STILL = setOf(HomeCard.READ_LATER, HomeCard.MOOD, HomeCard.HIGHLIGHTS, HomeCard.MEALS, HomeCard.PEOPLE, HomeCard.LEARN)
 
 /** Cards that pop up at the top at their time of day rather than sitting in the order. */
 val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD)
@@ -24,9 +38,9 @@ val TIMED_CARDS = setOf(HomeCard.PLAN, HomeCard.MOOD)
 private val FOLLOWS = mapOf(HomeCard.INBOX to HomeCard.TODAY, HomeCard.SPEND to HomeCard.TOP_TASKS)
 
 /** Every card in its default place. */
-fun defaultCardOrder(): List<HomeCard> = DeckLayout(emptyList()).normalised().order
+fun defaultCardOrder(): List<HomeCard> = DeckLayout(emptyList(), emptySet()).normalised().order
 
-data class DeckLayout(val order: List<HomeCard> = defaultCardOrder(), val hidden: Set<HomeCard> = emptySet()) {
+data class DeckLayout(val order: List<HomeCard> = defaultCardOrder(), val hidden: Set<HomeCard> = QUIET_CARDS + QUIET_STILL) {
     /** Cards to show, in order. On a low-energy day Stuck? moves to the top. */
     fun visible(lowEnergy: Boolean): List<HomeCard> {
         val on = order.filter { it !in hidden }
@@ -55,6 +69,18 @@ data class DeckLayout(val order: List<HomeCard> = defaultCardOrder(), val hidden
         list.add(at, card)
         return copy(order = list)
     }
+
+    /** The quiet cards that are still on. */
+    val loudCards get() = QUIET_CARDS.filter { it in order && it !in hidden }
+
+    /** Switches every quiet card off except those in [keep]. Nothing else changes. */
+    fun quieted(keep: Set<HomeCard> = emptySet()): DeckLayout = copy(hidden = hidden + (QUIET_CARDS - keep))
+
+    /** The second round's cards that are still on. */
+    val loudStill get() = QUIET_STILL.filter { it in order && it !in hidden }
+
+    /** Switches every second-round card off except those in [keep]. */
+    fun quietedStill(keep: Set<HomeCard> = emptySet()): DeckLayout = copy(hidden = hidden + (QUIET_STILL - keep))
 
     fun toggled(card: HomeCard): DeckLayout = copy(hidden = if (card in hidden) hidden - card else hidden + card)
 
@@ -139,6 +165,61 @@ object DeckConfig {
         json?.takeIf { it.isNotBlank() }?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
 
     fun load(v: Vault): DeckLayout = layout(v.read(PATH))
+
+    // ---- A quieter Deck? (quiet-day-v1): asked once, on any device ----
+
+    private const val QUIET_KEY = "quietAsked"
+
+    /** True once the quieter-Deck question has been answered (either way) on any device. */
+    fun quietAsked(json: String?): Boolean = parse(json).optBoolean(QUIET_KEY, false)
+
+    /** True when this vault's saved layout should be asked: answered on no device, and a quiet card is still on. */
+    fun shouldAskQuiet(json: String?): Boolean = !quietAsked(json) && parse(json).has("cards") && layout(json).loudCards.isNotEmpty()
+
+    fun withQuietAsked(json: String?): String = parse(json).put(QUIET_KEY, true).toString(2)
+
+    fun loadShouldAskQuiet(v: Vault): Boolean = shouldAskQuiet(v.read(PATH))
+
+    /** Saves [layout] and marks the question answered, in one write. */
+    fun saveQuiet(v: Vault, layout: DeckLayout) {
+        save(v, layout)
+        VaultIo.write(v, PATH, withQuietAsked(v.read(PATH)))
+    }
+
+    // ---- A bit quieter still? (care-welcome-v1): the second round, asked once after the first ----
+
+    private const val STILL_KEY = "quietStillAsked"
+
+    fun quietStillAsked(json: String?): Boolean = parse(json).optBoolean(STILL_KEY, false)
+
+    /** Asked when the first round isn't waiting, this round wasn't answered on any device, and one of its cards is on. */
+    fun shouldAskQuietStill(json: String?): Boolean =
+        !shouldAskQuiet(json) && !quietStillAsked(json) && parse(json).has("cards") && layout(json).loudStill.isNotEmpty()
+
+    fun loadShouldAskQuietStill(v: Vault): Boolean = shouldAskQuietStill(v.read(PATH))
+
+    /** Saves [layout] and marks the second round answered, in one write. */
+    fun saveQuietStill(v: Vault, layout: DeckLayout) {
+        save(v, layout)
+        VaultIo.write(v, PATH, parse(v.read(PATH)).put(STILL_KEY, true).toString(2))
+    }
+
+    // ---- Hangar order (hangar-windows-v1): the phone and Windows share it ----
+
+    /** The Hangar list as saved here ("inbox,didi,…"), or null before either device has saved one. */
+    fun hangar(json: String?): String? = parse(json).optString("hangar", "").takeIf { it.isNotBlank() }
+
+    fun withHangar(json: String?, saved: String): String = parse(json).put("hangar", saved).toString(2)
+
+    fun loadHangar(v: Vault): List<HangarTool>? = Hangar.parse(hangar(v.read(PATH)))
+
+    fun saveHangar(v: Vault, tools: List<HangarTool>) {
+        if (v.entry(PATH) == null) {
+            v.mkdirs(parentOf(PATH))
+            v.create(parentOf(PATH), nameOf(PATH).removeSuffix(".json"), "json")
+        }
+        VaultIo.write(v, PATH, withHangar(v.read(PATH), Hangar.format(tools)))
+    }
 
     fun save(v: Vault, layout: DeckLayout) {
         if (v.entry(PATH) == null) {

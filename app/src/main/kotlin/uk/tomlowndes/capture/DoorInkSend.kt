@@ -28,8 +28,10 @@ internal object DoorInkSend {
         val v = appVault(ctx, uri)
         val now = LocalDateTime.now()
         val trip: Trip? = runCatching { TripLoader.load(ctx, v, now) }.getOrNull()
-        val kit: Kit? = runCatching { LaunchPad.load(v) }.getOrNull()
-        val items = if (kit != null && trip != null) LaunchPad.itemsFor(kit, trip) else emptyList()
+        // Every kit due today (kits-backpack-v1), with the kits tapped on or off on Launch Pad.
+        val kits: List<Kit>? = runCatching { Kits.loadAll(v) }.getOrNull()
+        val items = if (kits != null && trip != null)
+            Kits.packs(Kits.active(kits, trip, prefs.launchKitsOn, prefs.launchKitsOff), trip, prefs.launchKitsOn).flatMap { it.items } else emptyList()
         val did = runCatching { DidI.today(v) }.getOrDefault(emptyList())
         val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
         val body = DoorInk.body(trip, items, prefs.launchTicks + prefs.packedLastNight, did, weather, now)

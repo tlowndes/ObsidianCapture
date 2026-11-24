@@ -44,9 +44,12 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.IsoFields
 import java.util.Locale
 
-/** Weekly review: done, carried over (Move), one to drop (Drop or Skip), and next week in one line. */
+/**
+ * Weekly review: done, carried over (Move), one to drop (Drop or Skip), the notes waiting in 01 - Inbox, the
+ * month's Migrate when a new month has begun (evening-week-v1), and next week in one line.
+ */
 @Composable
-fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
+fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, prefs: AppPrefs? = null, onMigrate: () -> Unit = {}, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var review by remember { mutableStateOf<Review?>(null) }
@@ -55,6 +58,16 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var allDone by remember { mutableStateOf(false) }
     var dropSkipped by remember { mutableStateOf(false) }
     val today = LocalDate.now()
+    var open by remember { mutableStateOf<List<TaskItem>>(emptyList()) }
+    var inbox by remember { mutableStateOf<List<String>>(emptyList()) }
+    var allInbox by remember { mutableStateOf(false) }
+    var filing by remember { mutableStateOf<String?>(null) }
+    var projects by remember { mutableStateOf<List<IdeaSummary>>(emptyList()) }
+
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        inbox = withContext(Dispatchers.IO) { runCatching { InboxNotes.list(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
+    }
 
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
@@ -65,7 +78,7 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         val lists = withContext(Dispatchers.IO) {
             runCatching { VaultWriter(ctx, uri).listTaskLists().also { TaskSnapshot.save(ctx, it) } }.getOrNull()
         }
-        if (lists != null) review = WeeklyReview.build(WeeklyReview.doneFrom(lists.done, today), lists.open, today)
+        if (lists != null) { open = lists.open; review = WeeklyReview.build(WeeklyReview.doneFrom(lists.done, today), lists.open, today) }
         val done = review?.done ?: return@LaunchedEffect
         if (recap == null) recap = withContext(Dispatchers.IO) {
             runCatching {
@@ -81,6 +94,16 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         scope.launch {
             withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).f() } }.onFailure { snack.showSnackbar("Failed: ${it.message}") }
             refresh++
+        }
+    }
+
+    fun inboxDo(path: String, f: (Vault) -> Unit, said: String) {
+        val uri = vault ?: return
+        inbox = inbox - path
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { f(appVault(ctx, uri)) } }
+                .onSuccess { snack.showSnackbar(said) }
+                .onFailure { snack.showSnackbar("Failed: ${it.message}"); refresh++ }
         }
     }
 
@@ -151,6 +174,50 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             }
         }
 
+        // Inbox notes (evening-week-v1): Open in Obsidian, File into a project, or ✓ to stop showing it.
+        if (inbox.isNotEmpty()) {
+            Box(Modifier.height(10.dp))
+            GroupLabel("Inbox notes · ${inbox.size}")
+            ListCard(Modifier.padding(top = 6.dp)) {
+                val shown = if (allInbox) inbox else inbox.take(3)
+                shown.forEachIndexed { i, path ->
+                    if (i > 0) HorizontalDivider(color = Outline)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(InboxNotes.title(path), fontSize = 13.5.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                        ActionPill("Open") { openInObsidian(ctx, vault, path) }
+                        ActionPill("File") {
+                            filing = path
+                            val uri = vault
+                            if (uri != null && prefs != null) scope.launch {
+                                projects = withContext(Dispatchers.IO) { runCatching { IdeaStore(ctx, uri, prefs).list().filter { !it.shelved } }.getOrDefault(emptyList()) }
+                            }
+                        }
+                        ActionPill("✓") { inboxDo(path, { InboxNotes.markSeen(it, path) }, "Won't show again") }
+                    }
+                }
+                if (!allInbox && inbox.size > 3) {
+                    HorizontalDivider(color = Outline)
+                    Text("+ ${inbox.size - 3} more ›", fontSize = 13.sp, color = Muted,
+                        modifier = Modifier.fillMaxWidth().clickable { allInbox = true }.padding(horizontal = 16.dp, vertical = 10.dp))
+                }
+            }
+        }
+
+        // New month: Migrate moved here from the Deck (evening-week-v1).
+        if (prefs != null && open.isNotEmpty() && Migrate.due(open, today, prefs.migratedMonth)) {
+            val n = Migrate.candidates(open, today).size
+            Box(Modifier.height(10.dp))
+            ListCard(border = Amber, bg = AmberTint) {
+                Row(Modifier.fillMaxWidth().clickable(onClick = onMigrate).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("NEW MONTH · $n FROM LAST MONTH", fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.2.sp, color = Amber)
+                        Text("Carry on, redate or drop each one", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    Text("Migrate ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
         Box(Modifier.height(10.dp))
         val mon = WeeklyReview.nextMonday(today)
         val events = CalendarSync.cached(ctx).filter { it.ok || it.events.isNotEmpty() }.flatMap { it.events }
@@ -170,6 +237,33 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         }
         Box(Modifier.height(16.dp))
     }
+
+    filing?.let { path ->
+        val ideas = prefs?.ideasDir ?: "03 - Projects"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { filing = null }, containerColor = Surface1,
+            title = { Text("File ${InboxNotes.title(path)}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (projects.isEmpty()) Text("No projects found.", color = Muted, fontSize = 13.sp)
+                    projects.forEach { pr ->
+                        Text(pr.title, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable {
+                            filing = null
+                            inboxDo(path, { InboxNotes.file(it, path, "$ideas/${pr.title}") }, "Filed in ${pr.title}")
+                        }.padding(vertical = 10.dp))
+                    }
+                }
+            },
+            confirmButton = {}, dismissButton = { Text("Cancel", color = Primary, modifier = Modifier.clickable { filing = null }.padding(8.dp)) },
+        )
+    }
+}
+
+/** Opens a vault note in Obsidian; the vault's folder name is Obsidian's vault name. */
+private fun openInObsidian(ctx: android.content.Context, vault: Uri?, path: String) {
+    val name = vault?.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: return
+    val url = "obsidian://open?vault=${Uri.encode(name)}&file=${Uri.encode(path.removeSuffix(".md"))}"
+    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
 private fun plural(n: Int, one: String, many: String) = "$n ${if (n == 1) one else many}"

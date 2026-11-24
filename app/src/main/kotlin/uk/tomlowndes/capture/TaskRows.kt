@@ -46,6 +46,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
@@ -123,7 +125,8 @@ internal fun TickBox(
     Box(
         modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.clip(shape)
             .background(bg).border(if (size >= 24.dp) 2.dp else 1.5.dp, edge, shape)
-            .clickable(onClick = onClick),
+            // TalkBack hears "checkbox, ticked / not ticked" (care-welcome-v1).
+            .toggleable(value = done, role = Role.Checkbox, onValueChange = { onClick() }),
         contentAlignment = Alignment.Center
     ) {
         if (drawn > 0f) Canvas(Modifier.size(size * 0.6f)) {

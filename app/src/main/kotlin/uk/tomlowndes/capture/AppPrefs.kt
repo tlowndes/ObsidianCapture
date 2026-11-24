@@ -56,6 +56,10 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var tasksChores: Boolean
         get() = p.getBoolean("tasks_chores", false)
         set(v) { p.edit().putBoolean("tasks_chores", v).apply() }
+    /** Tasks shows Bills (four-fixes-v1). */
+    var tasksBills: Boolean
+        get() = p.getBoolean("tasks_bills", false)
+        set(v) { p.edit().putBoolean("tasks_bills", v).apply() }
     /** Upcoming's mode (calendar-view-v1): LIST, DAY, WEEK or MONTH. Null falls back to [upcomingDay]. */
     var upcomingMode: String?
         get() = p.getString("upcoming_mode", null)
@@ -152,10 +156,25 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("hangar_tools", null)
         set(v) { p.edit().putString("hangar_tools", v).apply() }
 
+    /** Hangar tools shown as tiles in the Deck's More row ("rail,home"); null = just Ticket Rail (add-to-more-v1). */
+    var deckTiles: String?
+        get() = p.getString("deck_tiles", null)
+        set(v) { p.edit().putString("deck_tiles", v).apply() }
+
+    /** Inbox, Home, Projects, Errands and Meals have been added to an existing Hangar once (hangar-dock-v2). */
+    var hangarDeckToolsAdded: Boolean
+        get() = p.getBoolean("hangar_deck_tools", false)
+        set(v) { p.edit().putBoolean("hangar_deck_tools", v).apply() }
+
     /** Ticket Rail: print the morning's task tickets on the end of the Daily Slip. */
     var ticketsWithSlip: Boolean
         get() = p.getBoolean("tickets_with_slip", true)
         set(v) { p.edit().putBoolean("tickets_with_slip", v).apply() }
+
+    /** Tickets: sub-tasks print as tick boxes on the ticket. */
+    var ticketSteps: Boolean
+        get() = p.getBoolean("ticket_steps", true)
+        set(v) { p.edit().putBoolean("ticket_steps", v).apply() }
 
     /** The Did I? check the Quick Settings tile stamps; blank means the first check. */
     var didTile: String
@@ -167,6 +186,20 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = if (p.getString("launch_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("launch_ticks", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("launch_ticks", v).putString("launch_day", java.time.LocalDate.now().toString()).apply() }
+    /** Launch Pad: kit items skipped for today only (four-fixes-v1). Reset each morning; the kit note is untouched. */
+    var launchSkips: Set<String>
+        get() = if (p.getString("launch_skips_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_skips", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_skips", v).putString("launch_skips_day", java.time.LocalDate.now().toString()).apply() }
+    /** Launch Pad kits tapped on or off for today (kits-backpack-v1). Reset each morning; the kit notes are untouched. */
+    var launchKitsOn: Set<String>
+        get() = if (p.getString("launch_kits_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_kits_on", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_kits_on", v).putStringSet("launch_kits_off", launchKitsOff).putString("launch_kits_day", java.time.LocalDate.now().toString()).apply() }
+    var launchKitsOff: Set<String>
+        get() = if (p.getString("launch_kits_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_kits_off", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_kits_off", v).putStringSet("launch_kits_on", launchKitsOn).putString("launch_kits_day", java.time.LocalDate.now().toString()).apply() }
     var launchSkip: String?
         get() = p.getString("launch_skip", null)
         set(v) { p.edit().putString("launch_skip", v).apply() }
@@ -262,6 +295,33 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisFound: SortResult?
         get() = Sorting.fromJson(p.getString("jarvis_found", null))
         set(v) { p.edit().apply { if (v == null) remove("jarvis_found") else putString("jarvis_found", Sorting.toJson(v)) }.remove("capture_queue").remove("sort_model").apply() }
+
+    /**
+     * Quiet the day (quiet-day-v1), once per phone: the due-today ping folds into the morning nudge, and Heads Up's
+     * old three-stage default becomes one warning. A custom set of stages is left alone.
+     */
+    val quietDayDone get() = p.getBoolean("quiet_day_done", false)
+
+    fun quietDayOnce() {
+        if (quietDayDone) return
+        dueOn = false
+        if (headsStages == null || HeadsUp.parseStages(headsStages) == HeadsUp.THREE) headsStages = HeadsUp.formatStages(HeadsUp.DEFAULT)
+        p.edit().putBoolean("quiet_day_done", true).apply()
+    }
+
+    val eveningWeekDone get() = p.getBoolean("evening_week_done", false)
+
+    /** Evening and week (evening-week-v1), once per phone: the 21:00 Night Pad buzz stops; Shut down ends with Night Pad. */
+    fun eveningWeekOnce() {
+        if (eveningWeekDone) return
+        headsNight = false
+        p.edit().putBoolean("evening_week_done", true).apply()
+    }
+
+    /** Show every widget in Android's picker, even the ones folded away (fold-doors-v1). */
+    var allWidgets: Boolean
+        get() = p.getBoolean("all_widgets", false)
+        set(v) { p.edit().putBoolean("all_widgets", v).apply() }
 
     /** Task due alerts (off until switched on) and the Sunday weekly review. */
     var dueOn: Boolean

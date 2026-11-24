@@ -11,10 +11,19 @@ import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
+/** A `flightdeck://print?note=…&task=…` link: print the open task in [note] whose line reads [task] (checkbox and 🆔 aside). */
+data class PrintAsk(val note: String, val task: String)
+
 /** One printed ticket: what goes on the paper. [id] is the task's `🆔`, [code] how it reads on the ticket. */
 data class Ticket(
     val id: String, val code: String, val slot: String, val slotNote: String, val tag: String,
     val text: String, val source: String, val printed: LocalTime, val pattern: Int,
+    /** The task's open sub-tasks, printed as tick boxes under the title (four-fixes-v1). */
+    val steps: List<String> = emptyList(),
+    /** For a job printed ahead of its day (ticket-rail-future-v1): the black bar, "FOR FRI · PRINTED MON". Blank otherwise. */
+    val early: String = "",
+    /** The print time as it reads on the ticket: "21:59", or "MON 21:59" when printed early. */
+    val printedAt: String = "",
 )
 
 /**
@@ -28,12 +37,14 @@ object TicketRail {
     const val MORNING_MAX = 5
     const val SCHEME = "flightdeck"
     private const val CLEAR = "$SCHEME://clear/"
+    private const val PRINT = "$SCHEME://print?"
 
     private val ID = Regex("🆔\\s*([\\w-]+)")
     private val ID_PIECE = Regex("\\s*🆔\\s*[\\w-]+")
     /** Ids this app hands out: three letters and three digits ("hom042"). Other ids are the Tasks plugin's own. */
     private val OURS = Regex("^([a-z]{3})(\\d{3})$")
     private val DM = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
+    private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
     /** The line's `🆔`, if it has one. */
     fun idOf(line: String): String? = ID.find(line)?.groupValues?.get(1)
@@ -79,6 +90,31 @@ object TicketRail {
         return t.substring(CLEAR.length).trim('/').lowercase().takeIf { OURS.matches(it) }
     }
 
+    /**
+     * A Print now link from another app on this PC (Next Step), or null when [s] isn't one. The task is named by its
+     * line, since a task gets its id only when it's printed.
+     */
+    fun parsePrint(s: String): PrintAsk? {
+        val t = s.trim()
+        if (!t.startsWith(PRINT, ignoreCase = true)) return null
+        val q = t.substring(PRINT.length).split("&").mapNotNull { kv ->
+            val i = kv.indexOf('=').takeIf { it > 0 } ?: return@mapNotNull null
+            kv.substring(0, i) to runCatching { java.net.URLDecoder.decode(kv.substring(i + 1), Charsets.UTF_8) }.getOrNull()
+        }.toMap()
+        val note = q["note"]?.trim()?.trim('/')?.takeIf { it.endsWith(".md") && ".." !in it.split("/") } ?: return null
+        val task = q["task"]?.let(::body)?.takeIf { it.isNotEmpty() } ?: return null
+        return PrintAsk(note, task)
+    }
+
+    /** A line without its checkbox, `🆔` or `✅` date, spaces evened out: how a Print now link names it. */
+    private fun body(line: String): String =
+        line.replace(Regex("^\\s*- \\[.]\\s*"), "").replace(ID_PIECE, "").replace(Regex("\\s*✅\\s*\\d{4}-\\d{2}-\\d{2}"), "")
+            .replace(Regex("\\s+"), " ").trim()
+
+    /** The open task [ask] names, wherever its note has it. */
+    fun findForPrint(open: List<TaskItem>, ask: PrintAsk): TaskItem? =
+        open.firstOrNull { it.path.equals(ask.note, ignoreCase = true) && body(it.raw) == ask.task }
+
     /** Open tasks already on the rail (printed, not yet cleared), oldest code first. */
     fun onRail(open: List<TaskItem>): List<TaskItem> =
         open.filter { railId(it.raw) != null }.distinctBy { railId(it.raw) }.sortedBy { railId(it.raw) }
@@ -106,6 +142,48 @@ object TicketRail {
             .sortedBy { it.due }
             .take(max)
 
+    /**
+     * Coming up (ticket-rail-future-v1): open tasks due after [today] and within [days], not printed yet, soonest
+     * first. Each task counts once.
+     */
+    fun comingUp(open: List<TaskItem>, today: LocalDate, days: Int = 7): List<TaskItem> {
+        val last = today.plusDays(days.toLong())
+        return open.distinctBy { it.raw }
+            .filter { railId(it.raw) == null && it.due != null && it.due.isAfter(today) && !it.due.isAfter(last) }
+            .sortedBy { it.due }
+    }
+
+    /** True when [t] was printed ahead of its day and that day hasn't come yet: it hangs under "Hanging for later". */
+    fun isLater(t: TaskItem, today: LocalDate): Boolean = t.due?.isAfter(today) == true
+
+    /** The day chips on New ticket for later: tomorrow and the five days after. */
+    fun dayChips(today: LocalDate): List<LocalDate> = (1L..6L).map { today.plusDays(it) }
+
+    /** A chip's words: "Tomorrow", then "Wed", "Thu"… */
+    fun chipLabel(day: LocalDate, today: LocalDate): String =
+        if (day == today.plusDays(1)) "Tomorrow" else day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.UK)
+
+    /** The short day tag on a later ticket's row: "FRI" this week, else "5 DEC". */
+    fun dayTag(due: LocalDate, today: LocalDate): String =
+        if (ChronoUnit.DAYS.between(today, due) < 7) dow(due) else due.format(DM).uppercase(Locale.UK)
+
+    /** The date chip on a Coming up row: "WED 25". */
+    fun upChip(due: LocalDate): String = "${dow(due)} ${due.dayOfMonth}"
+
+    /** Printer dots per mm (576 dots across 48 mm paper). */
+    const val DOTS_PER_MM = 12
+
+    /** How much paper [dots] of tickets take, as the print buttons say it: "about 17 cm" (ticket-adaptive-v1). */
+    fun paperLabel(dots: Int): String = "about ${maxOf(1, Math.round(dots / (DOTS_PER_MM * 10f)))} cm"
+
+    /** Tags offered on New ticket for later; they set the code's letters (HOM, WRK, ERR, JOB). */
+    val JOB_TAGS = listOf("#home", "#work", "#errand", "#job")
+
+    /** The task text for a new ticket: [tag] (when given) then [text]. */
+    fun jobText(text: String, tag: String?): String = listOfNotNull(tag?.takeIf { it.isNotBlank() }, text.trim()).joinToString(" ")
+
+    private fun dow(d: LocalDate) = d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.UK).uppercase(Locale.UK)
+
     /** The slot words: "TODAY", "LATE 2D" (with "WAS WED"), a weekday, or "ANY TIME" for no due date. */
     fun slot(due: LocalDate?, today: LocalDate): Pair<String, String> {
         if (due == null) return "ANY TIME" to ""
@@ -125,13 +203,23 @@ object TicketRail {
         path.removeSuffix(".md").split("/").takeLast(2).joinToString(" / ") { it.replace(Regex("^\\d+\\s*-\\s*"), "").replace(Regex("^[^\\p{L}\\p{N}]+"), "") }
 
     /** What [t] prints as, with [id] already chosen. [pattern] picks the tag's hatch (thermal paper is black only). */
-    fun ticket(t: TaskItem, id: String, today: LocalDate, now: LocalTime): Ticket {
+    fun ticket(t: TaskItem, id: String, today: LocalDate, now: LocalTime, steps: List<String> = emptyList()): Ticket {
         val (slot, note) = slot(t.due, today)
         val tag = Tags.inText(t.text).firstOrNull { it != "#task" }?.removePrefix("#")?.uppercase(Locale.UK) ?: ""
+        val ahead = t.due != null && t.due.isAfter(today)
+        val hm = now.format(HM)
         return Ticket(
             id, code(id), slot, note, tag, Tags.strip(t.text), source(t.path), now,
-            pattern = Math.floorMod(id.take(3).hashCode(), 3),
+            pattern = Math.floorMod(id.take(3).hashCode(), 3), steps = steps,
+            early = if (ahead) "FOR ${dayTag(t.due!!, today)} · PRINTED ${dow(today)}" else "",
+            printedAt = if (ahead) "${dow(today)} $hm" else hm,
         )
+    }
+
+    /** The open sub-tasks of [t] (indented lines under it), in note order, as plain text for a ticket. */
+    fun stepsOf(t: TaskItem, open: List<TaskItem>): List<String> {
+        val parent = Subtasks.parents(open)
+        return open.filter { parent[it]?.raw == t.raw && parent[it]?.path == t.path }.map { Tags.strip(it.text) }.filter { it.isNotBlank() }
     }
 
     /** The QR for [id] as rows of dark (true) modules, with no quiet zone. */

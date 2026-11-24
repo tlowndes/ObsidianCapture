@@ -74,7 +74,43 @@ class DidITest {
         assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), t)
         assertEquals("launch,didi", Hangar.format(Hangar.move(t, 1, -1)))
         assertEquals(t, Hangar.move(t, 0, -1))
-        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.ERRAND_RUN, HangarTool.TICKET_RAIL, HangarTool.SENSORY), Hangar.available(t).toSet())
+        assertEquals(setOf(HangarTool.HEADS_UP, HangarTool.NIGHT_PAD, HangarTool.POCKET_PASS, HangarTool.LAST_SEEN, HangarTool.RETURN_RADAR, HangarTool.COOL_OFF, HangarTool.REFILL, HangarTool.WAITING, HangarTool.TICKET_RAIL, HangarTool.SENSORY,
+            HangarTool.INBOX, HangarTool.HOME, HangarTool.PROJECTS, HangarTool.ERRANDS, HangarTool.MEALS), Hangar.available(t).toSet())
         assertEquals(HangarTool.DID_I, Hangar.available(emptyList()).first())
+    }
+
+    @Test fun `errand run leaves hangar but is remembered once`() {
+        val saved = "didi,run,launch"
+        assertEquals(listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD), Hangar.parse(saved))
+        assertTrue(Hangar.hadRun(saved))
+        assertFalse(Hangar.hadRun(Hangar.format(Hangar.parse(saved)!!)))
+        assertFalse(HangarTool.ERRAND_RUN in Hangar.available(emptyList()))
+    }
+
+    @Test
+    fun deckToolsMoveIntoAnExistingHangar() {
+        val old = listOf(HangarTool.DID_I, HangarTool.LAUNCH_PAD, HangarTool.HEADS_UP, HangarTool.NIGHT_PAD)
+        val now = Hangar.withDeckTools(old)
+        assertEquals(listOf(HangarTool.INBOX, HangarTool.DID_I, HangarTool.HOME, HangarTool.ERRANDS, HangarTool.LAUNCH_PAD,
+            HangarTool.HEADS_UP, HangarTool.PROJECTS, HangarTool.MEALS, HangarTool.NIGHT_PAD), now)
+        // Running it twice adds nothing more, and a tool already there stays put.
+        assertEquals(now, Hangar.withDeckTools(now))
+        assertEquals(listOf(HangarTool.INBOX, HangarTool.HOME, HangarTool.ERRANDS, HangarTool.PROJECTS, HangarTool.MEALS), Hangar.withDeckTools(null))
+        assertEquals("Around home", HangarTool.MEALS.group)
+    }
+
+    @Test
+    fun hangarOrderSharedWithWindows() {
+        val phone = listOf(HangarTool.DID_I, HangarTool.INBOX, HangarTool.HOME)
+        val pc = listOf(HangarTool.INBOX, HangarTool.HOME, HangarTool.DID_I)
+        assertEquals(pc, Hangar.merged(phone, pc))
+        assertEquals(phone, Hangar.merged(phone, null))
+        assertEquals(phone, Hangar.merged(phone, listOf(HangarTool.INBOX)))
+        assertEquals(pc, Hangar.moved(phone, 0, 2))
+        assertEquals(phone, Hangar.moved(phone, 1, 9))
+        val json = DeckConfig.withHangar("""{"cards":["TODAY"]}""", Hangar.format(pc))
+        assertEquals(pc, Hangar.parse(DeckConfig.hangar(json)))
+        assertTrue(json.contains("TODAY"))
+        assertNull(DeckConfig.hangar("{}"))
     }
 }

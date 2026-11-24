@@ -117,6 +117,8 @@ private fun GeneralPage(state: AppState) {
             Chip("+", small = true) { if (usual < 30) { usual += 1; p.reshuffleUsual = usual } }
         }
     }
+    // Hangar is in the sidebar now (hangar-windows-v1); adding and hiding tools stays on the phone.
+    Setting("Hangar", "Order is shared with your phone. Add or hide tools from Hangar on the phone") { }
 }
 
 @Composable

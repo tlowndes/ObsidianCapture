@@ -51,6 +51,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -109,7 +113,7 @@ internal data class DeckData(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeckScreen(
-    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState,
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, layoutRev: Int = 0, onEditDeck: () -> Unit = {}, onAddTile: () -> Unit = {}, onOpenTool: (HangarTool) -> Unit = {},
     onOpenTab: (Tab) -> Unit, onOpenSub: (Sub) -> Unit, onStartFocus: (TaskItem, Int) -> Unit,
     onOpenSearch: () -> Unit, onOpenArticle: (ReadRef) -> Unit = {}, onPlayRoutine: (String) -> Unit = {},
     onOpenSettings: () -> Unit
@@ -151,7 +155,14 @@ fun DeckScreen(
         }
     }
 
-    LaunchedEffect(vault, refresh) {
+    // Hangar tools picked as More tiles (add-to-more-v1) and which of them need you.
+    val tileTools = remember(layoutRev) { deckTiles(prefs) }
+    var tileNeeds by remember { mutableStateOf(emptySet<HangarTool>()) }
+    LaunchedEffect(vault, refresh, layoutRev) {
+        val uri = vault ?: return@LaunchedEffect
+        tileNeeds = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, tileTools) }.getOrDefault(emptySet()) }
+    }
+    LaunchedEffect(vault, refresh, layoutRev) {
         val uri = vault ?: return@LaunchedEffect
         if (rewalk) { VaultScan.invalidate(); rewalk = false } // pull to refresh: walk the whole vault again
         data = withContext(Dispatchers.IO) {
@@ -209,6 +220,15 @@ fun DeckScreen(
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         journalDone = withContext(Dispatchers.IO) { runCatching { Journal.written(appVault(ctx, uri), LocalDate.now()) }.getOrDefault(false) }
+    }
+    // A quieter Deck? (quiet-day-v1): asked once, on any device, while a quiet card is still on.
+    var quietAsk by remember { mutableStateOf(false) }
+    var stillAsk by remember { mutableStateOf(false) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        quietAsk = withContext(Dispatchers.IO) { runCatching { DeckConfig.loadShouldAskQuiet(appVault(ctx, uri)) }.getOrDefault(false) }
+        // A bit quieter still? (care-welcome-v1): the second round, once the first is answered.
+        stillAsk = !quietAsk && withContext(Dispatchers.IO) { runCatching { DeckConfig.loadShouldAskQuietStill(appVault(ctx, uri)) }.getOrDefault(false) }
     }
     val nowDt = java.time.LocalDateTime.now()
 
@@ -281,6 +301,12 @@ fun DeckScreen(
     var recat by remember { mutableStateOf<Receipt?>(null) }
     // Stage 5: people a week ahead, tonight's meal, errands.
     var home by remember { mutableStateOf<HomeBits?>(null) }
+    // Ticket Rail's tile on the Deck (hangar-dock-v2): how many tickets hang on the rail.
+    var railOn by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(vault, refresh) {
+        val uri = vault ?: return@LaunchedEffect
+        railOn = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri).onRail }.getOrNull() }
+    }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         home = withContext(Dispatchers.IO) { runCatching { loadHomeBits(ctx, uri, prefs, LocalDate.now()) }.getOrNull() }
@@ -315,19 +341,21 @@ fun DeckScreen(
             val left = DayPlan.leftToday(data.tasks, today).size
             if (DayPlan.isMorning(nowDt) && prefs.plannedOn != today.toString() && !data.dayDone.planned(today))
                 add(NowItem.Line("☀️ Plan today · pick up to ${DayPlan.PICK_MAX}", "Plan ›") { onOpenSub(Sub.PLAN) })
-            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && left > 0)
-                add(NowItem.Line("🌙 Shut down · $left still open", "Start ›") { onOpenSub(Sub.PLAN) })
+            else if (DayPlan.isEvening(nowDt) && prefs.shutDownOn != today.toString() && !data.dayDone.shutDown(today) && (left > 0 || !journalDone)) {
+                // One evening line (evening-week-v1): Shut down walks through what's left, the check-in and Night Pad.
+                val what = listOfNotNull(if (left > 0) "$left left" else null, if (!journalDone) "check in" else null).joinToString(", then ")
+                add(NowItem.Line("🌙 Shut down · $what", "Start ›") { onOpenSub(Sub.PLAN) })
+            }
         }
-        val checkIn = HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone && journalSkipped != today.toString()
+        // With Plan · Shut down on, the check-in and mood are steps in Shut down, not lines of their own.
+        val shutDownOn = HomeCard.PLAN !in hidden
+        val checkIn = !shutDownOn && HomeCard.HIGHLIGHTS !in hidden && nowDt.hour >= Journal.ASK_FROM && !journalDone && journalSkipped != today.toString()
         if (checkIn) add(NowItem.Line("📓 Evening check-in · 1 min", "Write ›", onDismiss = {
             journalSkipped = today.toString(); prefs.journalSkippedOn = journalSkipped
         }) { journalOpen = true })
         // The check-in asks for mood too, so the mood faces wait until it's done.
-        else if (HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
-        if (Migrate.due(data.tasks, today, prefs.migratedMonth)) {
-            val n = Migrate.candidates(data.tasks, today).size
-            add(NowItem.Line("Migrate · $n from last month", "Start ›") { onOpenSub(Sub.MIGRATE) })
-        }
+        else if (!shutDownOn && HomeCard.MOOD !in hidden && data.habits?.let { Mood.ask(it, today, nowDt.hour) } == true) add(NowItem.Mood(::setMood))
+        // Monthly Migrate now sits in the weekly review (evening-week-v1).
     }
 
     var earlierOpen by remember { mutableStateOf(prefs.earlierOpenOn == LocalDate.now().toString()) }
@@ -440,7 +468,8 @@ fun DeckScreen(
                 if (!weatherOn) SectionLabel("Today")
                 RowsCard(rows)
             }
-            DeckSection.INBOX -> if (HomeCard.INBOX !in hidden) inbox?.let { InboxCard(it, onOpen = { g -> mailOpen = g }, onAll = { onOpenSub(Sub.INBOX) }) }
+            // Inbox moved to Hangar (hangar-dock-v2).
+            DeckSection.INBOX -> {}
             DeckSection.SPEND -> if (HomeCard.SPEND !in hidden) spend?.let { (now, last) -> SpendCard(now, last) { recat = it } }
             DeckSection.TOP_TASKS -> if (HomeCard.TOP_TASKS !in hidden && top.isNotEmpty()) {
                 SectionLabel(if (low) "Top tasks · under $SHORT_MIN min" else "Top tasks", "All ›") { onOpenTab(Tab.TASKS) }
@@ -452,11 +481,10 @@ fun DeckScreen(
                 }
             }
             DeckSection.MORE -> {
-                // Routines, Projects and Journal as small tiles.
+                // Routines, Journal, Learn, People and Ticket Rail as small tiles. Home, Projects, Meals and Errands
+                // moved to Hangar (hangar-dock-v2); Ticket Rail is in both.
                 val showRoutines = HomeCard.ROUTINES !in hidden && data.routines.isNotEmpty()
-                val showProject = HomeCard.PROJECTS !in hidden && data.project != null
                 val showJournal = HomeCard.HIGHLIGHTS !in hidden
-                val showHome = HomeCard.CHORES !in hidden && chores.isNotEmpty()
                 val passage = passages.getOrNull(passageIdx).takeIf { HomeCard.READING !in hidden }
                 if (passage != null) {
                     SectionLabel("From your reading")
@@ -465,30 +493,30 @@ fun DeckScreen(
                         onKeep = { passageSeen(passage, keep = true) },
                         onNext = { passageSeen(passage, keep = false) })
                 }
-                val showLearn = cardsDue != null
+                val showLearn = HomeCard.LEARN !in hidden && cardsDue != null
                 val showLife = vault != null
-                if (showRoutines || showProject || showJournal || showHome || showLearn || showLife) {
-                    SectionLabel("More")
+                run {
+                    SectionLabel("More", "✎ Edit", onEditDeck)
                     val tiles = mutableListOf<@Composable RowScope.() -> Unit>()
-                    if (showHome) tiles.add {
-                        val due = Chores.due(chores, today).size
-                        Tile("🏠", "Home", if (due > 0) "$due need doing" else "all fresh", dot = due > 0) { onOpenSub(Sub.CHORES) }
-                    }
                     if (showRoutines) tiles.add {
                         Tile("🔁", "Routines", data.routines.singleOrNull()?.name ?: "${data.routines.size} ready") {
                             data.routines.singleOrNull()?.let { onPlayRoutine(it.name) } ?: run { routinesOpen = true }
                         }
                     }
-                    if (showProject) tiles.add { Tile("💡", "Projects", data.project?.title) { onOpenTab(Tab.PROJECTS) } }
                     if (showJournal) tiles.add { Tile("📓", "Journal", if (journalDone) "✓ written" else "not yet today", dot = !journalDone && nowDt.hour >= Journal.ASK_FROM) { journalOpen = true } }
                     if (showLearn) tiles.add { Tile("🧠", "Learn", cardsDue?.takeIf { it > 0 }?.let { "$it due · ${Flashcards.minutes(it)} min" } ?: "all done", dot = (cardsDue ?: 0) > 0) { onOpenSub(Sub.LEARN) } }
                     if (showLife) {
-                        tiles.add { Tile("🍽", "Meals", home?.let { "${it.planned} of 7 planned" }) { onOpenSub(Sub.MEALS) } }
-                        tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
-                        tiles.add { Tile("📍", "Errands", home?.errands?.takeIf { it > 0 }?.let { "$it to do" } ?: "none") { onOpenSub(Sub.ERRANDS) } }
+                        if (HomeCard.PEOPLE !in hidden) tiles.add { Tile("👥", "People", home?.people?.firstOrNull()?.let { if (it.birthday != null) "🎂 ${it.person.name} ${it.days}d" else "say hi to ${it.person.name}" } ?: "all good") { onOpenSub(Sub.PEOPLE) } }
+                        tileTools.forEach { t ->
+                            tiles.add {
+                                val sub = if (t == HangarTool.TICKET_RAIL) railOn?.let { "$it on the rail" } else if (t in tileNeeds) "needs you" else null
+                                Tile(t.icon, t.title, sub, dot = t in tileNeeds, colour = t.colour()) { onOpenTool(t) }
+                            }
+                        }
                     }
-                    // Three to a row; a short last row keeps the same tile width.
-                    val perRow = if (tiles.size == 4) 2 else 3
+                    tiles.add { Tile("＋", "Add", "any Hangar tool", onClick = onAddTile) }
+                    // Four to a row, like Hangar; a short last row keeps the same tile width.
+                    val perRow = 4
                     tiles.chunked(perRow).forEachIndexed { i, chunk ->
                         if (i > 0) Box(Modifier.height(8.dp))
                         TileRow {
@@ -506,7 +534,9 @@ fun DeckScreen(
         Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot(); viewport = it.boundsInRoot() }
             .verticalScroll(scroll).padding(horizontal = 18.dp)
     ) {
-        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings, onPrint = { onOpenSub(Sub.PRINT) }, onHangar = { onOpenSub(Sub.HANGAR) })
+        DeckHeader(onOpenSearch = onOpenSearch, onOpenSettings = onOpenSettings,
+            // The Daily Slip button only once a printer is paired (care-welcome-v1); Settings › Printer pairs one.
+            onPrint = if (remember { SlipPrinter.saved(ctx) != null }) ({ onOpenSub(Sub.PRINT) }) else null)
         SubLine("${today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))} · ${greeting()}, $OWNER") {
             EnergyChip(energy) { energy = it; prefs.energy = it }
         }
@@ -523,18 +553,8 @@ fun DeckScreen(
                 onSplit = { breaking = it }, onStuck = { onOpenSub(Sub.STUCK) }
             )
         }
-        // Talk me through it (wellbeing-v1): a task that has waited 3+ days, once a day at most.
-        if (claudeKey(ctx, prefs) != null) TalkThrough.stuck(data.tasks, today, TalkThrough.readSnoozed(snoozed))?.let { t ->
-            StuckNudge(t, TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) {
-                snoozed = TalkThrough.snooze(snoozed, t, today); prefs.talkSnoozed = snoozed
-            }
-        }
-        // Morning audio briefing (growth-v1): from 6am until noon, hidden once heard.
-        if (claudeKey(ctx, prefs) != null && LocalTime.now().hour in Briefing.READY_HOUR until 12) BriefingCard(vault, prefs, hasWeather = weather != null) {
-            val events = CalendarSync.cached(ctx).flatMap { it.events }
-            Briefing.prompt(Slip.build(today, data.tasks, events, weather, SlipOptions(), today, data.jobs), next?.let { TaskViews.plainText(it) },
-                listOfNotNull(data.habits?.progress(today)?.let { (a, b) -> "Habits today: $a of $b done" }))
-        }
+        // Talk me through it now lives in Stuck? (care-welcome-v1), not as a surprise card here.
+        // The morning briefing moved to Plan today's ▶ Briefing button (care-welcome-v1).
         // What helps you (wellbeing-v1): first week of the month, until closed.
         helps?.let { p ->
             HelpsCard(p, onAll = { helpsOpen = true }) {
@@ -590,6 +610,32 @@ fun DeckScreen(
         DeckSheet({ habitsOpen = false }) { HabitsCard(n, ::changeHabits) { habitsOpen = false; onOpenSub(Sub.HABITS) } }
     }
     if (routinesOpen) DeckSheet({ routinesOpen = false }) { RoutinesCard(data.routines) { routinesOpen = false; onPlayRoutine(it.name) } }
+    if (quietAsk && data.layout.loudCards.isNotEmpty()) {
+        fun answer(l: DeckLayout) {
+            quietAsk = false
+            data = data.copy(layout = l)
+            val uri = vault ?: return
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { DeckConfig.saveQuiet(appVault(ctx, uri), l) } }
+                    .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            }
+        }
+        QuietDeckSheet(data.layout.loudCards, onQuiet = { keep -> answer(data.layout.quieted(keep)) },
+            onKeep = { answer(data.layout) }, onLater = { quietAsk = false })
+    } else if (stillAsk && data.layout.loudStill.isNotEmpty()) {
+        fun answer(l: DeckLayout) {
+            stillAsk = false
+            data = data.copy(layout = l)
+            val uri = vault ?: return
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { DeckConfig.saveQuietStill(appVault(ctx, uri), l) } }
+                    .onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            }
+        }
+        QuietDeckSheet(data.layout.loudStill, onQuiet = { keep -> answer(data.layout.quietedStill(keep)) },
+            onKeep = { answer(data.layout) }, onLater = { stillAsk = false },
+            title = "A bit quieter still?", body = "Shut down covers the evening now, and these are off for new installs. Pick any to keep. Their notes stay in the vault.")
+    }
     if (journalOpen) DeckSheet({ journalOpen = false }, full = true) {
         val on = data.calendars.orEmpty().filter { it.enabled }.map { it.id }.toSet()
         val events = cal.filter { it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }.count { it.on(LocalDate.now()) }
@@ -609,17 +655,17 @@ private fun DeckSheet(onDismiss: () -> Unit, full: Boolean = false, content: @Co
 }
 
 @Composable
-private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: () -> Unit, onHangar: () -> Unit) {
+private fun DeckHeader(onOpenSearch: () -> Unit, onOpenSettings: () -> Unit, onPrint: (() -> Unit)?) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+        Text("Flight Deck", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, maxLines = 2, modifier = Modifier.weight(1f).semantics { heading() })
         Row {
             // Daily Slip: today's printout for the pocket thermal printer.
-            // Hangar: the small getting-out-the-door tools. Its only entry on Deck, so Deck stays the same length.
-            IconButton(onClick = onHangar) { Text("⌂", fontSize = 21.sp, color = Amber) }
-            IconButton(onClick = onPrint) { Text("🧾", fontSize = 19.sp) }
+            // Hangar moved to the dock above the bottom bar (hangar-dock-v1).
+            // Spoken labels for the emoji buttons (care-welcome-v1).
+            if (onPrint != null) IconButton(onClick = onPrint, modifier = Modifier.semantics { contentDescription = "Daily Slip" }) { Text("🧾", fontSize = 19.sp, modifier = Modifier.clearAndSetSemantics { }) }
             IconButton(onClick = onOpenSearch) { Icon(Icons.Outlined.Search, "Search", tint = Muted) }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = Muted) }
         }

@@ -139,4 +139,65 @@ class TicketRailTest {
         assertEquals("- [ ] #task Book the MOT 📅 2026-11-20 🆔 tsk001", note[1])
         assertEquals("Book the MOT", TaskNote.list(note).single().text)
     }
+    @Test fun `a Print now link names a task by its line`() {
+        val link = "flightdeck://print?note=00%20-%20Inbox%2FNext%20steps.md&task=%23task%20Reply%20yes%20or%20no%20to%20Sam%20%23mail%20%F0%9F%93%85%202026-11-20"
+        val ask = TicketRail.parsePrint(link)!!
+        assertEquals(PrintAsk("00 - Inbox/Next steps.md", "#task Reply yes or no to Sam #mail 📅 2026-11-20"), ask)
+        assertNull(TicketRail.parsePrint("flightdeck://clear/mai004"))
+        assertNull(TicketRail.parsePrint("flightdeck://print?note=..%2Fx.md&task=a"))
+        assertNull(TicketRail.parsePrint("flightdeck://print?note=x.md"))
+
+        val path = "00 - Inbox/Next steps.md"
+        val open = listOf(
+            task("- [ ] #task Reply yes or no to Sam later #mail 📅 2026-11-20", path),
+            task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20", "Elsewhere.md"),
+            task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20", path),
+        )
+        assertEquals(open[2], TicketRail.findForPrint(open, ask))
+        // Printed before: still found, and keeps its id.
+        val printed = task("- [ ] #task Reply yes or no to Sam #mail 📅 2026-11-20 🆔 mai004", path)
+        assertEquals("mai004", TicketRail.railId(TicketRail.findForPrint(listOf(printed), ask)!!.raw))
+        assertNull(TicketRail.findForPrint(open.take(2), ask))
+        assertEquals("mai", TicketRail.prefix(open[2].text))
+    }
+
+    @Test fun `coming up is the next week's unprinted tasks, soonest first`() {
+        val open = listOf(
+            task("- [ ] #task Thu job 📅 2026-11-26"),
+            task("- [ ] #task Today job 📅 2026-11-20"),
+            task("- [ ] #task Sun job 📅 2026-11-22"),
+            task("- [ ] #task Printed 📅 2026-11-23 🆔 err007"),
+            task("- [ ] #task Far off 📅 2026-12-10"),
+            task("- [ ] #task No date"),
+        )
+        assertEquals(listOf("Sun job", "Thu job"), TicketRail.comingUp(open, today).map { it.text })
+        assertEquals(listOf("Sun job", "Thu job", "Far off"), TicketRail.comingUp(open, today, 30).map { it.text })
+    }
+
+    @Test fun `a ticket printed ahead says which day it's for`() {
+        val t = task("- [ ] #task #errand Pick up parcel 📅 2026-11-24") // Tuesday
+        val k = TicketRail.ticket(t, "err007", today, LocalTime.of(21, 59))
+        assertEquals("FOR TUE · PRINTED FRI", k.early)
+        assertEquals("FRI 21:59", k.printedAt)
+        assertTrue(TicketRail.isLater(t, today))
+        val now = TicketRail.ticket(task("- [ ] #task Bins 📅 2026-11-20"), "hom001", today, LocalTime.of(7, 5))
+        assertEquals("", now.early)
+        assertEquals("07:05", now.printedAt)
+        val far = TicketRail.ticket(task("- [ ] #task Far 📅 2026-12-05"), "tsk001", today, LocalTime.of(7, 5))
+        assertEquals("FOR 5 DEC · PRINTED FRI", far.early)
+    }
+
+    @Test fun `paper length reads in whole centimetres`() {
+        assertEquals("about 6 cm", TicketRail.paperLabel(745))
+        assertEquals("about 17 cm", TicketRail.paperLabel(2030))
+        assertEquals("about 1 cm", TicketRail.paperLabel(10))
+    }
+
+    @Test fun `new ticket words`() {
+        assertEquals("#home Fix the shed door", TicketRail.jobText(" Fix the shed door ", "#home"))
+        assertEquals("Fix it", TicketRail.jobText("Fix it", null))
+        assertEquals("hom", TicketRail.prefix(TicketRail.jobText("Fix", "#home")))
+        assertEquals(listOf("Tomorrow", "Sun", "Mon"), TicketRail.dayChips(today).take(3).map { TicketRail.chipLabel(it, today) })
+        assertEquals("WED 25", TicketRail.upChip(LocalDate.of(2026, 11, 25)))
+    }
 }
