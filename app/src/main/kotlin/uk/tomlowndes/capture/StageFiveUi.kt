@@ -16,8 +16,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,6 +112,7 @@ fun PeopleScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     var refresh by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<Person?>(null) }
     var asking by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
+    var picking by remember { mutableStateOf<Person?>(null) }
     LaunchedEffect(vault, refresh) {
         val uri = vault ?: return@LaunchedEffect
         people = withContext(Dispatchers.IO) { runCatching { People.list(appVault(ctx, uri)) }.getOrDefault(emptyList()) }
@@ -164,11 +169,17 @@ fun PeopleScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
         }.padding(vertical = 14.dp))
         Text("Each person is a note in People/. Capture understands \"gift idea for Mum: kneeler\".", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(bottom = 16.dp))
     }
-    open?.let { p ->
+    picking?.let { p ->
+        BirthdaySheet(p, onDone = { v ->
+            picking = null
+            if (v != null) edit(if (v.isEmpty()) "Birthday removed" else "Birthday saved") { vt -> People.setBirthday(vt, p, v) }
+        })
+    }
+    open?.takeIf { picking == null }?.let { p ->
         PersonSheet(p, onDone = { open = null },
             onGift = { asking = "Gift idea for ${p.name}" to { s -> edit("Gift idea saved") { v -> People.addGift(v, p, s) } } },
             onNote = { asking = "Note about ${p.name}" to { s -> edit("Note saved") { v -> People.addNote(v, p, s) } } },
-            onBirthday = { asking = "Birthday (2000-11-21, or --11-21)" to { s -> edit("Birthday saved") { v -> People.setBirthday(v, p, s) } } },
+            onBirthday = { picking = p },
             onEvery = { d -> edit(null) { v -> People.setEvery(v, p, d) } },
             onSpoke = { edit("Marked as spoken today") { v -> People.spoke(v, p) } })
     }
@@ -208,6 +219,90 @@ private fun PersonSheet(p: Person, onDone: () -> Unit, onGift: () -> Unit, onNot
         }
     }
 }
+
+// ---- Birthday picker (birthday-picker-v1) ----
+
+private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+/** Month grid, day grid, optional year. onDone gets the frontmatter value, "" to remove, or null to cancel. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BirthdaySheet(p: Person, onDone: (String?) -> Unit) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val today = LocalDate.now()
+    var month by remember { mutableIntStateOf(p.birthday?.monthValue ?: today.monthValue) }
+    var day by remember { mutableIntStateOf(p.birthday?.dayOfMonth ?: today.dayOfMonth) }
+    var knowYear by remember { mutableStateOf(p.born != null) }
+    var year by remember { mutableIntStateOf(p.born ?: (today.year - 30)) }
+    var typingYear by remember { mutableStateOf(false) }
+    val y = year.takeIf { knowYear }
+    val maxDay = People.pickerDays(month, y)
+    val dayShown = day.coerceAtMost(maxDay)
+    ModalBottomSheet(onDismissRequest = { onDone(null) }, sheetState = sheet, containerColor = Surface2) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 22.dp)) {
+            Text("${p.name}'s birthday", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Pick the month, then the day", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 2.dp))
+            PickLabel("Month")
+            MONTHS.chunked(6).forEachIndexed { r, row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEachIndexed { c, m -> val n = r * 6 + c + 1; PickCell(m, n == month, true, Modifier.weight(1f)) { month = n } }
+                }
+            }
+            PickLabel("Day")
+            (1..31).chunked(7).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    row.forEach { d -> PickCell("$d", d == dayShown, d <= maxDay, Modifier.weight(1f)) { day = d } }
+                    repeat(7 - row.size) { Box(Modifier.weight(1f)) }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp).border(1.dp, Outline, RoundedCornerShape(14.dp)).clickable { knowYear = !knowYear }
+                .padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("I know the year", fontSize = 14.5.sp)
+                    Text("Optional. Shows their age.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 2.dp))
+                }
+                Switch(knowYear, { knowYear = it }, colors = SwitchDefaults.colors(checkedTrackColor = Primary, uncheckedTrackColor = Outline))
+            }
+            if (knowYear) Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                fun bump(by: Int) { year = (year + by).coerceIn(1900, today.year) }
+                StepCell("−10") { bump(-10) }; StepCell("−1") { bump(-1) }
+                Text("$year", fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clickable { typingYear = true }.padding(vertical = 6.dp))
+                StepCell("+1") { bump(1) }; StepCell("+10") { bump(10) }
+            }
+            Text(People.pickerPreview(month, dayShown, y, today), fontSize = 14.sp, color = Color(0xFFCDD8F5),
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp).background(PrimaryTint, RoundedCornerShape(14.dp)).padding(horizontal = 13.dp, vertical = 11.dp))
+            Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (p.birthday != null) SheetButton("Remove", Modifier.weight(1f)) { onDone("") }
+                else SheetButton("Cancel", Modifier.weight(1f)) { onDone(null) }
+                SheetButton("Save", Modifier.weight(1f), primary = true) { onDone(People.birthdayValue(month, dayShown, y)) }
+            }
+        }
+    }
+    if (typingYear) AskText("Year born", "e.g. 1958") { s ->
+        typingYear = false
+        s?.toIntOrNull()?.takeIf { it in 1900..today.year }?.let { year = it }
+    }
+}
+
+@Composable
+private fun PickLabel(text: String) =
+    Text(text.uppercase(Locale.UK), fontSize = 11.sp, letterSpacing = 1.2.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 14.dp, bottom = 7.dp))
+
+@Composable
+private fun PickCell(text: String, on: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Text(text, fontSize = 13.5.sp, textAlign = TextAlign.Center, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+        color = if (on) Primary else if (enabled) TextMain else Color(0xFF3A4152),
+        modifier = modifier.clip(shape).then(if (on) Modifier.background(PrimaryTint) else Modifier)
+            .border(1.dp, if (on) Primary else if (enabled) Outline else Color(0xFF1F2533), shape)
+            .clickable(enabled = enabled, onClick = onClick).padding(vertical = 7.dp))
+}
+
+@Composable
+private fun StepCell(text: String, onClick: () -> Unit) =
+    Text(text, fontSize = 16.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).border(1.dp, Outline, RoundedCornerShape(10.dp))
+        .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp))
 
 // ---- Errands by place ----
 
