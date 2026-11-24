@@ -58,6 +58,7 @@ object VaultTasks {
     /** Whether [path] (a vault-relative folder or note path) is left out of the scan. */
     fun skipped(path: String, templates: List<String>): Boolean {
         if (path.split("/").any { it.startsWith(".") }) return true
+        if (QuickGuard.isCopy(path)) return true // a stray Quick Task copy would list every task twice
         return (SKIP + templates).filter { it.isNotBlank() }.any { path == it || path.startsWith("$it/") }
     }
 

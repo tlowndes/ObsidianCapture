@@ -118,6 +118,10 @@ internal fun QuickGuardSheet(a: QuickGuard.Alert, since: Long?, onFix: () -> Uni
                 a.missing.take(5).forEach { Mono("- [ ] $it", Warn) }
                 if (a.missing.size > 5) Mono("  + ${a.missing.size - 5} more", Muted)
             }
+            if (a.copies.isNotEmpty()) DiffBox("Extra copies, hidden from Tasks (${a.copies.size})") {
+                a.copies.forEach { Mono(it, Warn) }
+                Mono("Move anything still open into Quick Task, then delete the copy.", Muted)
+            }
             if (a.flattened.isEmpty() || a.missing.isEmpty()) DiffBox(
                 listOfNotNull(
                     if (a.missing.isEmpty()) "Open tasks missing (0)" else null,

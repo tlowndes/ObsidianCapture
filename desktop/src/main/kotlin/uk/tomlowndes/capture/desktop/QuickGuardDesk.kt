@@ -92,6 +92,10 @@ fun QuickGuardDialog(a: QuickGuard.Alert, since: Long?, onFix: () -> Unit, onRes
             a.missing.take(6).forEach { Mono("- [ ] $it", Warn) }
             if (a.missing.size > 6) Mono("  + ${a.missing.size - 6} more", Muted)
         }
+        if (a.copies.isNotEmpty()) GuardBox("Extra copies, hidden from Tasks (${a.copies.size})") {
+            a.copies.forEach { Mono(it, Warn) }
+            Mono("Move anything still open into Quick Task, then delete the copy.", Muted)
+        }
         DialogButtons(onDismiss) {
             TextAction("Restore whole note…", onClick = onRestore)
             if (a.fixable) PrimaryButton("Fix the ${a.flattened.size} step${if (a.flattened.size == 1) "" else "s"}", onClick = onFix)

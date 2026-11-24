@@ -76,40 +76,27 @@ class SafVault internal constructor(private val root: VaultDoc) : Vault {
     override fun writeOnce(path: String, text: String) = writeBytes(path, text.toByteArray())
 
     /**
-     * Writes the full bytes to a sibling first, then swaps the names, the same idea as [FileVault].
-     * The original note stays intact until the new copy has been read back. A crash in the middle
-     * leaves a `.capture-bak` which the next read puts back. The Storage Access Framework has no
-     * atomic replace, so this is as close as the folder API allows.
+     * Writes straight into the note, so it keeps the same file the whole time. It used to write a sibling and swap
+     * names, but while the note was renamed away Obsidian Sync could put it back, and Android then gave the app's
+     * copy a free name instead: "⚡ Quick Task (1).md", with every task in it twice (2026-11-24). Sync also took the
+     * swap as a delete plus a new file and merged old and new copies together. An edit in place is what Sync expects.
+     * [VaultIo.write] reads the note back and writes again if only part of it landed; if the write itself fails,
+     * the bytes from before go back.
      */
     override fun writeBytes(path: String, bytes: ByteArray) {
         heal(path)
         val target = find(path) ?: error("${nameOf(path)} not found")
         if (target.isDirectory) error("${nameOf(path)} is a folder")
-        val folder = folderOf(path) ?: error("Cannot write ${nameOf(path)}")
-        val name = target.name
-        val tmpName = ".$name.capture-tmp"
-        val bakName = ".$name.capture-bak"
-        folder.findChild(tmpName)?.delete()
-        val tmp = folder.createFile("application/octet-stream", tmpName) ?: error("Cannot write $name")
-        val made = tmp.name
+        val before = runCatching { target.open()?.use { it.readBytes() } }.getOrNull()
         try {
-            tmp.writeBytes(bytes)
-            val back = tmp.open()?.use { it.readBytes() }
-            if (back == null || !back.contentEquals(bytes)) error("Cannot write $name")
-            val bak = target.rename(bakName) ?: error("Cannot write $name")
-            if (tmp.rename(name) == null) {
-                bak.rename(name)
-                error("Cannot write $name")
-            }
-            bak.delete()
+            target.writeBytes(bytes)
         } catch (e: Exception) {
-            folder.findChild(made)?.delete()
-            if (find(path) == null) folder.findChild(bakName)?.rename(name)
+            if (before != null) runCatching { target.writeBytes(before) }
             throw e
         }
     }
 
-    /** Puts a note back if a swap stopped halfway, and drops leftover temp files once the real name is there. */
+    /** Puts a note back if an old-style swap (before 1.63) stopped halfway, and drops leftover temp files. */
     private fun heal(path: String) {
         val name = nameOf(path)
         if (name.isEmpty()) return
