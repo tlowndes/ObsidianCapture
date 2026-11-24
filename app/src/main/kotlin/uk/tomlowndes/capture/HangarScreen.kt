@@ -181,7 +181,7 @@ fun HangarScreen(
             trip = withContext(Dispatchers.IO) { runCatching { TripLoader.load(ctx, appVault(ctx, uri)) }.getOrNull() }
         if (tools?.contains(HangarTool.NIGHT_PAD) == true)
             night = withContext(Dispatchers.IO) {
-                runCatching { val v = appVault(ctx, uri); NightLoader.load(ctx, v).let { t -> t to NightPad.items(LaunchPad.load(v), t) } }.getOrNull()
+                runCatching { val v = appVault(ctx, uri); NightLoader.load(ctx, v).let { t -> t to NightPad.items(Kits.loadAll(v), t) } }.getOrNull()
             }
         if (tools?.any { it.group == "Finding things" } == true)
             finding = withContext(Dispatchers.IO) {

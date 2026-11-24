@@ -191,6 +191,15 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = if (p.getString("launch_skips_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("launch_skips", null).orEmpty() else emptySet()
         set(v) { p.edit().putStringSet("launch_skips", v).putString("launch_skips_day", java.time.LocalDate.now().toString()).apply() }
+    /** Launch Pad kits tapped on or off for today (kits-backpack-v1). Reset each morning; the kit notes are untouched. */
+    var launchKitsOn: Set<String>
+        get() = if (p.getString("launch_kits_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_kits_on", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_kits_on", v).putStringSet("launch_kits_off", launchKitsOff).putString("launch_kits_day", java.time.LocalDate.now().toString()).apply() }
+    var launchKitsOff: Set<String>
+        get() = if (p.getString("launch_kits_day", null) == java.time.LocalDate.now().toString())
+            p.getStringSet("launch_kits_off", null).orEmpty() else emptySet()
+        set(v) { p.edit().putStringSet("launch_kits_off", v).putStringSet("launch_kits_on", launchKitsOn).putString("launch_kits_day", java.time.LocalDate.now().toString()).apply() }
     var launchSkip: String?
         get() = p.getString("launch_skip", null)
         set(v) { p.edit().putString("launch_skip", v).apply() }
