@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.tomlowndes.capture.KitGroup
 import uk.tomlowndes.capture.KitItem
+import uk.tomlowndes.capture.Kits
 import uk.tomlowndes.capture.LastSeen
 import uk.tomlowndes.capture.LaunchPad
 import uk.tomlowndes.capture.NightPad
@@ -67,6 +68,7 @@ private fun KitList(items: List<KitItem>, ticked: Set<String>, onTick: (String, 
 
 // ---- Launch Pad ----
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun LaunchPadDesk(state: AppState, v: Vault) {
     val data = loaded(state, "Couldn't read Launch Pad") {
@@ -75,10 +77,17 @@ internal fun LaunchPadDesk(state: AppState, v: Vault) {
         val e = LaunchPad.nextEvent(events, now)
         val w = runCatching { DesktopWeather.today(state.prefs) }.getOrNull()
         val trip = Trip(e?.title, e?.start, e?.end, null, null, w?.parts?.maxOfOrNull { it.rain } ?: 0, w?.low)
-        trip to LaunchPad.itemsFor(LaunchPad.load(v), trip)
+        trip to Kits.loadAll(v)
     } ?: return
-    val (trip, items) = data
+    val (trip, kits) = data
     var ticked by remember { mutableStateOf(setOf<String>()) }
+    // Kits ticked on or off on this computer (kits-backpack-v1).
+    var on by remember { mutableStateOf(setOf<String>()) }
+    var off by remember { mutableStateOf(setOf<String>()) }
+    var editing by remember { mutableStateOf(false) }
+    val active = Kits.active(kits, trip, on, off)
+    val packs = Kits.packs(active, trip, on)
+    val items = packs.flatMap { it.items }
     val title = trip.title
     if (title == null) Sub("Nothing else on today. Here's what you always take.")
     else {
@@ -91,10 +100,24 @@ internal fun LaunchPadDesk(state: AppState, v: Vault) {
             trip.rainChance.takeIf { it >= LaunchPad.RAIN_AT }?.let { "$it% rain" },
         ).joinToString(" · "), Amber)
     }
+    if (kits.size > 1) FlowRow(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        kits.forEach { kit ->
+            val isOn = active.any { it.name == kit.name }
+            val why = packs.firstOrNull { it.kit.name == kit.name }?.why
+            Chip("${kit.emoji} ${kit.name}" + (why?.let { " · $it" } ?: ""), selected = isOn, small = true, color = if (isOn) Amber else Muted) {
+                if (isOn) { on = on - kit.name; off = off + kit.name } else { off = off - kit.name; on = on + kit.name }
+            }
+        }
+    }
     GroupLabel("Take with you · ${items.count { it.name !in ticked }} to go")
-    KitList(items, ticked) { name, on -> ticked = if (on) ticked + name else ticked - name }
+    packs.forEach { p ->
+        if (packs.size > 1) Text("${p.kit.emoji} ${p.kit.name} · ${p.items.count { it.name in ticked }}/${p.items.size}", color = Muted, fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+        KitList(p.items, ticked) { name, tick -> ticked = if (tick) ticked + name else ticked - name }
+    }
+    if (editing) KitsDialog(state) { editing = false }
     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        TextAction("Edit kit in Obsidian", Primary) { state.openInObsidian(LaunchPad.KIT) }
+        TextAction("Edit kits", Primary) { editing = true }
         if (ticked.isNotEmpty()) TextAction("Start again", Muted) { ticked = emptySet() }
     }
     Sub("Ticks here stay on this computer. The leave-by time from travel is on your phone.")
@@ -110,7 +133,7 @@ internal fun NightPadDesk(state: AppState, v: Vault) {
         val e = NightPad.firstTomorrow(events, now)
         val w = runCatching { DesktopWeather.forDay(state.prefs, now.toLocalDate().plusDays(1)) }.getOrNull()
         val trip = Trip(e?.title, e?.start, e?.end, null, null, w?.parts?.maxOfOrNull { it.rain } ?: 0, w?.low)
-        trip to NightPad.items(LaunchPad.load(v), trip)
+        trip to NightPad.items(Kits.loadAll(v), trip)
     } ?: return
     val (trip, items) = data
     var ticked by remember { mutableStateOf(setOf<String>()) }
@@ -130,7 +153,9 @@ internal fun NightPadDesk(state: AppState, v: Vault) {
             KitList(inGroup, ticked) { name, on -> ticked = if (on) ticked + name else ticked - name }
         }
     }
-    TextAction("Edit kit in Obsidian", Primary, Modifier.padding(top = 6.dp)) { state.openInObsidian(LaunchPad.KIT) }
+    var editing by remember { mutableStateOf(false) }
+    if (editing) KitsDialog(state) { editing = false }
+    TextAction("Edit kits", Primary, Modifier.padding(top = 6.dp)) { editing = true }
     Sub("Ticks here stay on this computer. Alarms are set from your phone.")
 }
 

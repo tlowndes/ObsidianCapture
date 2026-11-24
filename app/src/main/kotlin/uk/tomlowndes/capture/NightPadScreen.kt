@@ -83,14 +83,15 @@ fun NightPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBac
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var trip by remember { mutableStateOf<Trip?>(null) }
-    var kit by remember { mutableStateOf<Kit?>(null) }
+    var kit by remember { mutableStateOf<List<Kit>?>(null) }
     var ticked by remember { mutableStateOf(prefs.nightTicks) }
     var ready by remember { mutableIntStateOf(prefs.nightReady) }
     var showKit by remember { mutableStateOf(false) }
 
-    LaunchedEffect(vault) {
+    var reload by remember { mutableIntStateOf(0) }
+    LaunchedEffect(vault, reload) {
         val uri = vault ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); LaunchPad.load(v) to NightLoader.load(ctx, v) } }
+        withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); Kits.loadAll(v) to NightLoader.load(ctx, v) } }
             .onSuccess { kit = it.first; trip = it.second }.onFailure { snack.showSnackbar("Couldn't load Night Pad: ${it.message}") }
     }
     BackHandler { if (showKit) showKit = false else onBack() }
@@ -108,14 +109,14 @@ fun NightPadScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBac
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { if (showKit) showKit = false else onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
-            Text(if (showKit) "Your kit" else "Night Pad", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Violet, modifier = Modifier.weight(1f))
-            if (!showKit) Text("Kit", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            Text(if (showKit) "Kits" else "Night Pad", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Violet, modifier = Modifier.weight(1f))
+            if (!showKit) Text("Kits", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(CircleShape).clickable { showKit = true }.padding(horizontal = 12.dp, vertical = 8.dp))
         }
         when {
             vault == null -> Text("Pick your vault in Settings first.", color = Muted, modifier = Modifier.padding(top = 12.dp))
             t == null || k == null -> Text("Loading tomorrow…", color = Muted, modifier = Modifier.padding(top = 12.dp))
-            showKit -> KitView(k, night = true)
+            showKit -> KitsView(vault, snack) { reload++ }
             next == null && items.isNotEmpty() -> {
                 ReadyPass(t, items)
                 Spacer(Modifier.height(14.dp))
@@ -201,7 +202,7 @@ private fun NightRow(i: NightItem, done: Boolean, onTick: () -> Unit) =
         Box(Modifier.padding(end = 10.dp).clip(RoundedCornerShape(5.dp)).background(if (done) Green else Color.Transparent)
             .border(1.5.dp, if (done) Green else Muted, RoundedCornerShape(5.dp)).padding(8.dp))
         Text("${i.item.emoji}  ${i.item.name}", fontSize = 15.sp, color = if (done) Muted else TextMain, modifier = Modifier.weight(1f))
-        i.item.reason?.let { Text(it, color = Amber, fontSize = 11.sp) }
+        (i.item.reason ?: i.kit)?.let { Text(it, color = if (i.item.reason != null) Amber else Violet, fontSize = 11.sp) }
     }
 
 @Composable
