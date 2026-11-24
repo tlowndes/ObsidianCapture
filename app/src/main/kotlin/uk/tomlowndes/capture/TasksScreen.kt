@@ -82,6 +82,7 @@ fun TasksScreen(
     onOpenTriage: () -> Unit = {},
     onOpenGuardBackups: () -> Unit = {},
     onAddOn: (LocalDate) -> Unit = {},
+    onOpenBills: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -111,6 +112,23 @@ fun TasksScreen(
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var view by remember { mutableStateOf(if (prefs.tasksChores) TasksView.CHORES else if (prefs.tasksBills) TasksView.BILLS else if (prefs.tasksUpcoming) TasksView.UPCOMING else TasksView.LIST) }
+    // Where things live (where-things-live-v1): which views Tasks has, and whether bills are in it at all.
+    var places by remember { mutableStateOf<PlaceState?>(null) }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        places = withContext(Dispatchers.IO) { runCatching { PhonePlaces.load(ctx, uri, prefs) }.getOrNull() }
+    }
+    val billsHere = places?.main(Element.BILLS) ?: true
+    val views = TasksView.values().filter { v ->
+        val p = places ?: return@filter true
+        when (v) {
+            TasksView.BILLS -> p.main(Element.BILLS)
+            TasksView.CHORES -> p.main(Element.CHORES)
+            TasksView.UPCOMING -> p.main(Element.UPCOMING)
+            TasksView.LIST -> true
+        }
+    }
+    LaunchedEffect(views) { if (view !in views) view = TasksView.LIST }
     val upcoming = view == TasksView.UPCOMING
     val chores = view == TasksView.CHORES
     val billsView = view == TasksView.BILLS
@@ -441,7 +459,7 @@ fun TasksScreen(
     )
 
     val today = LocalDate.now()
-    val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) }
+    val shown = tasks.filter { (note == null || it.path == note) && TaskViews.matches(it, tag, filter, query) && (billsHere || !Deck.isBill(it)) }
     val nested = Subtasks.nest(shown, tasks)
     // Due: day groups with flagged tasks first in each. Priority: priority groups (priority-flags-v1).
     val sections: List<TaskSection> = if (sort == TaskSort.PRIORITY) {
@@ -484,11 +502,22 @@ fun TasksScreen(
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
         )
         ServerCopyBanner(onClick = onOpenSettings)
+        // Bills moved to Hangar (where-things-live-v1): said once, then gone.
+        if (!billsHere && !prefs.billsHintSeen) {
+            var seen by remember { mutableStateOf(false) }
+            if (!seen) Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(12.dp)).background(Surface1)
+                .border(1.dp, Outline, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Bills live in Hangar now.", fontSize = 13.sp, color = Muted, modifier = Modifier.weight(1f))
+                Text("Open Bills ›", fontSize = 13.sp, color = Primary, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(CircleShape).clickable { prefs.billsHintSeen = true; seen = true; onOpenBills() }.padding(horizontal = 6.dp, vertical = 4.dp))
+                Text("✕", fontSize = 13.sp, color = Muted, modifier = Modifier.clip(CircleShape).clickable { prefs.billsHintSeen = true; seen = true }.padding(horizontal = 8.dp, vertical = 4.dp))
+            }
+        }
         // Triage (build-queue O1) now lives in the Overdue header.
         val triage = Triage.candidates(tasks, today).size
         // One control row (tidy-v1): List / Upcoming and a Filter button; the chips open in a sheet.
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TasksViewSwitch(view, Modifier.weight(1f)) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; prefs.tasksBills = it == TasksView.BILLS; selected.clear() }
+            TasksViewSwitch(view, Modifier.weight(1f), views) { view = it; prefs.tasksUpcoming = it == TasksView.UPCOMING; prefs.tasksChores = it == TasksView.CHORES; prefs.tasksBills = it == TasksView.BILLS; selected.clear() }
             val active: String? = note?.let { VaultTasks.noteName(it) } ?: when (filter) {
                 TaskFilter.WORK -> "Work"
                 TaskFilter.PERSONAL -> "Personal"
@@ -529,7 +558,7 @@ fun TasksScreen(
                     if (note != null) AppChip(true, { onClearNote(); filtering = false }, { Text("✕ " + VaultTasks.noteName(note)) })
                     AppChip(tag == null && filter == null, { pickTag(null); pickFilter(null); filtering = false }, { Text("All") })
                     listOf(TaskFilter.WORK to Tags.WORK, TaskFilter.PERSONAL to Tags.PERSONAL).forEach { (f, chipTag) ->
-                        val n = tasks.count { TaskViews.matches(it, null, f) }
+                        val n = tasks.count { TaskViews.matches(it, null, f) && (billsHere || !Deck.isBill(it)) }
                         TagChip(chipTag, filter == f, onClick = { pickFilter(if (filter == f) null else f); filtering = false }, count = n)
                     }
                     TaskViews.topTags(tasks, 8).filter { it !in Tags.BUILT_IN }.forEach { t ->
@@ -537,7 +566,7 @@ fun TasksScreen(
                     }
                     AppChip(filter == TaskFilter.SHORT, { pickFilter(if (filter == TaskFilter.SHORT) null else TaskFilter.SHORT); filtering = false },
                         { Text("≤ ${TaskViews.SHORT_MIN} min") })
-                    val urgent = tasks.count { TaskViews.matches(it, null, TaskFilter.URGENT) }
+                    val urgent = tasks.count { TaskViews.matches(it, null, TaskFilter.URGENT) && (billsHere || !Deck.isBill(it)) }
                     AppChip(filter == TaskFilter.URGENT, { pickFilter(if (filter == TaskFilter.URGENT) null else TaskFilter.URGENT); filtering = false }, {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             PriorityFlag(Priority.MEDIUM)

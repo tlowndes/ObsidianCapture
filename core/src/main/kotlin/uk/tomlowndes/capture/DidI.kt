@@ -208,7 +208,14 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     ERRANDS("errands", "Errands", "📍", "Errands and shopping, by place", true),
     MEALS("meals", "Meals", "🍽", "This week's meals and the shop", true),
     /** The morning email as a page, read or listened to (daily-brief-v1). Opens its own screen. */
-    BRIEF("brief", "Daily Brief", "☀", "Your morning brief, to read or listen to", true);
+    BRIEF("brief", "Daily Brief", "☀", "Your morning brief, to read or listen to", true),
+    /** Elements that can live in Hangar (where-things-live-v1). Bills left Tasks for its own page. */
+    BILLS("bills", "Bills", "£", "This month's bills, with a tick for paid", true),
+    HABITS("habits", "Habits", "✿", "Today's habits and your streaks", true),
+    PEOPLE("people", "People", "👥", "Birthdays and who to say hi to", true),
+    LEARN("learn", "Learn", "🧠", "Flashcards that are due", true),
+    JOBS("jobs", "Jobs", "💼", "Roles you're applying for", true),
+    PLAN("plan", "Plan today", "☑", "Plan the day in the morning, shut down at night", true);
 
     /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
@@ -216,6 +223,7 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
         COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
         INBOX, HOME, PROJECTS, ERRANDS, MEALS, BRIEF -> "Around home"
+        BILLS, HABITS, PEOPLE, LEARN, JOBS, PLAN -> "Your day"
         else -> "Getting out"
     }
 

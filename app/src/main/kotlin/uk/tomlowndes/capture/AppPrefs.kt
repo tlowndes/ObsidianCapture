@@ -166,6 +166,16 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getBoolean("hangar_deck_tools", false)
         set(v) { p.edit().putBoolean("hangar_deck_tools", v).apply() }
 
+    /** When this phone last changed the Hangar list (epoch millis), so a later change on Windows wins (where-things-live-v1). */
+    var hangarAt: Long
+        get() = p.getLong("hangar_at", 0)
+        set(v) { p.edit().putLong("hangar_at", v).apply() }
+
+    /** The "Bills live in Hangar now" line in Tasks has been shown and closed (where-things-live-v1). */
+    var billsHintSeen: Boolean
+        get() = p.getBoolean("bills_hint_seen", false)
+        set(v) { p.edit().putBoolean("bills_hint_seen", v).apply() }
+
     /** Daily Brief has been added to the front of an existing Hangar once (daily-brief-v1). */
     var hangarBriefAdded: Boolean
         get() = p.getBoolean("hangar_brief_added", false)

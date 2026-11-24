@@ -78,7 +78,12 @@ internal fun HangarTool.deskColour(): Color = when (this) {
     HangarTool.ERRAND_RUN, HangarTool.ERRANDS -> Color(0xFFFFB36B)
     HangarTool.TICKET_RAIL -> Color(0xFFE9D9B4)
     HangarTool.SENSORY -> Color(0xFFE8963A)
-    HangarTool.BRIEF -> Amber
+    HangarTool.BRIEF, HangarTool.BILLS -> Amber
+    HangarTool.HABITS -> TaskGreen
+    HangarTool.PEOPLE -> Color(0xFFFF8AC0)
+    HangarTool.LEARN -> Color(0xFFB9A2FF)
+    HangarTool.JOBS -> Color(0xFF5FC8D3)
+    HangarTool.PLAN -> Primary
 }
 
 /** What the Hangar page and sidebar show on Windows: the shared order, what needs you, and each tile's line. */
@@ -105,6 +110,8 @@ internal val DESK_FALLBACK: List<HangarTool> = HangarTool.values().filter { it.r
 
 /** Reads the Hangar list the phone shares through the vault, and each tool's status. Off the UI thread. */
 internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
+    // Where things live (where-things-live-v1): the one-off move, if the phone hasn't made it yet.
+    runCatching { DeskPlaces.moveOnce(v) }
     val all = DeckConfig.loadHangar(v)?.takeIf { it.isNotEmpty() } ?: DESK_FALLBACK
     val tools = all - PHONE_ONLY
     val today = LocalDate.now()
@@ -123,6 +130,11 @@ internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
         val d = uk.tomlowndes.capture.DailyBrief.load(v, today)
         lines[HangarTool.BRIEF] = when { d == null -> "Not written yet"; d.heard -> "Heard ✓"; d.opened -> "Read"; else -> "Ready" }
         if (d != null && !d.heard && !d.opened) needs += HangarTool.BRIEF
+    }
+    look(HangarTool.BILLS) {
+        val open = state.writer()!!.listTasks()
+        lines[HangarTool.BILLS] = uk.tomlowndes.capture.BillPage.nextLine(open, today) ?: "Nothing to pay"
+        if (uk.tomlowndes.capture.BillPage.needsYou(open, today)) needs += HangarTool.BILLS
     }
     look(HangarTool.INBOX) {
         val n = state.inboxOpen
@@ -167,6 +179,8 @@ internal fun openDeskTool(state: AppState, t: HangarTool) {
         HangarTool.INBOX -> state.tab = Tab.INBOX
         HangarTool.HOME, HangarTool.ERRANDS, HangarTool.MEALS -> state.tab = Tab.HOME
         HangarTool.PROJECTS -> state.openProjects(null)
+        HangarTool.PEOPLE -> state.tab = Tab.PEOPLE
+        HangarTool.JOBS -> state.tab = Tab.JOBS
         in DESK_TOOLS -> { state.hangarTool = t; state.tab = Tab.HANGAR }
         else -> state.say("${t.title} works on your phone only.")
     }
@@ -264,9 +278,9 @@ private fun HangarGridDesk(state: AppState, h: DeskHangar) {
         val saved = withPhoneOnly(h.all, after)
         state.hangar = DeskHangar(after, h.needs, h.lines, h.did, h.rail, saved)
         state.scope.launch {
-            state.io("Couldn't save the Hangar order") { DeckConfig.saveHangar(v, saved) }
+            state.io("Couldn't save the Hangar order") { DeckConfig.saveHangar(v, saved, System.currentTimeMillis()) }
             state.offerUndo("Order saved · phone too") {
-                state.io("Couldn't undo") { DeckConfig.saveHangar(v, before) }
+                state.io("Couldn't undo") { DeckConfig.saveHangar(v, before, System.currentTimeMillis()) }
                 state.changed()
             }
         }

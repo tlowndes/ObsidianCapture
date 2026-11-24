@@ -215,12 +215,14 @@ object DeckConfig {
 
     fun loadHangar(v: Vault): List<HangarTool>? = Hangar.parse(hangar(v.read(PATH)))
 
-    fun saveHangar(v: Vault, tools: List<HangarTool>) {
+    /** Saves the Hangar list; [at] (epoch millis) stamps it as a change made here, so the other device takes it. */
+    fun saveHangar(v: Vault, tools: List<HangarTool>, at: Long? = null) {
         if (v.entry(PATH) == null) {
             v.mkdirs(parentOf(PATH))
             v.create(parentOf(PATH), nameOf(PATH).removeSuffix(".json"), "json")
         }
-        VaultIo.write(v, PATH, withHangar(v.read(PATH), Hangar.format(tools)))
+        val json = withHangar(v.read(PATH), Hangar.format(tools))
+        VaultIo.write(v, PATH, if (at == null) json else JSONObject(json).put("hangarAt", at).toString(2))
     }
 
     fun save(v: Vault, layout: DeckLayout) {

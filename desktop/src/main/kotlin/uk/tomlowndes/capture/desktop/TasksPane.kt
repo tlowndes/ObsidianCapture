@@ -232,7 +232,10 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
     val tag = if (upcoming) null else state.taskTag
     val note = state.taskNote
     val all = tasks.orEmpty()
+    // Bills set to Hangar only (where-things-live-v1): no #bill lines here, and no bill chips on Upcoming.
+    val billsHere = loaded(state, "Couldn't read where things live") { state.vault?.let { DeskPlaces.billsInTasks(it) } ?: true } ?: true
     val shown = all.filter {
+        (billsHere || !uk.tomlowndes.capture.Deck.isBill(it)) &&
         (note == null || it.path == note) && (tag == null || Tags.matches(it, tag)) &&
             (!urgent || Priority.of(it).urgent) && (filter.isBlank() || it.text.contains(filter.trim(), ignoreCase = true))
     }
@@ -305,8 +308,8 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
             val bills = TaskViews.billsMonth(all, done, today)
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
                 Chip("⚡ Reshuffle", small = true, color = Amber) { reshuffling = true }
-                Chip("＋ Add bill", small = true, color = Amber) { addingBill = true }
-                if (!bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
+                if (billsHere) Chip("＋ Add bill", small = true, color = Amber) { addingBill = true }
+                if (billsHere && !bills.empty) Chip("💷 ${TaskViews.money(bills.left)} left this month ›", small = true) { state.taskTag = "#bill"; state.tab = Tab.TASKS }
             }
             UpcomingWeek(
                 shown, calendar.second, calendar.first, now,

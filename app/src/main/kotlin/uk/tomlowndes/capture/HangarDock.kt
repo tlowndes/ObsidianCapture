@@ -50,6 +50,7 @@ internal fun HangarTool.dockLabel(): String = when (this) {
     HangarTool.TICKET_RAIL -> "Rail"
     HangarTool.SENSORY -> "Sensory"
     HangarTool.BRIEF -> "Brief"
+    HangarTool.PLAN -> "Plan"
     else -> title
 }
 
@@ -70,6 +71,7 @@ internal fun dockNeeds(ctx: Context, uri: Uri, prefs: AppPrefs, tools: List<Hang
         val stamps = Refill.stamps(v, meds, today)
         meds.any { Refill.needsOrder(it, Refill.left(it, stamps), today) }
     }
+    check(HangarTool.BILLS) { BillPage.needsYou(VaultWriter(ctx, uri).listTasks(), today) }
     if (HangarTool.INBOX in tools || HangarTool.HOME in tools) loadAround(ctx, uri, prefs, tools.filter { it == HangarTool.INBOX || it == HangarTool.HOME }).let { a ->
         if (a.mail > 0) out += HangarTool.INBOX
         if (a.chores > 0) out += HangarTool.HOME
