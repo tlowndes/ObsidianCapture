@@ -110,6 +110,7 @@ fun DidIScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
             status = status.map { if (it.check == c) it.copy(at = s.time) else it }
             stamps = stamps + s
             DidWidgets.changed(ctx)
+            DoorInkSend.soon(ctx)
             val r = snack.showSnackbar("${c.name} logged at ${s.time.format(HM)}", actionLabel = "Undo", duration = SnackbarDuration.Short)
             if (r == SnackbarResult.ActionPerformed) {
                 withContext(Dispatchers.IO) { runCatching { DidI.undo(appVault(ctx, uri), today, s) } }

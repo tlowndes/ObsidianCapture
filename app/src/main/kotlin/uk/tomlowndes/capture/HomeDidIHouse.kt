@@ -30,7 +30,7 @@ internal object HomeHouse {
         val today = LocalDate.now()
         val added = HomeDidI.autoStamps(checks, states, DidI.loadStamps(v, today), today)
         added.forEach { DidI.stampAt(v, today, it) }
-        if (added.isNotEmpty()) DidWidgets.changed(ctx)
+        if (added.isNotEmpty()) { DidWidgets.changed(ctx); DoorInkSend.soon(ctx) }
         if (alert) alert(ctx, checks, states)
         return Live(states, added)
     }
