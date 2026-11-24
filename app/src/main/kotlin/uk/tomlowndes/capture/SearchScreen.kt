@@ -75,6 +75,8 @@ fun SearchScreen(vault: Uri?, snack: SnackbarHostState, onClose: () -> Unit) {
         if (query.isBlank() && results.isNotEmpty()) {
             GroupLabel("Recently changed", Muted)
         }
+        // Private notes stay out of search (care-welcome-v1); say where they are instead.
+        NoteIndex.privateHint(query)?.let { Text(it, fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 10.dp)) }
         LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
             items(results, key = { it.path }) { n ->
                 Column(

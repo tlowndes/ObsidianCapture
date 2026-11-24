@@ -24,9 +24,19 @@ object NoteIndex {
     /** Enough of each note to search; very long notes are only searched this far. */
     const val MAX_TEXT = 40_000
 
-    /** Dot folders (.obsidian, .trash, .git) never show. */
-    /** Hidden files, and Pocket Pass, whose codes shouldn't turn up in search or reach Claude. */
-    fun skip(path: String) = nameOf(path).startsWith(".") || path == PocketPass.NOTE
+    /** Notes that never turn up in search or reach Claude: Pocket Pass codes, meds (Refill), Did I? logs and Last Seen (care-welcome-v1). */
+    val PRIVATE = listOf(PocketPass.NOTE, Refill.NOTE, LastSeen.NOTE)
+
+    /** Dot folders (.obsidian, .trash, .git), hidden files, and the [PRIVATE] notes and the Did I? log folder. */
+    fun skip(path: String) = nameOf(path).startsWith(".") || path in PRIVATE || path == DidI.LOG_DIR || path.startsWith(DidI.LOG_DIR + "/")
+
+    /** When a search would have found a private note by name, a line saying where to open it instead. */
+    fun privateHint(query: String): String? {
+        val q = query.trim().lowercase()
+        if (q.length < 3) return null
+        val hit = listOf("Pocket Pass", "Refill", "Last Seen", "Did I").firstOrNull { it.lowercase().startsWith(q) || q.startsWith(it.lowercase()) }
+        return hit?.let { "🔒 $it isn't in search. Open it from Hangar." }
+    }
 
     /** Just the paths and dates: quick, so the folders can show before the text is read. */
     fun paths(v: Vault): List<NoteInfo> = v.notes(::skip).map { NoteInfo(it.path, it.modified) }

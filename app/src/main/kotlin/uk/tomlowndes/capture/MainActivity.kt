@@ -15,18 +15,33 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -88,6 +103,15 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
+        // Quiet the day (quiet-day-v1): once per phone, then the reminders and Heads Up are planned again.
+        if (!prefs.quietDayDone || !prefs.eveningWeekDone) {
+            prefs.quietDayOnce()
+            prefs.eveningWeekOnce()
+            Reminders.scheduleAll(applicationContext, prefs)
+            Thread { runCatching { HeadsAlarms.reschedule(applicationContext) } }.start()
+        }
+        // Fold the extra doors (fold-doors-v1): duplicate widgets leave the picker unless one is placed.
+        Thread { WidgetFold.apply(applicationContext, prefs) }.start()
         setContent {
             CaptureTheme {
                 App(prefs, openRequest) { openRequest = null }
@@ -158,6 +182,7 @@ class MainActivity : ComponentActivity() {
         if (i?.getStringExtra("tab") == "RAIL") { openRequest = Tab.DECK to "rail"; return }
         if (i?.getStringExtra("tab") == "FOCUS") { openRequest = Tab.DECK to "focus"; return }
         if (i?.getStringExtra("tab") == "WEEKLY") { openRequest = Tab.DECK to "weekly"; return }
+        if (i?.getStringExtra("tab") == "PLAN") { openRequest = Tab.DECK to "plan"; return }
         if (i?.getStringExtra("tab") == "ERRANDS") { openRequest = Tab.DECK to "errands"; return }
         // Hangar and Did I? from the app shortcuts, pinned shortcuts and the Did I? widget.
         if (i?.getStringExtra("tab") == "HANGAR") { openRequest = Tab.DECK to "hangar"; return }
@@ -238,6 +263,7 @@ private fun subFor(slot: String?) = when (slot) {
     "jobs" -> Sub.JOBS
     "errands" -> Sub.ERRANDS
     "weekly" -> Sub.WEEKLY
+    "plan" -> Sub.PLAN
     "hangar" -> Sub.HANGAR
     "didi" -> Sub.DID_I
     "launch" -> Sub.LAUNCH_PAD
@@ -255,6 +281,7 @@ private fun subFor(slot: String?) = when (slot) {
     else -> null
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> Unit) {
     val ctx = LocalContext.current
@@ -269,6 +296,19 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var sub by remember { mutableStateOf(subFor(request?.second)) }
     /** Heads Up opened from a Focus buzz shows the switch view; from Hangar it shows its settings. */
     var headsSwitch by remember { mutableStateOf(request?.second == "heads_switch") }
+    // Hangar opens as a pull-up sheet (hangar-menu-v1) from the dock (hangar-dock-v1). Anything that asks for
+    // Sub.HANGAR (a tool's back arrow, the app shortcut) lands on the Deck with the sheet open.
+    var hangarOpen by remember { mutableStateOf(false) }
+    // Edit Deck sheet from the Deck's More row (bottom-dock-v1 A); deckRev makes the Deck re-read its layout after.
+    var editDeck by remember { mutableStateOf(false) }
+    // Task peek (four-fixes-v1): long-press Tasks, or the ✓ pill on screens with no tab bar.
+    var peek by remember { mutableStateOf(false) }
+    var dueN by remember { mutableStateOf(0) }
+    var addTiles by remember { mutableStateOf(false) }
+    var deckRev by remember { mutableIntStateOf(0) }
+    LaunchedEffect(sub) {
+        if (sub == Sub.HANGAR) { sub = null; tab = Tab.DECK; settings = false; search = false; cards = false; hangarOpen = true }
+    }
     var routineName by remember { mutableStateOf<String?>(null) }
     fun startFocus(task: String, raw: String?, path: String?, minutes: Int) {
         Focus.start(ctx, task, raw, path, minutes)
@@ -282,6 +322,60 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     var unread by remember { mutableStateOf(0) }
     var jobsOpen by remember { mutableStateOf(0) }
     val snack = remember { SnackbarHostState() }
+    // The Hangar dock (hangar-dock-v1): tools in Hangar's order, re-read when the sheet closes (Edit may have changed them).
+    // Inbox, Home, Projects, Errands and Meals moved off the Deck into Hangar (hangar-dock-v2): added once to a Hangar set up before.
+    remember {
+        if (!prefs.hangarDeckToolsAdded) {
+            Hangar.parse(prefs.hangarTools)?.let { prefs.hangarTools = Hangar.format(Hangar.withDeckTools(it)) }
+            prefs.hangarDeckToolsAdded = true
+        }
+    }
+    var dockTools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
+    var dockDots by remember { mutableStateOf(emptySet<HangarTool>()) }
+    LaunchedEffect(vault, hangarOpen, sub) {
+        if (hangarOpen) return@LaunchedEffect
+        val uri = vault
+        // Windows can reorder Hangar (hangar-windows-v1): take its order when it holds the same tools, and keep the
+        // vault's copy up to date with the phone's otherwise.
+        val phone = Hangar.parse(prefs.hangarTools)
+        if (uri != null && phone != null) withContext(Dispatchers.IO) {
+            runCatching {
+                val v = appVault(ctx, uri)
+                val saved = DeckConfig.loadHangar(v)
+                val now = Hangar.merged(phone, saved)
+                if (now != phone) prefs.hangarTools = Hangar.format(now)
+                if (now != saved) DeckConfig.saveHangar(v, now)
+            }
+        }
+        val t = Hangar.parse(prefs.hangarTools)
+        dockTools = t
+        uri ?: return@LaunchedEffect
+        dockDots = withContext(Dispatchers.IO) { runCatching { dockNeeds(ctx, uri, prefs, t.orEmpty()) }.getOrDefault(emptySet()) }
+    }
+    fun openTool(t: HangarTool) {
+        hangarOpen = false
+        settings = false; search = false; cards = false
+        when (t) {
+            HangarTool.DID_I -> sub = Sub.DID_I
+            HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
+            HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
+            HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
+            HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
+            HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
+            HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
+            HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
+            HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
+            HangarTool.REFILL -> sub = Sub.REFILL
+            HangarTool.WAITING -> sub = Sub.WAITING
+            HangarTool.ERRAND_RUN -> sub = Sub.ERRANDS
+            HangarTool.SENSORY -> sub = Sub.SENSORY
+            HangarTool.INBOX -> sub = Sub.INBOX
+            HangarTool.HOME -> sub = Sub.CHORES
+            HangarTool.ERRANDS -> sub = Sub.ERRANDS
+            HangarTool.MEALS -> sub = Sub.MEALS
+            HangarTool.PROJECTS -> { sub = null; openIdea = null; tab = Tab.PROJECTS }
+        }
+    }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
     LaunchedEffect(Unit) {
@@ -336,12 +430,18 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
             .onSuccess { jobsOpen = it }
     }
 
+    // First run (care-welcome-v1): pick the vault and see what was found before the Deck opens.
+    var welcoming by remember { mutableStateOf(vault == null) }
+    if (welcoming) { WelcomeScreen(vault, onPick = { picker.launch(null) }, onDone = { welcoming = false }); return }
+
     val hideNav = (tab == Tab.PROJECTS && openIdea != null) || (tab == Tab.READ && openArticle != null) || (tab == Tab.VAULT && vaultEditing)
     Scaffold(
         containerColor = Bg,
         snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            if (!hideNav) NavBar(if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab) {
+            // One bar (bottom-dock-v1 A): Deck, Capture, Tasks, Vault and Hangar, with a badge for what needs you.
+            if (!hideNav) NavBar(if (hangarOpen) null else if (sub == Sub.JOBS || sub == Sub.RECIPES) Tab.VAULT else if (settings || search || sub != null) null else if (tab == Tab.READ || tab == Tab.PROJECTS) Tab.VAULT else tab,
+                hangarOpen = hangarOpen, needs = dockDots.size, onHangar = { hangarOpen = true }, onPeek = { peek = true }) {
                 if (it == Tab.TASKS && tab != Tab.TASKS) tasksNote = null
                 tab = it; settings = false; cards = false; search = false; sub = null
             }
@@ -349,25 +449,8 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
     ) { pad ->
         // Consumed so a screen's imePadding() only adds what the keyboard covers beyond the bottom bar.
         Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize()) {
+            if (hideNav) LaunchedEffect(vault, peek) { vault?.let { dueN = dueCount(ctx, it) } }
             when {
-                sub == Sub.HANGAR -> HangarScreen(vault, prefs, snack, onOpen = { t ->
-                    when (t) {
-                        HangarTool.DID_I -> sub = Sub.DID_I
-                        HangarTool.LAUNCH_PAD -> sub = Sub.LAUNCH_PAD
-                        HangarTool.HEADS_UP -> { headsSwitch = false; sub = Sub.HEADS_UP }
-                        HangarTool.TICKET_RAIL -> sub = Sub.TICKET_RAIL
-                        HangarTool.NIGHT_PAD -> sub = Sub.NIGHT_PAD
-                        HangarTool.POCKET_PASS -> sub = Sub.POCKET_PASS
-                        HangarTool.LAST_SEEN -> sub = Sub.LAST_SEEN
-                        HangarTool.RETURN_RADAR -> sub = Sub.RETURN_RADAR
-                        HangarTool.COOL_OFF -> sub = Sub.COOL_OFF
-                        HangarTool.REFILL -> sub = Sub.REFILL
-                        HangarTool.WAITING -> sub = Sub.WAITING
-                        HangarTool.ERRAND_RUN -> sub = Sub.ERRAND_RUN
-                        HangarTool.SENSORY -> sub = Sub.SENSORY
-                        else -> {}
-                    }
-                }) { sub = null }
                 sub == Sub.DID_I -> DidIScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.LAUNCH_PAD -> LaunchPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.NIGHT_PAD -> NightPadScreen(vault, prefs, snack) { sub = Sub.HANGAR }
@@ -377,13 +460,13 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.COOL_OFF -> CoolOffScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.REFILL -> RefillScreen(vault, snack) { sub = Sub.HANGAR }
                 sub == Sub.WAITING -> WaitingScreen(vault, snack, onOpenArticle = { openArticle = it; sub = null; tab = Tab.READ }) { sub = Sub.HANGAR }
-                sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.HANGAR }
+                sub == Sub.ERRAND_RUN -> ErrandRunScreen(vault, snack, onPlaces = { sub = Sub.ERRANDS }) { sub = Sub.ERRANDS }
                 sub == Sub.HEADS_UP -> HeadsUpScreen(vault, prefs, snack, headsSwitch) { headsSwitch = false; sub = Sub.HANGAR }
                 sub == Sub.SENSORY -> SensoryScreen(vault, prefs, snack) { sub = Sub.HANGAR }
                 sub == Sub.TICKET_RAIL -> TicketRailScreen(vault, prefs, snack, TicketInbox.pending, onClearHandled = { TicketInbox.pending = null }) { sub = Sub.HANGAR }
                 sub == Sub.FOCUS -> FocusScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.HABITS -> HabitsScreen(vault, snack) { sub = null }
-                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack) { sub = null }
+                sub == Sub.WEEKLY -> WeeklyScreen(vault, snack, prefs, onMigrate = { sub = Sub.MIGRATE }) { sub = null }
                 sub == Sub.JOBS -> JobsScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PRINT -> PrintScreen(vault, snack) { sub = null }
                 sub == Sub.MIGRATE -> MigrateScreen(vault, prefs, snack) { sub = null }
@@ -393,22 +476,22 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                 sub == Sub.LEARN -> LearnScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.INBOX -> InboxScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PEOPLE -> PeopleScreen(vault, snack) { sub = null }
-                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack) { sub = null }
+                sub == Sub.ERRANDS -> ErrandsScreen(vault, snack, onRun = { sub = Sub.ERRAND_RUN }) { sub = null }
                 sub == Sub.MEALS -> MealsScreen(vault, snack) { sub = null }
                 sub == Sub.RECIPES -> RecipesScreen(vault, snack) { sub = null }
                 sub == Sub.TRIAGE -> TriageScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.PLAN -> PlanScreen(vault, prefs, snack) { sub = null }
                 sub == Sub.ROUTINE -> RoutineScreen(vault, routineName, snack, onPlan = { sub = Sub.PLAN }) { sub = null }
-                sub == Sub.STUCK -> StuckScreen(vault, snack, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
+                sub == Sub.STUCK -> StuckScreen(vault, snack, prefs, onFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onBack = { sub = null }) { i -> startFocus(i.name, null, null, i.minutes) }
                 cards -> CardsScreen(vault, snack) { cards = false }
-                settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY })
+                settings -> SettingsScreen(vault, prefs, startOnBackups = settingsBackups, onPickVault = { picker.launch(null) }, onOpenCards = { cards = true }, onOpenHabits = { settings = false; sub = Sub.HABITS }, onOpenWeekly = { settings = false; sub = Sub.WEEKLY }, onOpenPrint = { settings = false; sub = Sub.PRINT })
                 search -> SearchScreen(vault, snack) { search = false }
                 tab == Tab.DECK -> DeckScreen(
-                    vault, prefs, snack, onOpenTab = { tab = it }, onOpenSub = { sub = it },
+                    vault, prefs, snack, deckRev, onEditDeck = { editDeck = true }, onAddTile = { addTiles = true }, onOpenTool = { openTool(it) }, onOpenTab = { tab = it }, onOpenSub = { sub = it },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw.ifEmpty { null }, t.path.ifEmpty { null }, m) }, onOpenSearch = { search = true },
                     onOpenArticle = { openArticle = it; tab = Tab.READ }, onPlayRoutine = { routineName = it; sub = Sub.ROUTINE }
                 ) { settings = true }
-                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
+                tab == Tab.CAPTURE -> CaptureScreen(vault, prefs, snack, onScan = { sub = Sub.SNAP }, onScanPage = { sub = Sub.SCAN }, onPrintToday = { sub = Sub.PRINT }) { settings = true }
                 tab == Tab.TASKS -> TasksScreen(
                     vault, prefs, snack, tasksNote, onClearNote = { tasksNote = null },
                     onStartFocus = { t, m -> startFocus(t.text, t.raw, t.path, m) }, onOpenSettings = { settings = true },
@@ -434,12 +517,35 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
                     Box(Modifier.weight(1f)) { ReadScreen(vault, prefs, snack, openArticle) { openArticle = it } }
                 }
             }
+            // No tab bar here (reader, idea, note edit): a small ✓ pill opens the task peek.
+            if (hideNav) TaskPeekPill(dueN, { peek = true }, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
+        }
+        if (peek) TaskPeekSheet(vault, snack, onAll = { tab = Tab.TASKS; tasksNote = null; settings = false; cards = false; search = false; sub = null; hangarOpen = false }, onDismiss = { peek = false })
+        if (addTiles) {
+            ModalBottomSheet(onDismissRequest = { addTiles = false; deckRev++ }, containerColor = Surface2, scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                AddTilesSheet(prefs) { addTiles = false; deckRev++ }
+            }
+        }
+        if (editDeck) {
+            ModalBottomSheet(onDismissRequest = { editDeck = false; deckRev++ }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Surface2,
+                scrimColor = Color.Black.copy(alpha = 0.6f)) {
+                CardsScreen(vault, snack, inSheet = true) { editDeck = false; deckRev++ }
+            }
+        }
+        if (hangarOpen) {
+            val hangarSheet = rememberModalBottomSheetState()
+            // Opens halfway; drag up for the full list. A darker scrim so the screen behind doesn't show through.
+            ModalBottomSheet(onDismissRequest = { hangarOpen = false }, sheetState = hangarSheet, containerColor = Surface2,
+                scrimColor = Color.Black.copy(alpha = 0.6f)) {
+            HangarScreen(vault, prefs, snack, onOpen = { openTool(it) }, inSheet = true, needs = dockDots) { hangarOpen = false }
+            }
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
+private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: () -> Unit, onPeek: () -> Unit, onSelect: (Tab) -> Unit) {
     Column(Modifier.fillMaxWidth().background(NavBg)) {
         HorizontalDivider(color = Outline)
         Row(
@@ -448,12 +554,26 @@ private fun NavBar(selected: Tab?, onSelect: (Tab) -> Unit) {
         ) {
             Tab.NAV.forEach { t ->
                 val on = t == selected
-                Column(Modifier.clickable { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.combinedClickable(onLongClick = if (t == Tab.TASKS) onPeek else null) { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
                         Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
                     }
                     Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
                 }
+            }
+            Column(Modifier.clickable(onClick = onHangar).padding(horizontal = 2.dp).semantics { contentDescription = "Hangar" + if (needs > 0) ", $needs need you" else "" },
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Box {
+                    Box(Modifier.clip(CircleShape).background(if (hangarOpen) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
+                        Text("⌂", fontSize = 18.sp, color = if (hangarOpen) Primary else Muted)
+                    }
+                    // Badge clear of the icon, at the pill's top-right corner, with a ring in the bar's colour (four-fixes-v1 A).
+                    if (needs > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp).defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                        .border(2.dp, NavBg, CircleShape).clip(CircleShape).background(Green).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                        Text("$needs", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A12))
+                    }
+                }
+                Text("Hangar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (hangarOpen) Primary else Muted)
             }
         }
     }

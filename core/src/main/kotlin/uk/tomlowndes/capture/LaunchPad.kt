@@ -19,9 +19,15 @@ data class KitRule(val kind: Kind, val arg: String, val items: List<KitItem>, va
     enum class Kind { RAIN, COLD, EVENT, LONG }
 }
 
+/**
+ * One kit note (kits-backpack-v1). [useWhen] null means no Use when section, so the kit is always on (Pocket);
+ * an empty list means it only comes when tapped on.
+ */
 data class Kit(
     val always: List<KitItem>, val rules: List<KitRule>,
     val charge: List<KitItem> = emptyList(), val wear: List<KitItem> = emptyList(),
+    val name: String = Kits.POCKET, val emoji: String = "👖", val path: String? = null,
+    val useWhen: List<KitTrigger>? = null,
 )
 
 /** What Launch Pad knows about the trip: the next event today, the travel line if there is one, and the weather. */
@@ -77,12 +83,18 @@ object LaunchPad {
         val rules = mutableListOf<KitRule>()
         val charge = mutableListOf<KitItem>()
         val wear = mutableListOf<KitItem>()
+        var useWhen: MutableList<KitTrigger>? = null
         var section = ""
         text.split("\n").forEach { line ->
-            if (line.startsWith("## ")) { section = line.removePrefix("## ").trim().lowercase(Locale.UK); return@forEach }
+            if (line.startsWith("## ")) {
+                section = line.removePrefix("## ").trim().lowercase(Locale.UK)
+                if (section == "use when" && useWhen == null) useWhen = mutableListOf()
+                return@forEach
+            }
             val body = ITEM.matchEntire(line)?.groupValues?.get(1) ?: return@forEach
             val group = when (section) { "charge" -> KitGroup.CHARGE; "wear" -> KitGroup.WEAR; else -> KitGroup.BAG }
             when (section) {
+                "use when" -> Kits.trigger(body)?.let { useWhen?.add(it) }
                 "always" -> item(body)?.let(always::add)
                 "when" -> rule(body)?.let(rules::add)
                 "charge", "wear" ->
@@ -90,7 +102,7 @@ object LaunchPad {
                     else item(body)?.let { if (group == KitGroup.CHARGE) charge += it else wear += it }
             }
         }
-        return Kit(always, rules, charge, wear)
+        return Kit(always, rules, charge, wear, useWhen = useWhen)
     }
 
     fun rule(body: String): KitRule? {
@@ -170,7 +182,9 @@ data class HeadsAlert(val at: LocalDateTime, val minutes: Int, val target: Heads
  */
 object HeadsUp {
     val STAGES = listOf(15, 10, 5, 1)
-    val DEFAULT = listOf(10, 5, 1)
+    /** One warning by default (quiet-day-v1). Three stages are still a choice in Settings. */
+    val DEFAULT = listOf(10)
+    val THREE = listOf(10, 5, 1)
 
     fun parseStages(saved: String?): List<Int> =
         saved?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.filter { it in STAGES }?.distinct()?.sortedDescending()
@@ -218,8 +232,8 @@ object HeadsUp {
     }
 }
 
-/** One line on the Night Pad pass. */
-data class NightItem(val group: KitGroup, val item: KitItem)
+/** One line on the Night Pad pass. [kit] names the kit it's from when it isn't Pocket. */
+data class NightItem(val group: KitGroup, val item: KitItem, val kit: String? = null)
 
 /**
  * Night Pad (hangar-phase2): the evening version of Launch Pad. It reads tomorrow's first event and forecast and
@@ -253,6 +267,25 @@ object NightPad {
         if (trip.title != null) {
             out += ruled(KitGroup.BAG).map { NightItem(KitGroup.BAG, it) }
             out += (kit.wear + ruled(KitGroup.WEAR)).map { NightItem(KitGroup.WEAR, it) }
+        }
+        return out.distinctBy { it.item.name.lowercase(Locale.UK) }
+    }
+
+    /**
+     * Tonight's list across kits (kits-backpack-v1). Charge and Wear come from every kit due tomorrow. A kit with a
+     * Use when (Backpack) is packed whole tonight, Always and all; Pocket only packs its rule extras, as before.
+     */
+    fun items(kits: List<Kit>, trip: Trip): List<NightItem> {
+        val due = kits.filter { Kits.auto(it, trip) }
+        val out = mutableListOf<NightItem>()
+        fun tag(k: Kit) = k.name.takeIf { k.useWhen != null }
+        due.forEach { k -> items(k, trip).filter { it.group == KitGroup.CHARGE }.forEach { out += it.copy(kit = tag(k)) } }
+        if (trip.title != null) {
+            due.forEach { k ->
+                if (k.useWhen != null) LaunchPad.itemsFor(k, trip).forEach { out += NightItem(KitGroup.BAG, it, k.name) }
+                else items(k, trip).filter { it.group == KitGroup.BAG }.forEach { out += it }
+            }
+            due.forEach { k -> items(k, trip).filter { it.group == KitGroup.WEAR }.forEach { out += it.copy(kit = tag(k)) } }
         }
         return out.distinctBy { it.item.name.lowercase(Locale.UK) }
     }

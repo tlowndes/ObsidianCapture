@@ -200,13 +200,20 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
     /** At the desk, not getting out: Hangar lists it in its own group (ticket-rail-v1). */
     TICKET_RAIL("rail", "Ticket Rail", "▤", "Print tasks as tickets for a rail by your desk", true),
     /** At the desk too: turns the room down through Home Assistant (sensory-dial-v1). */
-    SENSORY("sensory", "Sensory Dial", "◐", "Turn the room down in one move: lights, noise and calls", true);
+    SENSORY("sensory", "Sensory Dial", "◐", "Turn the room down in one move: lights, noise and calls", true),
+    /** Moved off the Deck into Hangar (hangar-dock-v2). They open the app's own screens. */
+    INBOX("inbox", "Inbox", "✉", "Email that needs you, from the box", true),
+    HOME("home", "Home", "🏠", "Chores by room, when they need doing", true),
+    PROJECTS("projects", "Projects", "💡", "Your active project and ideas", true),
+    ERRANDS("errands", "Errands", "📍", "Errands and shopping, by place", true),
+    MEALS("meals", "Meals", "🍽", "This week's meals and the shop", true);
 
     /** Hangar's group for the tool: Getting out, Finding things, Day to day, or At the desk. */
     val group get() = when (this) {
         TICKET_RAIL, SENSORY -> "At the desk"
         POCKET_PASS, LAST_SEEN, RETURN_RADAR -> "Finding things"
         COOL_OFF, REFILL, WAITING, ERRAND_RUN -> "Day to day"
+        INBOX, HOME, PROJECTS, ERRANDS, MEALS -> "Around home"
         else -> "Getting out"
     }
 
@@ -222,7 +229,10 @@ enum class HangarTool(val id: String, val title: String, val icon: String, val b
 object Hangar {
     /** Null means Hangar has never been set up (first run shows the Add list). */
     fun parse(saved: String?): List<HangarTool>? =
-        saved?.split(",")?.mapNotNull { HangarTool.byId(it) }?.distinct()
+        saved?.split(",")?.mapNotNull { HangarTool.byId(it) }?.filter { it != HangarTool.ERRAND_RUN }?.distinct()
+
+    /** Errand Run moved to the Errands list (fold-doors-v1). True while an old Hangar list still names it. */
+    fun hadRun(saved: String?) = saved?.split(",")?.contains(HangarTool.ERRAND_RUN.id) == true
 
     fun format(tools: List<HangarTool>) = tools.distinct().joinToString(",") { it.id }
 
@@ -237,6 +247,30 @@ object Hangar {
         return tools.toMutableList().apply { add(to, removeAt(from)) }
     }
 
+    /** The tools that moved off the Deck (hangar-dock-v2), and where each lands in an existing Hangar. */
+    val FROM_DECK = listOf(HangarTool.INBOX to 0, HangarTool.HOME to 2, HangarTool.ERRANDS to 3, HangarTool.PROJECTS to 6, HangarTool.MEALS to 7)
+
+    /** Adds the Deck's old tiles to a Hangar set up before they moved, spread through the top so they show in the dock. */
+    fun withDeckTools(tools: List<HangarTool>?): List<HangarTool> {
+        val list = tools.orEmpty().toMutableList()
+        FROM_DECK.forEach { (t, at) -> if (t !in list) list.add(minOf(at, list.size), t) }
+        return list
+    }
+
+    /**
+     * Which order wins when the phone's list meets the vault's (hangar-windows-v1). Windows only reorders, so when
+     * both hold the same tools the vault's order is taken; when the tools differ the phone's list stands (it's
+     * where tools are added and hidden, and where their buzzes are set up).
+     */
+    fun merged(phone: List<HangarTool>, vault: List<HangarTool>?): List<HangarTool> =
+        if (vault != null && vault.toSet() == phone.toSet()) vault else phone
+
+    /** Puts the tool at [from] at [to], the rest shuffling along. */
+    fun moved(tools: List<HangarTool>, from: Int, to: Int): List<HangarTool> {
+        if (from == to || from !in tools.indices || to !in tools.indices) return tools
+        return tools.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
     /** Tools not added yet, ready ones first. */
-    fun available(tools: List<HangarTool>) = HangarTool.values().filter { it !in tools }.sortedBy { !it.ready }
+    fun available(tools: List<HangarTool>) = HangarTool.values().filter { it !in tools && it != HangarTool.ERRAND_RUN }.sortedBy { !it.ready }
 }

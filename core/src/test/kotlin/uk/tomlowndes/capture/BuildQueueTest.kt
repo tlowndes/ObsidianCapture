@@ -83,6 +83,14 @@ class BuildQueueTest {
         assertEquals("- [ ] Next one #task", lines[3])
     }
 
+    @Test fun `a step moves after a sibling with its own children`() {
+        val lines = mutableListOf("- [ ] P #task", "    - [ ] a", "        - [ ] a1", "    - [ ] b", "    - [ ] c", "- [ ] Next")
+        Breakdown.move(lines, "    - [ ] a", "    - [ ] c", true)
+        assertEquals(listOf("- [ ] P #task", "    - [ ] b", "    - [ ] c", "    - [ ] a", "        - [ ] a1", "- [ ] Next"), lines)
+        Breakdown.move(lines, "    - [ ] c", "    - [ ] b", false)
+        assertEquals("    - [ ] c", lines[1])
+    }
+
     // ---- Highlights ----
     @Test fun `own highlights win, then quotable sentences`() {
         val ref = ReadRef("a.md", false)

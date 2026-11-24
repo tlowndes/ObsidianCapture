@@ -64,7 +64,7 @@ class DeckTest {
     @Test fun `cards reorder and switch off`() {
         val l = DeckLayout().let { it.moved(it.order.indexOf(HomeCard.JOBS), 0) }.toggled(HomeCard.WEATHER)
         assertEquals(HomeCard.JOBS, l.order.first())
-        assertEquals(HomeCard.values().size - 1, l.onCount)
+        assertEquals(HomeCard.values().size - QUIET_CARDS.size - QUIET_STILL.size - 1, l.onCount)
         assertEquals(false, HomeCard.WEATHER in l.visible(false))
     }
 
@@ -73,6 +73,45 @@ class DeckTest {
         val json = DeckConfig.withLayout("{\"reminders\":{\"morning\":\"08:00\"}}", l)
         assertEquals(l, DeckConfig.layout(json))
         assertEquals("08:00", org.json.JSONObject(json).getJSONObject("reminders").getString("morning"))
+    }
+
+    @Test fun `a new install starts with the quiet cards off`() {
+        val l = DeckConfig.layout(null)
+        assertEquals(QUIET_CARDS + QUIET_STILL, l.hidden)
+        assertEquals(false, DeckConfig.shouldAskQuietStill(null))
+        assertEquals(true, HomeCard.NEXT_STEP in l.visible(false))
+        assertEquals(false, HomeCard.JOBS in l.visible(false))
+        assertEquals(false, DeckConfig.shouldAskQuiet(null))
+    }
+
+    @Test fun `a saved layout is asked once and keeps what it had`() {
+        val json = "{\"cards\":[\"NEXT_STEP\",\"JOBS\",\"INBOX\"],\"hiddenCards\":[\"INBOX\"]}"
+        val l = DeckConfig.layout(json)
+        assertEquals(true, HomeCard.JOBS in l.visible(false))
+        assertEquals(true, DeckConfig.shouldAskQuiet(json))
+        val quiet = l.quieted(keep = setOf(HomeCard.JOBS))
+        assertEquals(true, HomeCard.JOBS in quiet.visible(false))
+        assertEquals(false, HomeCard.PROJECTS in quiet.visible(false))
+        assertEquals(l.order, quiet.order)
+        val answered = DeckConfig.withQuietAsked(DeckConfig.withLayout(json, quiet))
+        assertEquals(false, DeckConfig.shouldAskQuiet(answered))
+        assertEquals(quiet, DeckConfig.layout(answered))
+    }
+
+    @Test fun `the second round waits for the first, then is asked once`() {
+        val json = "{\"cards\":[\"NEXT_STEP\",\"JOBS\",\"MOOD\"],\"hiddenCards\":[]}"
+        assertEquals(false, DeckConfig.shouldAskQuietStill(json))
+        val first = DeckConfig.withQuietAsked(DeckConfig.withLayout(json, DeckConfig.layout(json).quieted()))
+        assertEquals(true, DeckConfig.shouldAskQuietStill(first))
+        val still = DeckConfig.layout(first).quietedStill(keep = setOf(HomeCard.MOOD))
+        assertEquals(true, HomeCard.MOOD in still.visible(false))
+        assertEquals(false, HomeCard.MEALS in still.visible(false))
+        assertEquals(emptyList<HomeCard>(), still.loudStill - HomeCard.MOOD)
+    }
+
+    @Test fun `a saved layout with every quiet card off is not asked`() {
+        val json = DeckConfig.withLayout(null, DeckLayout())
+        assertEquals(false, DeckConfig.shouldAskQuiet(json))
     }
 
     @Test fun `a missing or broken config gives the default layout`() {

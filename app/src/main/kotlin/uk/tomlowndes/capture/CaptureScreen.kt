@@ -72,7 +72,7 @@ import java.util.Locale
  * note, it waits in [AppPrefs.jarvisFound] until Check and save. Nothing reaches the vault until Save.
  */
 @Composable
-fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan: () -> Unit = {}, onPrintToday: () -> Unit = {}, onOpenSettings: () -> Unit) {
+fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan: () -> Unit = {}, onScanPage: () -> Unit = onScan, onPrintToday: () -> Unit = {}, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var mode by remember { mutableIntStateOf(prefs.captureMode.coerceIn(0, 2)) }
@@ -139,12 +139,17 @@ fun CaptureScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onScan
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Capture", fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, modifier = Modifier.weight(1f))
-            // Scan a notebook page (paper-hybrid) as an icon, tidy-v1.
-            Text("📷", fontSize = 20.sp, modifier = Modifier.clip(CircleShape).clickable(onClick = onScan).padding(8.dp))
         }
         pill()
         Box(Modifier.height(14.dp))
         QuickAdd(vault, prefs, link = mode == 1, snack = snack, onQueued = { refreshWaiting() })
+        // Snap and Scan as two labelled doors instead of a bare 📷 (fold-doors-v1).
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("📷 Snap anything" to onScan, "📓 Scan a page" to onScanPage).forEach { (label, go) ->
+                Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(CircleShape).border(1.dp, Outline, CircleShape).clickable(onClick = go).padding(vertical = 11.dp))
+            }
+        }
         Box(Modifier.height(16.dp))
     }
 }

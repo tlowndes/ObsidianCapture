@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,8 +52,8 @@ import java.util.Locale
 
 /**
  * Plan today and Shut down (build-queue T1). Morning: pick up to 3, with planned minutes against free time from the
- * calendar; Start the day dates them today. Evening: each task still open today goes to Tomorrow, gets a date, or is
- * dropped.
+ * calendar; Start the day dates them today. Evening (evening-week-v1): each task still open today, and anything that
+ * slipped before, goes to Tomorrow, gets a date, or is dropped; then the check-in, then Night Pad if it's in Hangar.
  */
 @Composable
 fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: () -> Unit) {
@@ -66,6 +67,17 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
     val sorted = remember { mutableStateListOf<String>() }
     var dating by remember { mutableStateOf<TaskItem?>(null) }
     val events = remember { CalendarSync.cached(ctx).flatMap { it.events } }
+    val hasClaude = remember { claudeKey(ctx, prefs) != null }
+    var briefing by remember { mutableStateOf(false) }
+    // Shut down in steps (evening-week-v1): 1 what's left, 2 check in, 3 tomorrow (only with Night Pad in Hangar).
+    var step by remember { mutableIntStateOf(1) }
+    var journalDone by remember { mutableStateOf(false) }
+    var slippedOpen by remember { mutableStateOf(false) }
+    val nightPad = remember { Hangar.parse(prefs.hangarTools)?.contains(HangarTool.NIGHT_PAD) == true }
+    LaunchedEffect(vault) {
+        val uri = vault ?: return@LaunchedEffect
+        journalDone = withContext(Dispatchers.IO) { runCatching { Journal.written(appVault(ctx, uri), today) }.getOrDefault(false) }
+    }
 
     LaunchedEffect(vault) {
         val uri = vault ?: return@LaunchedEffect
@@ -97,11 +109,63 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
         }
     }
 
+    @Composable
+    fun LeftRow(t: TaskItem, late: String? = null) {
+        val done = t.raw in sorted
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(TaskViews.plainText(t), fontSize = 13.5.sp, color = if (done) Muted else TextMain,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null)
+                if (late != null && !done) Text(late, fontSize = 11.sp, color = Warn)
+            }
+            if (!done) {
+                SmallPill("Tomorrow") { sorted.add(t.raw); write({ rescheduleTask(t, today.plusDays(1)) }) }
+                SmallPill("Date") { dating = t }
+                SmallPill("✕", Warn) { sorted.add(t.raw); write({ cancelTask(t, today) }) }
+            }
+        }
+    }
+
+    fun finish() { prefs.shutDownOn = today.toString(); markDone { DeckConfig.markShutDown(it, today) } }
+    val steps = listOfNotNull(1, if (journalDone) null else 2, if (nightPad) 3 else null)
+    fun next() { steps.firstOrNull { it > step }?.let { step = it } ?: finish() }
+    fun nextLabel() = when (steps.firstOrNull { it > step }) { 2 -> "Next · check in"; 3 -> "Next · tomorrow"; else -> "Done for today" }
+
+    if (evening && step > 1) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+            StepHeader(steps, step, onBack = { step = steps.lastOrNull { it < step } ?: 1 })
+            if (step == 2) {
+                Box(Modifier.weight(1f, fill = false)) {
+                    val on = events.count { !it.allDay && it.on(today) }
+                    JournalSheet(vault, on, snack) { journalDone = true; next() }
+                }
+                Text("Skip check-in", fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().clickable { next() }.padding(vertical = 14.dp))
+            } else {
+                Box(Modifier.weight(1f)) { NightPadScreen(vault, prefs, snack) { finish() } }
+                Text("Done for today", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(CircleShape).background(Primary).clickable { finish() }.padding(vertical = 13.dp))
+            }
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
             Text(if (evening) "Shut down" else "Plan today", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (evening && steps.size > 1) Text("1 of ${steps.size}", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(end = 6.dp))
+            // Morning briefing lives here now (care-welcome-v1), not as its own Deck card. Needs Claude on.
+            if (!evening && hasClaude) Text(if (briefing) "Hide briefing" else "▶ Briefing", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Primary,
+                modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { briefing = !briefing }.padding(horizontal = 12.dp, vertical = 6.dp))
         }
+        if (!evening && briefing) tasks?.let { all ->
+            BriefingCard(vault, prefs, hasWeather = false) {
+                Briefing.prompt(Slip.build(today, all, events, null, SlipOptions(), today), DayPlan.candidates(all, today).firstOrNull()?.let { TaskViews.plainText(it) }, emptyList())
+            }
+        }
+        if (evening && steps.size > 1) StepBar(steps, step)
         Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AppChip(!evening, { evening = false }, { Text("☀️ Plan") })
             AppChip(evening, { evening = true }, { Text("🌙 Shut down") })
@@ -156,28 +220,27 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
                 fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 10.dp, bottom = 16.dp))
         } else {
             val left = DayPlan.leftToday(all, today)
+            // What slipped before today: overdue tasks that aren't bills (Triage's job, folded in here).
+            val slipped = Triage.candidates(all, today).filter { it.due != null && it.raw !in left.map { l -> l.raw } }
+            GroupLabel("What's left today")
             if (left.isEmpty()) Text("Nothing left for today. Nice one.", fontSize = 14.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp))
-            else ListCard {
-                left.forEachIndexed { i, t ->
-                    if (i > 0) HorizontalDivider(color = Outline)
-                    val done = t.raw in sorted
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(TaskViews.plainText(t), fontSize = 13.5.sp, color = if (done) Muted else TextMain, modifier = Modifier.weight(1f),
-                            maxLines = 2, overflow = TextOverflow.Ellipsis, textDecoration = if (done) TextDecoration.LineThrough else null)
-                        if (!done) {
-                            SmallPill("Tomorrow") { sorted.add(t.raw); write({ rescheduleTask(t, today.plusDays(1)) }) }
-                            SmallPill("Date") { dating = t }
-                            SmallPill("✕", Warn) { sorted.add(t.raw); write({ cancelTask(t, today) }) }
-                        }
+            else ListCard(Modifier.padding(top = 6.dp)) { left.forEachIndexed { i, t -> if (i > 0) HorizontalDivider(color = Outline); LeftRow(t) } }
+            if (slipped.isNotEmpty()) {
+                Box(Modifier.padding(top = 14.dp)) { GroupLabel("Slipped earlier · ${slipped.size}") }
+                ListCard(Modifier.padding(top = 6.dp)) {
+                    val shown = if (slippedOpen) slipped else slipped.take(1)
+                    shown.forEachIndexed { i, t -> if (i > 0) HorizontalDivider(color = Outline); LeftRow(t, Triage.label(t, today)) }
+                    if (!slippedOpen && slipped.size > 1) {
+                        HorizontalDivider(color = Outline)
+                        Text("+ ${slipped.size - 1} more ›", fontSize = 13.sp, color = Muted,
+                            modifier = Modifier.fillMaxWidth().clickable { slippedOpen = true }.padding(horizontal = 14.dp, vertical = 10.dp))
                     }
                 }
             }
             Text(
-                "Done for today", color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 14.dp, bottom = 16.dp).fillMaxWidth().clip(CircleShape).background(Primary).clickable {
-                    prefs.shutDownOn = today.toString(); markDone { DeckConfig.markShutDown(it, today) }
-                }.padding(vertical = 13.dp)
+                nextLabel(), color = OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 14.dp, bottom = 16.dp).fillMaxWidth().clip(CircleShape).background(Primary).clickable { next() }
+                    .padding(vertical = 13.dp)
             )
         }
     }
@@ -185,6 +248,25 @@ fun PlanScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: (
     dating?.let { t ->
         PickDateDialog(today.plusDays(1), onPick = { d -> dating = null; sorted.add(t.raw); write({ rescheduleTask(t, d) }) }, onDismiss = { dating = null })
     }
+}
+
+@Composable
+private fun StepBar(steps: List<Int>, step: Int) {
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        steps.forEach { s ->
+            Box(Modifier.weight(1f).height(5.dp).clip(CircleShape).background(when { s < step -> Green; s == step -> Primary; else -> Outline }))
+        }
+    }
+}
+
+@Composable
+private fun StepHeader(steps: List<Int>, step: Int, onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
+        Text("Shut down", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text("${steps.indexOf(step) + 1} of ${steps.size}", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(end = 6.dp))
+    }
+    StepBar(steps, step)
 }
 
 @Composable

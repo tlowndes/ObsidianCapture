@@ -48,6 +48,9 @@ internal fun EditTaskSheet(
     onBreakDown: (() -> Unit)? = null,
     /** Ticket Rail: prints this task as a ticket for the rail (only when Ticket Rail is in Hangar). */
     onPrintTicket: (() -> Unit)? = null,
+    /** Sub-tasks list (four-fixes-v1): edits write straight to the note. */
+    steps: StepOps? = null,
+    onSnack: (String) -> Unit = {},
 ) {
     var text by remember(t.raw) { mutableStateOf(t.text) }
     var due by remember(t.raw) { mutableStateOf(t.due) }
@@ -96,6 +99,7 @@ internal fun EditTaskSheet(
             RepeatPicker(repeat, due, inlineCustom = true) { repeat = it }
             TagRow(tags, Tags.inText(text)) { tag -> text = Tags.toggle(text, tag) }
             PlaceRow(vault, text, { text = it })
+            if (steps != null) SubtaskEditor(steps, onSnack)
             if (onBreakDown != null) Text(
                 "🌶 Break it down", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).background(PrimaryTint)

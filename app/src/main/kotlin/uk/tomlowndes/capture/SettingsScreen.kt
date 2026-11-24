@@ -85,7 +85,7 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 @Composable
-fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit) {
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit, onOpenPrint: () -> Unit = {}) {
     val ctx = LocalContext.current
     var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
@@ -231,8 +231,11 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
             { QuietRow("✅", "Habits", "›", onClick = onOpenHabits) },
             { QuietRow("🗓", "Weekly review", "›", onClick = onOpenWeekly) },
         ))
-        HealthSettings(prefs, vault)
-        InboxSettings(vault)
+        // Optional systems only while their cards are on (care-welcome-v1).
+        cardsOn?.let { l ->
+            if (HomeCard.HABITS !in l.hidden) HealthSettings(prefs, vault)
+            if (HomeCard.INBOX !in l.hidden) InboxSettings(vault)
+        }
 
         SectionLabel("Tasks")
         var inline by remember { mutableStateOf(prefs.subtasksInline) }
@@ -270,6 +273,14 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
                     Text("›", fontSize = 18.sp, color = Muted)
                 }
             }
+            HorizontalDivider(color = Outline)
+            // Fold the extra doors (fold-doors-v1): put the folded widgets back in the picker.
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                var allW by remember { mutableStateOf(prefs.allWidgets) }
+                SettingRow("Show every widget", "Next step, Read It Later, Chores and the rest. Ones on your home screen always stay.") {
+                    AppSwitch(allW) { allW = it; prefs.allWidgets = it; Thread { WidgetFold.apply(ctx.applicationContext, prefs) }.start() }
+                }
+            }
         }
 
         SectionLabel("Assistant")
@@ -282,6 +293,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         val newer = latest != null && Updater.isNewer(latest, installed)
         RowsCard(listOf(
             { QuietRow("🗄", "Folders", "projects, images, the notes the app uses ›", onClick = { page = SettingsPage.VAULT }) },
+            { QuietRow("🧾", "Printer", (SlipPrinter.saved(ctx)?.name ?: "Not paired") + " ›", onClick = onOpenPrint) },
             { QuietRow("🛰", "Server", "Oracle, Tailscale, and sync fallback ›", onClick = { page = SettingsPage.ADVANCED }) },
             { QuietRow("📟", "Piholegotchi", (if (prefs.piholegotchiAddress.isNotBlank()) "on" else "off") + " ›", onClick = { page = SettingsPage.PIHOLEGOTCHI }) },
             { QuietRow("⬇", "Updates", (if (newer) "$latest available" else "$installed · up to date") + " ›", if (newer) Green else Muted, onClick = { page = SettingsPage.UPDATES }) },

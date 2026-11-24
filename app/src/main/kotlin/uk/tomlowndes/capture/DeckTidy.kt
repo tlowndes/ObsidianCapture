@@ -30,10 +30,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -264,23 +266,25 @@ private fun NowBadge() {
     )
 }
 
-/** A small tile in the More row. */
+/** A More tile, drawn like Hangar's grid tiles (same icon size, label, border and corner) so the two match. */
 @Composable
-internal fun RowScope.Tile(icon: String, title: String, sub: String?, dot: Boolean = false, onClick: () -> Unit) {
-    Column(
-        Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick).padding(horizontal = 11.dp, vertical = 10.dp)
-    ) {
-        Text(icon, fontSize = 17.sp)
-        Text(title, fontSize = 12.5.sp, modifier = Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (sub != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(sub, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (dot) Box(Modifier.padding(start = 4.dp).size(6.dp).clip(CircleShape).background(Amber))
+internal fun RowScope.Tile(icon: String, title: String, sub: String?, dot: Boolean = false, colour: Color = TextMain, onClick: () -> Unit) {
+    Box(Modifier.weight(1f)) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(icon, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics { })
+            Text(title, color = colour, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2,
+                textAlign = TextAlign.Center, modifier = Modifier.padding(top = 2.dp))
+            Text(sub ?: " ", color = Muted, fontSize = 11.sp, maxLines = 1, textAlign = TextAlign.Center)
         }
+        if (dot) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(Green))
     }
 }
 
-/** Up to three tiles side by side; empty slots keep the others the same width. */
+/** Up to four tiles side by side, as Hangar's grid; empty slots keep the others the same width. */
 @Composable
 internal fun TileRow(content: @Composable RowScope.() -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)

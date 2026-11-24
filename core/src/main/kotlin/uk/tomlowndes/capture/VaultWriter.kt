@@ -210,6 +210,11 @@ class VaultWriter(
         edit(noteOf(t)) { Breakdown.insert(it, t.raw, steps) }
     }
 
+    /** Edit task sub-list: moves the sub-task [step] before or [after] its sibling [target], under [parent]. */
+    fun moveSubtask(parent: TaskItem, step: TaskItem, target: TaskItem, after: Boolean) {
+        edit(noteOf(parent)) { Breakdown.move(it, step.raw, target.raw, after) }
+    }
+
     /** Sets (or clears) the task's `⏱` estimate in place. Returns the new line. */
     fun setEstimate(t: TaskItem, minutes: Int?): String {
         val updated = TaskRules.withMinutes(t.raw, minutes)

@@ -9,6 +9,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -34,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,6 +44,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +82,11 @@ internal fun HangarTool.colour(): Color = when (this) {
     HangarTool.ERRAND_RUN -> Orange
     HangarTool.TICKET_RAIL -> Paper
     HangarTool.SENSORY -> Ember
+    HangarTool.INBOX -> Primary
+    HangarTool.HOME -> Coral
+    HangarTool.PROJECTS -> Lime
+    HangarTool.ERRANDS -> Orange
+    HangarTool.MEALS -> Sand
 }
 
 internal val GreenTint = Color(0xFF0D2A1D)
@@ -79,6 +97,20 @@ private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
 /** What the Day to day tiles show (hangar-phase3): meds come with how many are left. */
 private class DayStatus(val cools: List<CoolItem>, val meds: List<Pair<Med, Int>>, val quick: Int, val reads: Int, val stops: List<RunStop>)
+
+/** What the Around home tiles show (hangar-dock-v2): the Deck's old Inbox card and tiles. */
+internal class AroundStatus(val mail: Int, val chores: Int, val project: String?, val errands: Int, val planned: Int)
+
+internal fun loadAround(ctx: Context, uri: Uri, prefs: AppPrefs, tools: List<HangarTool>): AroundStatus {
+    val today = LocalDate.now()
+    val home = if (HangarTool.ERRANDS in tools || HangarTool.MEALS in tools) runCatching { loadHomeBits(ctx, uri, prefs, today) }.getOrNull() else null
+    return AroundStatus(
+        mail = if (HangarTool.INBOX in tools) runCatching { loadInbox(ctx, uri).open(today).size }.getOrDefault(0) else 0,
+        chores = if (HangarTool.HOME in tools) runCatching { Chores.due(Chores.load(appVault(ctx, uri), today), today).size }.getOrDefault(0) else 0,
+        project = if (HangarTool.PROJECTS in tools) runCatching { IdeaStore(ctx, uri, prefs).list().firstOrNull { it.status == "active" }?.title }.getOrNull() else null,
+        errands = home?.errands ?: 0, planned = home?.planned ?: 0,
+    )
+}
 
 /** A Right now card from a Day to day tool: a wait that's up, or a med to reorder. */
 private data class DayNudge(val tool: HangarTool, val title: String, val sub: String, val button: String)
@@ -97,15 +129,21 @@ private fun dayNudge(d: DayStatus?, list: List<HangarTool>): DayNudge? {
 }
 
 /**
- * Hangar (hangar-phase1): the hub behind the one Hangar icon on Deck. The most urgent action sits on top, so
+ * Hangar (hangar-phase1): the hub behind the Hangar dock (hangar-dock-v1). The most urgent action sits on top, so
  * it can be done without opening a tool; the tools you've added are listed underneath with their live status.
  */
 @Composable
-fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen: (HangarTool) -> Unit, onBack: () -> Unit) {
+fun HangarScreen(
+    vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen: (HangarTool) -> Unit,
+    inSheet: Boolean = false, needs: Set<HangarTool> = emptySet(), onBack: () -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var tools by remember { mutableStateOf(Hangar.parse(prefs.hangarTools)) }
+    // Errand Run moved to the Errands list (fold-doors-v1): say so once, then forget it.
+    var hadRun by remember { mutableStateOf(Hangar.hadRun(prefs.hangarTools)) }
+    fun forgetRun() { hadRun = false; prefs.hangarTools = Hangar.format(Hangar.parse(prefs.hangarTools).orEmpty()) }
     var editing by remember { mutableStateOf(false) }
     var did by remember { mutableStateOf<List<DidStatus>?>(null) }
     var trip by remember { mutableStateOf<Trip?>(null) }
@@ -115,10 +153,15 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
     var night by remember { mutableStateOf<Pair<Trip, List<NightItem>>?>(null) }
     var finding by remember { mutableStateOf<FindStatus?>(null) }
     var day by remember { mutableStateOf<DayStatus?>(null) }
+    var around by remember { mutableStateOf<AroundStatus?>(null) }
+    /** The order before the last drag, for Undo (hangar-dock-v2). */
+    var undoOrder by remember { mutableStateOf<List<HangarTool>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
 
     fun save(t: List<HangarTool>) {
         tools = t; prefs.hangarTools = Hangar.format(t)
+        // Shared with Windows through the vault (hangar-windows-v1).
+        vault?.let { uri -> scope.launch(Dispatchers.IO) { runCatching { DeckConfig.saveHangar(appVault(ctx, uri), t) } } }
         // Heads Up only buzzes while it's in Hangar.
         val heads = HangarTool.HEADS_UP in t
         if (heads != prefs.headsOn) { prefs.headsOn = heads; HeadsAlarms.keepPlanning(ctx, heads); HeadsAlarms.changed(ctx) }
@@ -138,7 +181,7 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
             trip = withContext(Dispatchers.IO) { runCatching { TripLoader.load(ctx, appVault(ctx, uri)) }.getOrNull() }
         if (tools?.contains(HangarTool.NIGHT_PAD) == true)
             night = withContext(Dispatchers.IO) {
-                runCatching { val v = appVault(ctx, uri); NightLoader.load(ctx, v).let { t -> t to NightPad.items(LaunchPad.load(v), t) } }.getOrNull()
+                runCatching { val v = appVault(ctx, uri); NightLoader.load(ctx, v).let { t -> t to NightPad.items(Kits.loadAll(v), t) } }.getOrNull()
             }
         if (tools?.any { it.group == "Finding things" } == true)
             finding = withContext(Dispatchers.IO) {
@@ -174,16 +217,19 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                     )
                 }.getOrNull()
             }
+        if (tools?.any { it.group == "Around home" } == true)
+            around = withContext(Dispatchers.IO) { runCatching { loadAround(ctx, uri, prefs, tools.orEmpty()) }.getOrNull() }
         if (tools?.contains(HangarTool.TICKET_RAIL) == true)
             rail = withContext(Dispatchers.IO) { runCatching { RailStatus.load(ctx, uri) }.getOrNull() }
         if (tools?.contains(HangarTool.SENSORY) == true)
             sensory = withContext(Dispatchers.IO) { runCatching { Sensory.load(appVault(ctx, uri)) }.getOrNull() }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (editing) editing = false else onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
-            Text(if (editing) "Edit Hangar" else "Hangar", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+    // In the pull-up sheet (hangar-menu-v1) the sheet scrolls and closes itself, so there's no back arrow.
+    Column((if (inSheet) Modifier.fillMaxWidth() else Modifier.fillMaxSize()).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = if (inSheet) 0.dp else 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!inSheet || editing) IconButton(onClick = { if (editing) editing = false else onBack() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
+            Text(if (editing) "Edit Hangar" else "⌂ Hangar", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(start = if (inSheet && !editing) 4.dp else 0.dp))
             if (tools != null) Text(if (editing) "Done" else "Edit", color = Primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(CircleShape).clickable { editing = !editing }.padding(horizontal = 12.dp, vertical = 8.dp))
         }
@@ -225,13 +271,44 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
                     night = tonight?.takeIf { due == null && nudge == null }, onNight = { onOpen(HangarTool.NIGHT_PAD) },
                     ret = due, onReturn = { onOpen(HangarTool.RETURN_RADAR) },
                     day = nudge, onDay = { onOpen(it) })
+                // In the sheet: one grid of tiles in your order (the first five are the dock), then Add and Edit.
+                // Long-press a tile and drag it to rearrange (hangar-dock-v2).
+                if (inSheet) {
+                    val more = Hangar.available(list).isNotEmpty()
+                    if (hadRun) Text("⇢ Errand Run moved to Errands. Tap to go there.", fontSize = 13.sp, color = Primary,
+                        modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PrimaryTint)
+                            .clickable { forgetRun(); onOpen(HangarTool.ERRAND_RUN) }.padding(horizontal = 12.dp, vertical = 10.dp))
+                    undoOrder?.let { before ->
+                        LaunchedEffect(before) { kotlinx.coroutines.delay(5000); undoOrder = null }
+                        Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface1)
+                            .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Order saved · dock updated", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text("Undo", color = Primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clip(CircleShape).clickable { save(before); undoOrder = null }.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
+                    }
+                    Box(Modifier.padding(top = 12.dp, bottom = 24.dp)) {
+                        HangarGrid(list, needs, statusFor = { statusOf(it, did, trip, prefs, rail, night, finding, day, sensory, around) },
+                            spare = { k, mod ->
+                                if (more && k == 0) SpareTile("＋", "Add tool", mod) { editing = true }
+                                else SpareTile("✎", "Edit", mod) { editing = true }
+                            }, spareCount = if (more) 2 else 1,
+                            onMoved = { from, to ->
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                undoOrder = list
+                                save(list.toMutableList().apply { add(to, removeAt(from)) })
+                            },
+                            onOpen = { t -> if (t.ready) onOpen(t) })
+                    }
+                    return@Column
+                }
                 // Getting out, Finding things (hangar-phase2), Day to day (hangar-phase3), then At the desk (ticket-rail-v1).
-                listOf("Getting out", "Finding things", "Day to day", "At the desk").forEachIndexed { gi, g ->
+                listOf("Getting out", "Finding things", "Day to day", "At the desk", "Around home").forEachIndexed { gi, g ->
                     val rows = list.filter { it.group == g }
                     if (rows.isNotEmpty()) {
                         Box(Modifier.padding(top = if (gi == 0) 0.dp else 16.dp)) { GroupLabel(g) }
                         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            rows.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night, finding, day, sensory)) { if (t.ready) onOpen(t) } }
+                            rows.forEach { t -> ToolTile(t, statusOf(t, did, trip, prefs, rail, night, finding, day, sensory, around)) { if (t.ready) onOpen(t) } }
                         }
                     }
                 }
@@ -247,9 +324,15 @@ fun HangarScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onOpen:
 private fun statusOf(
     t: HangarTool, did: List<DidStatus>?, trip: Trip?, prefs: AppPrefs, rail: RailStatus? = null,
     night: Pair<Trip, List<NightItem>>? = null, finding: FindStatus? = null, day: DayStatus? = null,
-    sensory: List<SensoryChange>? = null,
+    sensory: List<SensoryChange>? = null, around: AroundStatus? = null,
 ): Pair<String, String> = when {
     !t.ready -> "Coming in the next update" to "soon"
+    t.group == "Around home" && around == null -> "Loading…" to ""
+    t == HangarTool.INBOX -> (if (around!!.mail > 0) "${around.mail} need you" else "All caught up") to ""
+    t == HangarTool.HOME -> (if (around!!.chores > 0) "${around.chores} need doing" else "All fresh") to ""
+    t == HangarTool.PROJECTS -> (around!!.project ?: "No active project") to ""
+    t == HangarTool.ERRANDS -> (if (around!!.errands > 0) "${around.errands} to do" else "None") to ""
+    t == HangarTool.MEALS -> "${around!!.planned} of 7 planned" to ""
     t == HangarTool.SENSORY && sensory == null -> "Loading…" to ""
     t == HangarTool.SENSORY -> sensoryLine(sensory!!)
     t.group == "Day to day" && day == null -> "Loading…" to ""
@@ -429,6 +512,40 @@ private fun ToolTile(t: HangarTool, status: Pair<String, String>, onClick: () ->
     }
 }
 
+/** A tool as a square-ish tile in the pull-up sheet: icon, name, and its short status. */
+@Composable
+private fun GridTile(t: HangarTool, status: Pair<String, String>, modifier: Modifier, dot: Boolean = false, edge: Color = Outline, onClick: () -> Unit) {
+    val c = if (t.ready) t.colour() else Muted
+    Box(modifier) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1).border(if (edge == Outline) 1.dp else 2.dp, edge, RoundedCornerShape(14.dp))
+            .clickable(enabled = t.ready, onClick = onClick).padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(t.icon, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics { })
+        // Two lines so a long name wraps at large text instead of clipping (care-welcome-v1).
+        Text(t.title, color = c, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 2.dp))
+        Text(status.second.ifEmpty { status.first }, color = Muted, fontSize = 11.sp, maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+    if (dot) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(Green))
+    }
+}
+
+@Composable
+private fun SpareTile(icon: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, Outline, RoundedCornerShape(14.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(icon, fontSize = 20.sp, color = Muted, modifier = Modifier.clearAndSetSemantics { })
+        Text(label, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+        Text(" ", fontSize = 11.sp, modifier = Modifier.clearAndSetSemantics { })
+    }
+}
+
 @Composable
 private fun FirstRun(onAdd: (HangarTool) -> Unit) {
     Text("Small tools for getting out the door. Pick the ones you want.", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 4.dp, bottom = 14.dp))
@@ -458,8 +575,8 @@ private fun EditList(ctx: Context, list: List<HangarTool>, onSave: (List<HangarT
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         list.forEachIndexed { i, t ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface1).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("↑", color = if (i > 0) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable(enabled = i > 0) { onSave(Hangar.move(list, i, -1)) }.padding(8.dp))
-                Text("↓", color = if (i < list.lastIndex) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.clip(CircleShape).clickable(enabled = i < list.lastIndex) { onSave(Hangar.move(list, i, 1)) }.padding(8.dp))
+                Text("↑", color = if (i > 0) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.semantics { contentDescription = "Move ${t.title} up" }.clip(CircleShape).clickable(enabled = i > 0) { onSave(Hangar.move(list, i, -1)) }.padding(8.dp))
+                Text("↓", color = if (i < list.lastIndex) TextMain else Outline, fontSize = 18.sp, modifier = Modifier.semantics { contentDescription = "Move ${t.title} down" }.clip(CircleShape).clickable(enabled = i < list.lastIndex) { onSave(Hangar.move(list, i, 1)) }.padding(8.dp))
                 Text(t.title, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 4.dp))
                 if (t.ready) Text("Pin", color = Primary, fontSize = 13.sp, modifier = Modifier.clip(CircleShape).clickable { pinShortcut(ctx, t) }.padding(8.dp))
                 Text("Hide", color = Muted, fontSize = 13.sp, modifier = Modifier.clip(CircleShape).clickable { onSave(Hangar.remove(list, t)) }.padding(8.dp))
@@ -497,6 +614,61 @@ internal data class RailStatus(val onRail: Int, val cleared: Int, val toPrint: I
         fun load(ctx: Context, vault: Uri, today: LocalDate = LocalDate.now()): RailStatus {
             val l = VaultWriter(ctx, vault).listTaskLists()
             return RailStatus(TicketRail.onRail(l.open).size, TicketRail.clearedOn(l.done, today).size, TicketRail.morningRun(l.open, today).size)
+        }
+    }
+}
+
+/**
+ * The sheet's tiles in your order (hangar-dock-v2). Long-press a tile to lift it, drag it over another tile and
+ * let go to put it there; the tile under your finger gets a blue edge, the rest dim.
+ */
+@Composable
+private fun HangarGrid(
+    list: List<HangarTool>, needs: Set<HangarTool>, statusFor: (HangarTool) -> Pair<String, String>,
+    spare: @Composable (Int, Modifier) -> Unit, spareCount: Int,
+    onMoved: (Int, Int) -> Unit, onOpen: (HangarTool) -> Unit,
+) {
+    val bounds = remember { mutableStateMapOf<Int, Rect>() }
+    var dragging by remember { mutableStateOf<Int?>(null) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var target by remember { mutableStateOf<Int?>(null) }
+    fun reset() { dragging = null; target = null; offset = Offset.Zero }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        (0 until list.size + spareCount).chunked(3).forEach { row ->
+            // The lifted tile's row draws on top, so the tile can pass over the rows below it.
+            Row(Modifier.zIndex(if (dragging?.let { it in row } == true) 1f else 0f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { i ->
+                    if (i >= list.size) { spare(i - list.size, Modifier.weight(1f)); return@forEach }
+                    val t = list[i]
+                    val lifted = dragging == i
+                    GridTile(t, statusFor(t),
+                        Modifier.weight(1f)
+                            .onGloballyPositioned { bounds[i] = it.boundsInRoot() }
+                            .zIndex(if (lifted) 1f else 0f)
+                            .graphicsLayer {
+                                if (lifted) { translationX = offset.x; translationY = offset.y; scaleX = 1.06f; scaleY = 1.06f; rotationZ = -2f }
+                                else if (dragging != null && target != i) alpha = 0.45f
+                            }
+                            .pointerInput(t, list.size) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { dragging = i; target = i; offset = Offset.Zero },
+                                    onDrag = drag@{ change, d ->
+                                        change.consume()
+                                        offset += d
+                                        val at = (bounds[i] ?: return@drag).center + offset
+                                        bounds.entries.firstOrNull { (k, r) -> k < list.size && r.contains(at) }?.let { target = it.key }
+                                    },
+                                    onDragEnd = { val from = dragging; val to = target; reset(); if (from != null && to != null && from != to) onMoved(from, to) },
+                                    onDragCancel = { reset() },
+                                )
+                            }
+                            .semantics { contentDescription = t.title + if (t in needs) ", needs you" else "" },
+                        dot = t in needs,
+                        edge = if (dragging != null && !lifted && target == i) Primary else Outline,
+                    ) { onOpen(t) }
+                }
+                repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,7 +49,10 @@ import kotlinx.coroutines.withContext
 
 /** Stuck? Pick one.: one suggestion big with Start and Another, the rest of that length underneath. */
 @Composable
-fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onStart: (StuckItem) -> Unit) {
+fun StuckScreen(
+    vault: Uri?, snack: SnackbarHostState, prefs: AppPrefs? = null, onFocus: (TaskItem, Int) -> Unit = { _, _ -> },
+    onBack: () -> Unit, onStart: (StuckItem) -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf<Map<StuckLength, List<StuckItem>>>(emptyMap()) }
@@ -62,6 +66,21 @@ fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onSta
     }
     LaunchedEffect(vault) { load() }
 
+    // Talk me through it (care-welcome-v1): the task that has waited 3+ days, here where you go when stuck.
+    val today = java.time.LocalDate.now()
+    var waiting by remember { mutableStateOf<TaskItem?>(null) }
+    var talking by remember { mutableStateOf<TaskItem?>(null) }
+    var snoozed by remember { mutableStateOf(prefs?.talkSnoozed) }
+    LaunchedEffect(vault, snoozed) {
+        val uri = vault ?: return@LaunchedEffect
+        val p = prefs ?: return@LaunchedEffect
+        if (claudeKey(ctx, p) == null) return@LaunchedEffect
+        waiting = withContext(Dispatchers.IO) {
+            runCatching { TalkThrough.stuck(VaultWriter(ctx, uri).listTasks(), today, TalkThrough.readSnoozed(snoozed)) }.getOrNull()
+        }
+    }
+    fun snooze(t: TaskItem) { val p = prefs ?: return; snoozed = TalkThrough.snooze(snoozed, t, today); p.talkSnoozed = snoozed; waiting = null }
+
     val items = menu[length].orEmpty()
     val big = items.getOrNull(pick % items.size.coerceAtLeast(1))
 
@@ -73,6 +92,7 @@ fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onSta
         Row(Modifier.padding(top = 8.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StuckLength.values().forEach { l -> AppChip(l == length, { length = l; pick = 0 }, { Text(l.title) }) }
         }
+        waiting?.let { t -> Box(Modifier.padding(bottom = 12.dp)) { StuckNudge(t, TalkThrough.waited(t, today) ?: 3, onTalk = { talking = t }) { snooze(t) } } }
         if (big != null) {
             ListCard(border = NextBorder, bg = NextBg) {
                 Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -104,6 +124,8 @@ fun StuckScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit, onSta
         }
         Text("＋ Add", color = Primary, fontSize = 14.sp, modifier = Modifier.clickable { adding = true }.padding(vertical = 10.dp))
     }
+
+    talking?.let { t -> prefs?.let { p -> TalkSheet(t, vault, p, snack, onFocus = onFocus) { talking = null; snooze(t) } } }
 
     if (adding) {
         var emoji by remember { mutableStateOf("✨") }

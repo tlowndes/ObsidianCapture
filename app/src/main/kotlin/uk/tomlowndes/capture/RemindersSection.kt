@@ -40,7 +40,7 @@ private fun TimeChip(minutes: Int, onPick: (Int) -> Unit) {
     )
 }
 
-/** Settings › Reminders: morning briefing, evening wrap-up, task due alerts and the weekly review. */
+/** Settings › Reminders: the morning and evening nudges, the weekly review, and how many Heads Up warnings. */
 @Composable
 internal fun RemindersSection(prefs: AppPrefs) {
     val ctx = LocalContext.current
@@ -48,9 +48,10 @@ internal fun RemindersSection(prefs: AppPrefs) {
     var eveningOn by remember { mutableStateOf(prefs.eveningOn) }
     var morning by remember { mutableStateOf(prefs.morningMinute) }
     var evening by remember { mutableStateOf(prefs.eveningMinute) }
-    var dueOn by remember { mutableStateOf(prefs.dueOn) }
-    var due by remember { mutableStateOf(prefs.dueMinute) }
+    val dueOn = false // folded into the morning nudge (quiet-day-v1)
     var weeklyOn by remember { mutableStateOf(prefs.weeklyOn) }
+    var three by remember { mutableStateOf(HeadsUp.parseStages(prefs.headsStages).size > 1) }
+    fun replanHeads() { Thread { runCatching { HeadsAlarms.reschedule(ctx.applicationContext) } }.start() }
     var weekly by remember { mutableStateOf(prefs.weeklyMinute) }
 
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.scheduleAll(ctx, prefs) }
@@ -62,28 +63,28 @@ internal fun RemindersSection(prefs: AppPrefs) {
 
     Column(Modifier.fillMaxWidth()) {
         GroupLabel("Reminders")
-        SettingRow("Morning briefing") {
+        SettingRow("Morning nudge", "Plan, due today and first event") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TimeChip(morning) { morning = it; prefs.morningMinute = it; apply() }
                 AppSwitch(morningOn) { morningOn = it; prefs.morningOn = it; apply() }
             }
         }
-        SettingRow("Evening wrap-up") {
+        SettingRow("Evening nudge", "Opens Shut down") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TimeChip(evening) { evening = it; prefs.eveningMinute = it; apply() }
                 AppSwitch(eveningOn) { eveningOn = it; prefs.eveningOn = it; apply() }
-            }
-        }
-        SettingRow("Task due alerts") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimeChip(due) { due = it; prefs.dueMinute = it; apply() }
-                AppSwitch(dueOn) { dueOn = it; prefs.dueOn = it; apply() }
             }
         }
         SettingRow("Weekly review", "Sunday") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TimeChip(weekly) { weekly = it; prefs.weeklyMinute = it; apply() }
                 AppSwitch(weeklyOn) { weeklyOn = it; prefs.weeklyOn = it; apply() }
+            }
+        }
+        SettingRow("Heads Up warnings", if (three) "10, 5 and 1 min before" else "10 min before") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppChip(!three, { three = false; prefs.headsStages = HeadsUp.formatStages(HeadsUp.DEFAULT); replanHeads() }, { Text("One") })
+                AppChip(three, { three = true; prefs.headsStages = HeadsUp.formatStages(HeadsUp.THREE); replanHeads() }, { Text("Three") })
             }
         }
     }
