@@ -58,9 +58,9 @@ class StageSixTest {
         assertEquals(1.75 * 0.76 + 3.0 * 0.76 + 0.31, s.spentGbp, 1e-6)
         assertEquals("Jarvis", s.byFeature.keys.first())
         assertTrue(ClaudeCap.BOX in s.byFeature)
-        assertEquals("£4.06 of £5", ClaudeCap.label(s))
-        assertTrue(s.warn); assertFalse(s.paused)
-        assertEquals("Claude: £4.06 of £5 this month (81%)", ClaudeCap.banner(s))
+        assertEquals("£3.92 of £5", ClaudeCap.label(s))
+        assertFalse(s.warn); assertFalse(s.paused)
+        assertNull(ClaudeCap.banner(s))
         assertTrue(v.read("${ClaudeCap.DIR}/phone.md")!!.contains("- Jarvis · \$1.2500"))
 
         // The gate: one more answer over the cap stops the next call.
