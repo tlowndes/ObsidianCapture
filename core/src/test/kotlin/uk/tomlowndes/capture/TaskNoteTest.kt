@@ -220,8 +220,7 @@ class TaskNoteTest {
         val c = TaskNote.complete(ls, shelves, TaskNote.completion(shelves, today, true))
         TaskNote.untick(ls, c.doneLine, null)
         val open = TaskNote.list(ls)
-        assertEquals(listOf("Sort shelves in garage", "Clear a walkway", "Wipe the shelf"), open.takeLast(3).map { it.text })
-        assertEquals(s1, open[open.size - 2].raw)
+        assertEquals(listOf(shelves, s1, s2), open.takeLast(3).map { it.raw })
         assertTrue(TaskNote.listDone(ls).none { it.text == "Clear a walkway" })
     }
 
