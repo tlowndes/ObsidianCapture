@@ -316,7 +316,8 @@ const val TASK_WALK_TTL_MS = 120_000L
 
 fun VaultWriter(ctx: Context, tree: Uri) =
     VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json"), { Widgets.tasksChanged(ctx) }, TASK_WALK_TTL_MS,
-        guardDir = if (AppPrefs(ctx).quickGuard) File(ctx.filesDir, "quick-task-copies") else null)
+        guardDir = if (AppPrefs(ctx).quickGuard) File(ctx.filesDir, "quick-task-copies") else null,
+        printFile = File(ctx.filesDir, "printed-tickets.json"))
 
 fun ReadStore(ctx: Context, tree: Uri) = ReadStore(appVault(ctx, tree)) { Widgets.readChanged(ctx) }
 

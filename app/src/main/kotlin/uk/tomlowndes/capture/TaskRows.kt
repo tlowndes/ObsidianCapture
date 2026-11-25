@@ -94,6 +94,10 @@ internal fun TaskLine(
                 Deck.minutes(t)?.let { m ->
                     withStyle(SpanStyle(color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) { append(" ${TaskRules.minutesLabel(m)}") }
                 }
+                // printed-marks-v1: a printed task carries its paper tag.
+                printedTag(t)?.let { tag ->
+                    withStyle(SpanStyle(color = PaperInk, background = Paper, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)) { append(" $tag ") }
+                }
             },
             fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             color = if (faded) Muted else TextMain,
@@ -156,10 +160,12 @@ internal fun TaskRow(
     select: Boolean? = null, onLongPress: (() -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit
 ) {
+    val printed = printedTag(t)
     val side = if (TaskViews.isWork(t)) WorkEdge else PersonalEdge
     // Select mode (multiselect-swipes-v1): a round select mark replaces the tick box and the whole row toggles.
     val bg by animateColorAsState(if (select == true) SelectTint else if (ticked) TaskTint else Color.Transparent, tween(250), label = "rowBg")
-    val edge by animateColorAsState(if (ticked) Green else side, tween(250), label = "rowEdge")
+    // A printed task's edge is ticket paper (printed-marks-v1); the tick box keeps the side's colour.
+    val edge by animateColorAsState(if (ticked) Green else if (printed != null && !sub) Paper else side, tween(250), label = "rowEdge")
     val textColour by animateColorAsState(if (ticked) Muted else TextMain, tween(200), label = "rowText")
     Row(
         Modifier.fillMaxWidth().background(bg)
@@ -183,8 +189,13 @@ internal fun TaskRow(
                 TaskViews.kindMark(t)?.let { m -> Text(m, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (m == "!") Amber else Purple) }
                 Text(
                     TaskViews.plainText(t), fontSize = if (sub) 14.sp else 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null
+                    color = textColour, textDecoration = if (ticked) TextDecoration.LineThrough else null,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
+                printed?.let { PrintedChip(it) }
+            }
+            if (printed != null && !ticked) TicketMarks.line(t)?.let {
+                Text(it, color = Paper, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
             }
             val tags = TaskViews.tags(t).take(2)
             val mins = Deck.minutes(t)

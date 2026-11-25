@@ -73,12 +73,14 @@ fun WeeklyScreen(vault: Uri?, snack: SnackbarHostState, prefs: AppPrefs? = null,
         val uri = vault ?: return@LaunchedEffect
         // First: the last task lists read (open and ticked), so the review shows without any vault read.
         // Then: fresh lists from the task scan (cached per note), and the recap last, as it reads a few more notes.
+        // Bills switched off in Where things live: the review leaves them out too (printed-marks-v1).
+        val places = prefs?.let { p -> withContext(Dispatchers.IO) { runCatching { PhonePlaces.load(ctx, uri, p) }.getOrNull() } }
         if (review == null) withContext(Dispatchers.IO) { TaskSnapshot.load(ctx) }
-            ?.let { snap -> review = WeeklyReview.build(WeeklyReview.doneFrom(snap.done, today), snap.open, today) }
+            ?.let { snap -> review = WeeklyReview.build(WeeklyReview.doneFrom(snap.done, today), Places.forBills(snap.open, places), today) }
         val lists = withContext(Dispatchers.IO) {
             runCatching { VaultWriter(ctx, uri).listTaskLists().also { TaskSnapshot.save(ctx, it) } }.getOrNull()
         }
-        if (lists != null) { open = lists.open; review = WeeklyReview.build(WeeklyReview.doneFrom(lists.done, today), lists.open, today) }
+        if (lists != null) { open = lists.open; review = WeeklyReview.build(WeeklyReview.doneFrom(lists.done, today), Places.forBills(lists.open, places), today) }
         val done = review?.done ?: return@LaunchedEffect
         if (recap == null) recap = withContext(Dispatchers.IO) {
             runCatching {

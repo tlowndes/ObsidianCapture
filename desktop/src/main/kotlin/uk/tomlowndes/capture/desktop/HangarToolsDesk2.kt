@@ -212,17 +212,22 @@ private fun printTickets(state: AppState, tasks: List<TaskItem>) = state.scope.l
         val today = LocalDate.now()
         val now = LocalTime.now()
         var printed = 0
+        var unsaved = 0
         tasks.forEach { t ->
             val had = TicketRail.railId(t.raw)
-            val id = had ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it }
+            val id = had ?: w.printedId(t, lists.open) ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it }
             DesktopPrinter.send(port, DesktopSlip.job(DesktopTicket.draw(TicketRail.ticket(t, id, today, now))))
-            if (had == null) runCatching { w.giveTicketId(t, id) }
+            // printed-marks-v1: noted first, so a line that won't take its 🆔 now gets it next time.
+            w.recordPrinted(listOf(uk.tomlowndes.capture.PrintLog.of(t, id, java.time.LocalDateTime.now())))
+            if (had == null && runCatching { w.giveTicketId(t, id) }.isFailure) unsaved++
             printed++
         }
-        printed
+        printed to unsaved
     } ?: return@launch
     state.changed()
-    state.say(if (n == 1) "Printed 1 ticket" else "Printed $n tickets")
+    val (count, unsaved) = n
+    state.say((if (count == 1) "Printed 1 ticket" else "Printed $count tickets") +
+        if (unsaved > 0) ", but $unsaved couldn't be marked in the vault yet. Flight Deck will mark ${if (unsaved == 1) "it" else "them"} next time it looks." else "")
 }
 
 /** The paper [tasks] will take as tickets (ticket-adaptive-v1): "about 17 cm". */
@@ -258,6 +263,9 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
     val later = rail.filter { TicketRail.isLater(it, today) }
     val railNow = rail - later.toSet()
     val cleared = TicketRail.clearedOn(lists.done, today).size
+    // When each ticket printed, from this PC's own list (printed-marks-v1).
+    val log = remember(lists) { runCatching { state.writer()?.printed() }.getOrNull().orEmpty() }
+    fun stampOf(id: String): String? = uk.tomlowndes.capture.PrintLog.at(log, id)?.let { uk.tomlowndes.capture.PrintLog.stamp(it, today) }
     fun clear(t: TaskItem) = state.scope.launch {
         val c = state.io("Couldn't clear it") { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
         state.changed()
@@ -275,7 +283,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
             railNow.forEach { t ->
                 val id = TicketRail.railId(t.raw) ?: return@forEach
                 val (slot, note) = TicketRail.slot(t.due, today)
-                ToolRow("${TicketRail.code(id)} · ${t.text}", listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
+                ToolRow("${TicketRail.code(id)} · ${t.text}", (listOf(slot, note) + listOfNotNull(stampOf(id))).filter { it.isNotBlank() }.joinToString(" · "),
                     if (slot.startsWith("LATE")) Warn else TextMain) {
                     TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
                     PrimaryButton("Clear") { clear(t) }
@@ -287,7 +295,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
                     val id = TicketRail.railId(t.raw) ?: return@forEach
                     val (slot, note) = TicketRail.slot(t.due, today)
                     ToolRow("${TicketRail.code(id)} · ${t.text} · ${TicketRail.dayTag(t.due!!, today)}",
-                        listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · ") + " · printed early", Muted) {
+                        (listOf(slot, note) + listOf(stampOf(id) ?: "printed early")).filter { it.isNotBlank() }.joinToString(" · "), Muted) {
                         TextAction("Reprint", Muted) { printTickets(state, listOf(t)) }
                         PrimaryButton("Clear") { clear(t) }
                     }

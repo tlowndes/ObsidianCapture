@@ -324,7 +324,8 @@ fun DailySlipDialog(state: AppState, onClose: () -> Unit) {
         sources = withContext(Dispatchers.IO) {
             val lists = runCatching { state.writer()!!.listTaskLists() }.getOrNull()
             SlipSources(
-                lists?.open.orEmpty(),
+                // Bills switched off in Where things live: the slips leave them out too (printed-marks-v1).
+                uk.tomlowndes.capture.Places.forBills(lists?.open.orEmpty(), runCatching { uk.tomlowndes.capture.Places.load(v) }.getOrNull()),
                 runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
                 runCatching { DesktopWeather.today(p) }.getOrNull(),
                 runCatching { Jobs.list(v) }.getOrDefault(emptyList()),

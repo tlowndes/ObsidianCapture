@@ -90,7 +90,8 @@ internal fun loadOrWriteBrief(ctx: Context, prefs: AppPrefs, uri: Uri, weather: 
     return runCatching {
         val on = runCatching { CalendarConfig.load(v) }.getOrNull().orEmpty().filter { it.enabled }.map { it.id }.toSet()
         val events = CalendarSync.cached(ctx).filter { it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }
-        val tasks = VaultWriter(ctx, uri).listTasks()
+        // Bills switched off in Where things live: the brief leaves them out too (printed-marks-v1).
+        val tasks = Places.forBills(VaultWriter(ctx, uri).listTasks(), runCatching { PhonePlaces.load(ctx, uri, prefs) }.getOrNull())
         val input = DailyBrief.Input(
             now, tasks, events, weather ?: runCatching { WeatherFetch.today(ctx) }.getOrNull(),
             runCatching { Jobs.list(v) }.getOrDefault(emptyList()),

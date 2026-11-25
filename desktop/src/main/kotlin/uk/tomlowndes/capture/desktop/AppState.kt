@@ -95,7 +95,8 @@ class AppState(val prefs: DesktopPrefs) {
     fun changed() { changes++ }
 
     fun writer() = vault?.let {
-        VaultWriter(it, File(prefs.cacheDir, "vault-tasks.json"), guardDir = if (prefs.quickGuard) File(prefs.cacheDir, "quick-task-copies") else null)
+        VaultWriter(it, File(prefs.cacheDir, "vault-tasks.json"), guardDir = if (prefs.quickGuard) File(prefs.cacheDir, "quick-task-copies") else null,
+            printFile = File(prefs.cacheDir, "printed-tickets.json"))
     }
     fun readStore() = vault?.let { ReadStore(it) }
     fun ideaStore() = vault?.let { IdeaStore(it, prefs) }

@@ -204,7 +204,9 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
     LaunchedEffect(vault, reload) {
         sources = withContext(Dispatchers.IO) {
             val lists = vault?.let { runCatching { VaultWriter(ctx, it).listTaskLists() }.getOrNull() }
-            val tasks = lists?.open.orEmpty()
+            // Bills switched off in Where things live: the slips leave them out too (printed-marks-v1).
+            val places = vault?.let { runCatching { PhonePlaces.load(ctx, it, AppPrefs(ctx)) }.getOrNull() }
+            val tasks = Places.forBills(lists?.open.orEmpty(), places)
             val on = vault?.let { runCatching { CalendarConfig.load(appVault(ctx, it)) }.getOrNull() }?.filter { it.enabled }?.map { it.id }?.toSet()
             val events = CalendarSync.cached(ctx).filter { on == null || it.id in on || it.id == AppEvents.CAL_ID }.flatMap { it.events }
             val weather = runCatching { WeatherFetch.today(ctx) }.getOrNull()
@@ -333,7 +335,8 @@ fun PrintScreen(vault: Uri?, snack: SnackbarHostState, onBack: () -> Unit) {
             }
             busy = false
             status = r.fold({ if (mode == SlipMode.TICKETS) "$tickets ticket${if (tickets == 1) "" else "s"} printed." else if (tickets > 0) "Printed on ${pr.name}, with $tickets ticket${if (tickets == 1) "" else "s"} for the rail." else "Printed on ${pr.name}." }, { it.message ?: "Printing failed" })
-            if (r.isFailure) snack.showSnackbar(status!!)
+            if (r.isSuccess && tickets > 0) TicketMarks.warning?.let { status = it }
+            if (r.isFailure || (tickets > 0 && TicketMarks.warning != null)) snack.showSnackbar(status!!)
         }
     }
 
