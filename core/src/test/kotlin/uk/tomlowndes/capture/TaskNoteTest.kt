@@ -193,14 +193,36 @@ class TaskNoteTest {
     private val s2 = "    - [ ] Wipe the shelf #task ⏱ 5m"
     private val withSteps = note.replace("$mum\n", "$mum\n$shelves\n$s1\n$s2\n")
 
-    @Test fun `ticking a parent lifts its steps so they don't land under the task above`() {
+    @Test fun `ticking a parent ticks its steps too and they go to the Archive with it`() {
         val ls = lines(withSteps)
         val c = TaskNote.complete(ls, shelves, TaskNote.completion(shelves, today, true))
         assertEquals(listOf(s1, s2), c.steps)
-        assertTrue(ls.contains(s1.trimStart()) && ls.contains(s2.trimStart()))
-        assertTrue(Subtasks.parents(TaskNote.list(ls)).isEmpty())
+        val d1 = "    - [x] Clear a walkway #task ⏱ 3m ✅ 2026-10-12"
+        val d2 = "    - [x] Wipe the shelf #task ⏱ 5m ✅ 2026-10-12"
+        assertEquals(listOf(d1, d2), c.doneSteps)
+        assertEquals(listOf("Buy milk", "Call mum", "Bins out"), TaskNote.list(ls).map { it.text })
+        val at = ls.indexOf(c.doneLine)
+        assertEquals(listOf(d1, d2), ls.subList(at + 1, at + 3))
         TaskNote.restore(ls, shelves, c)
         assertEquals(withSteps, text(ls))
+    }
+
+    @Test fun `a step already ticked or a note under the parent is left as it is`() {
+        val doneStep = "    - [x] Clear a walkway #task ✅ 2026-10-10"
+        val noteLine = "    Keys are in the drawer"
+        val ls = lines(note.replace("$mum\n", "$mum\n$shelves\n$doneStep\n$noteLine\n$s2\n"))
+        val c = TaskNote.complete(ls, shelves, TaskNote.completion(shelves, today, true))
+        assertEquals(listOf(doneStep, noteLine, "    - [x] Wipe the shelf #task ⏱ 5m ✅ 2026-10-12"), c.doneSteps)
+    }
+
+    @Test fun `unticking a parent from the Archive brings its steps back open`() {
+        val ls = lines(withSteps)
+        val c = TaskNote.complete(ls, shelves, TaskNote.completion(shelves, today, true))
+        TaskNote.untick(ls, c.doneLine, null)
+        val open = TaskNote.list(ls)
+        assertEquals(listOf("Sort shelves in garage", "Clear a walkway", "Wipe the shelf"), open.takeLast(3).map { it.text })
+        assertEquals(s1, open[open.size - 2].raw)
+        assertTrue(TaskNote.listDone(ls).none { it.text == "Clear a walkway" })
     }
 
     @Test fun `deleting a parent lifts its steps and undo nests them again`() {
