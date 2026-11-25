@@ -558,7 +558,7 @@ private fun TaskRow(
                 if (uk.tomlowndes.capture.TicketRail.railId(t.raw) != null) Text(
                     uk.tomlowndes.capture.PrintLog.tag(t, today), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = TicketInk, maxLines = 1,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(5.dp)).background(TicketPaper).padding(horizontal = 6.dp, vertical = 1.dp)
+                    modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(TicketPaper).padding(horizontal = 7.dp, vertical = 2.dp)
                 )
                 Deck.minutes(t)?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp)) }
                 if (steps > 0) Text(

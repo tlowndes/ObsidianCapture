@@ -259,7 +259,10 @@ private fun addJob(state: AppState, text: String, tag: String?, day: LocalDate, 
 internal fun TicketRailDesk(state: AppState, v: Vault) {
     val lists = loaded(state, "Couldn't read your tasks") { state.writer()!!.listTaskLists() } ?: return
     val today = LocalDate.now()
-    val rail = TicketRail.onRail(lists.open)
+    // Where things live: with Bills off, #bill tasks stay off the rail, the morning run and Coming up.
+    val places = remember(lists) { runCatching { uk.tomlowndes.capture.Places.load(v) }.getOrNull() }
+    val open = remember(lists, places) { uk.tomlowndes.capture.Places.forBills(lists.open, places) }
+    val rail = TicketRail.onRail(open)
     val later = rail.filter { TicketRail.isLater(it, today) }
     val railNow = rail - later.toSet()
     val cleared = TicketRail.clearedOn(lists.done, today).size
@@ -315,7 +318,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
                     }
                 }
             }
-            val morning = TicketRail.morningRun(lists.open, today)
+            val morning = TicketRail.morningRun(open, today)
             if (morning.isNotEmpty()) {
                 GroupLabel("Morning run · not printed yet")
                 morning.forEach { t -> ToolRow(t.text, TicketRail.slot(t.due, today).first, Muted) }
@@ -324,7 +327,7 @@ internal fun TicketRailDesk(state: AppState, v: Vault) {
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             NewTicketCard(state, today)
-            ComingUpCard(state, lists.open, today)
+            ComingUpCard(state, open, today)
         }
     }
     Sub(if (state.prefs.printerAddress == null) "To print here, pick your printer in Daily Slip first." else "Prints on the Daily Slip printer.",

@@ -69,10 +69,19 @@ object TaskNote {
     fun untick(lines: MutableList<String>, doneLine: String, nextLine: String?) {
         val i = lines.indexOf(doneLine)
         if (i < 0) error("Task changed in Obsidian, refreshed")
-        lines.removeAt(i)
+        // Sub-tasks ticked along with it come back with it, open again.
+        val steps = stepsUnder(lines, i).map { reopened(it) }
+        repeat(steps.size + 1) { lines.removeAt(i) }
         val open = reopened(doneLine)
         val at = nextLine?.let { lines.indexOf(it) } ?: -1
-        if (at >= 0) lines[at] = open else insertActive(lines, open)
+        if (at >= 0) {
+            lines[at] = open
+            lines.addAll(at + 1, steps)
+        } else {
+            insertActive(lines, open)
+            val p = lines.lastIndexOf(open)
+            lines.addAll(p + 1, steps)
+        }
     }
 
     /** What ticking [raw] on [today] produces; nothing in the note changes yet. */
@@ -84,7 +93,7 @@ object TaskNote {
         return Completion(done, next)
     }
 
-    private fun depth(line: String) = line.takeWhile { it == ' ' || it == '\t' }.replace("\t", "    ").length
+    internal fun depth(line: String) = line.takeWhile { it == ' ' || it == '\t' }.replace("\t", "    ").length
 
     /**
      * The subtasks under line [i] (the lines after it that are indented further), moved up a level so they don't
@@ -108,26 +117,44 @@ object TaskNote {
         return line.substring(n)
     }
 
+    /** The lines under line [i] that are indented further (its sub-tasks and their notes). */
+    internal fun stepsUnder(lines: List<String>, i: Int): List<String> {
+        val d = depth(lines[i])
+        var end = i + 1
+        while (end < lines.size && lines[end].isNotBlank() && depth(lines[end]) > d) end++
+        return lines.subList(i + 1, end).toList()
+    }
+
+    /** [step] ticked on the parent's tick date (taken from [doneLine]); lines that aren't open tasks stay as they are. */
+    internal fun tickStep(step: String, doneLine: String): String {
+        if (OPEN_TASK.matchEntire(step.trimEnd()) == null) return step
+        val date = DONE_DATE.find(doneLine)?.groupValues?.get(1)
+        val ticked = step.replaceFirst("- [ ]", "- [x]")
+        return if (ticked.contains("✅") || date == null) ticked else ticked.trimEnd() + " ✅ $date"
+    }
+
     /**
      * Replaces [raw] with its next occurrence (if any) and puts the ticked line at the top of "## Archive".
-     * Without a next occurrence, its subtasks move up a level instead of slipping under the task above.
-     * Returns [c] with where the line was and its subtasks, for [restore].
+     * Without a next occurrence, its open sub-tasks are ticked too and go to the Archive with it, still nested.
+     * A repeating task keeps its sub-tasks, open, under the next occurrence.
+     * Returns [c] with where the line was and its sub-tasks before and after, for [restore].
      */
     fun complete(lines: MutableList<String>, raw: String, c: Completion): Completion {
         val i = lines.indexOf(raw)
         if (i < 0) error("Task changed in Obsidian, refreshed")
-        val steps = if (c.nextLine == null) liftSteps(lines, i) else emptyList()
-        lines.removeAt(i)
+        val steps = if (c.nextLine == null) stepsUnder(lines, i) else emptyList()
+        val doneSteps = steps.map { tickStep(it, c.doneLine) }
+        repeat(steps.size + 1) { lines.removeAt(i) }
         if (c.nextLine != null) lines.add(i, c.nextLine)
         val archive = lines.archiveStart()
         if (archive >= 0) {
             var at = archive + 1
             if (at < lines.size && lines[at].isBlank()) at++
-            lines.add(at, c.doneLine)
+            lines.addAll(at, listOf(c.doneLine) + doneSteps)
         } else {
-            lines.addAll(listOf("", "## Archive", "", c.doneLine))
+            lines.addAll(listOf("", "## Archive", "", c.doneLine) + doneSteps)
         }
-        return c.copy(at = i, steps = steps)
+        return c.copy(at = i, steps = steps, doneSteps = doneSteps)
     }
 
     fun replace(lines: MutableList<String>, raw: String, updated: String) {
@@ -158,6 +185,7 @@ object TaskNote {
      * The task goes back on the line it came from, with its subtasks indented under it again, not at the bottom.
      */
     fun restore(lines: MutableList<String>, raw: String, done: Completion?, replace: String? = null, removed: Removed? = null) {
+        if (done != null && done.doneSteps.isNotEmpty()) { restoreWithSteps(lines, raw, done); return }
         if (done != null) lines.remove(done.doneLine)
         val at = (done?.nextLine ?: replace)?.let { lines.indexOf(it) } ?: -1
         if (at >= 0) { lines[at] = raw; return }
@@ -172,6 +200,21 @@ object TaskNote {
             }
             was in 1..lines.size && inActive(lines, was) -> lines.add(was, raw)
             else -> insertActive(lines, raw)
+        }
+    }
+
+    /** Undo for a parent ticked with its sub-tasks: they all leave the Archive and go back where they were. */
+    private fun restoreWithSteps(lines: MutableList<String>, raw: String, done: Completion) {
+        val j = lines.indexOf(done.doneLine)
+        if (j >= 0) {
+            lines.removeAt(j)
+            for (s in done.doneSteps) if (j < lines.size && lines[j] == s) lines.removeAt(j)
+        }
+        val block = listOf(raw) + done.steps
+        if (done.at in 1..lines.size && inActive(lines, done.at)) lines.addAll(done.at, block)
+        else {
+            insertActive(lines, raw)
+            lines.addAll(lines.lastIndexOf(raw) + 1, done.steps)
         }
     }
 

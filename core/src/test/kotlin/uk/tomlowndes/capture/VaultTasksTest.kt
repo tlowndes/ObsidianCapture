@@ -72,6 +72,24 @@ class VaultTasksTest {
         assertEquals(note, text(ls))
     }
 
+    @Test fun `ticking a parent ticks its open steps in place and undo reopens them`() {
+        val car = "- [ ] #task Clean car"
+        val st1 = "\t- [ ] Grab a bin bag ⏱ 5m"
+        val st2 = "\t- [x] Clear rubbish ✅ 2026-10-11"
+        val st3 = "\t- [ ] Wipe the dashboard ⏱ 20m"
+        val with = note.replace("$boxes\n", "$boxes\n$car\n$st1\n$st2\n$st3\n")
+        val ls = lines(with)
+        val c = VaultTasks.completeInPlace(ls, car, TaskNote.completion(car, today, recurring = true))
+        assertEquals(
+            with.replace(car, "- [x] #task Clean car ✅ 2026-10-12")
+                .replace(st1, "\t- [x] Grab a bin bag ⏱ 5m ✅ 2026-10-12")
+                .replace(st3, "\t- [x] Wipe the dashboard ⏱ 20m ✅ 2026-10-12"),
+            text(ls)
+        )
+        VaultTasks.restoreInPlace(ls, car, c)
+        assertEquals(with, text(ls))
+    }
+
     @Test fun `remove and undo returns the task to the same line`() {
         val ls = lines()
         val at = VaultTasks.delete(ls, boxes)

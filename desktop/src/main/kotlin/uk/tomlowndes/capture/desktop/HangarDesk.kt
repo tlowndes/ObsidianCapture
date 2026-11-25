@@ -167,7 +167,7 @@ internal fun loadDeskHangar(state: AppState, v: Vault): DeskHangar? {
         if (meds.any { Refill.needsOrder(it, Refill.left(it, stamps), today) }) needs += HangarTool.REFILL
     }
     look(HangarTool.TICKET_RAIL) {
-        rail = TicketRail.onRail(state.writer()!!.listTaskLists().open).size
+        rail = TicketRail.onRail(uk.tomlowndes.capture.Places.forBills(state.writer()!!.listTaskLists().open, runCatching { uk.tomlowndes.capture.Places.load(v) }.getOrNull())).size
         lines[HangarTool.TICKET_RAIL] = "$rail on the rail"
     }
     return DeskHangar(tools, needs, lines, did, rail, all)

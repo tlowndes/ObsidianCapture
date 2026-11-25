@@ -61,12 +61,19 @@ object VaultTasks {
         return (SKIP + templates).filter { it.isNotBlank() }.any { path == it || path.startsWith("$it/") }
     }
 
-    /** Ticks [raw] where it is; a recurring task's next occurrence goes just above it, as the Tasks plugin does. */
-    fun completeInPlace(lines: MutableList<String>, raw: String, c: Completion) {
+    /**
+     * Ticks [raw] where it is; a recurring task's next occurrence goes just above it, as the Tasks plugin does.
+     * A one-off task's open sub-tasks are ticked with it. Returns [c] with those sub-tasks, for [restoreInPlace].
+     */
+    fun completeInPlace(lines: MutableList<String>, raw: String, c: Completion): Completion {
         val i = lines.indexOf(raw)
         if (i < 0) error("Task changed in Obsidian, refreshed")
+        val steps = if (c.nextLine == null) TaskNote.stepsUnder(lines, i) else emptyList()
+        val doneSteps = steps.map { TaskNote.tickStep(it, c.doneLine) }
         lines[i] = c.doneLine
+        doneSteps.forEachIndexed { k, s -> lines[i + 1 + k] = s }
         if (c.nextLine != null) lines.add(i, c.nextLine)
+        return c.copy(at = i, steps = steps, doneSteps = doneSteps)
     }
 
     /** Removes [raw] and returns the line it was on, for [restoreInPlace]. */
@@ -83,6 +90,7 @@ object VaultTasks {
             val i = lines.indexOf(done.doneLine)
             if (i < 0) error("Task changed in Obsidian")
             lines[i] = raw
+            done.doneSteps.forEachIndexed { k, s -> if (i + 1 + k < lines.size && lines[i + 1 + k] == s) lines[i + 1 + k] = done.steps[k] }
             done.nextLine?.let { next -> lines.indexOf(next).takeIf { it >= 0 }?.let { lines.removeAt(it) } }
             return
         }
