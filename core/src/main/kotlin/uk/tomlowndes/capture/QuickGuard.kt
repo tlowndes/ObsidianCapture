@@ -16,8 +16,15 @@ object QuickGuard {
     /** A step that was indented under [parent] and now isn't: [was] is its old line, [now] its line today. */
     data class Flat(val parent: String, val was: String, val now: String)
 
-    data class Alert(val flattened: List<Flat> = emptyList(), val missing: List<String> = emptyList(), val emptied: Boolean = false) {
-        val isEmpty get() = flattened.isEmpty() && missing.isEmpty() && !emptied
+    /**
+     * [copies]: other "⚡ Quick Task (1).md" style notes in the inbox (2026-11-24: a phone save landed as a second
+     * note, so every task in it showed twice). They are left out of the task list until merged and deleted.
+     */
+    data class Alert(
+        val flattened: List<Flat> = emptyList(), val missing: List<String> = emptyList(), val emptied: Boolean = false,
+        val copies: List<String> = emptyList(),
+    ) {
+        val isEmpty get() = flattened.isEmpty() && missing.isEmpty() && !emptied && copies.isEmpty()
         /** Only steps flattened: Fix it can put them back without a restore. */
         val fixable get() = flattened.isNotEmpty() && missing.isEmpty() && !emptied
 
@@ -33,9 +40,21 @@ object QuickGuard {
                     " lost ${if (n == 1) "its" else "their"} indent"
             }
             if (missing.isNotEmpty()) parts += "${missing.size} open tasks disappeared"
+            if (copies.isNotEmpty()) parts += (if (copies.size == 1) "A second copy turned up (${copies[0].substringAfterLast('/')})"
+                else "${copies.size} extra copies turned up") + ", hidden from Tasks. Merge it in Obsidian, then delete it"
             return parts.joinToString(" · ")
         }
     }
+
+    private val COPY = Regex("^${Regex.escape(VaultWriter.TASK_FILE.removeSuffix(".md"))} \\(\\d+\\)\\.md$")
+
+    /** True for a stray copy of Quick Task in the inbox, such as "01 - Inbox/⚡ Quick Task (1).md". */
+    fun isCopy(path: String): Boolean =
+        path.substringBeforeLast('/', "") == VaultWriter.INBOX && COPY.matches(path.substringAfterLast('/'))
+
+    /** [a] (or nothing) with the stray [copies] added; null when there is nothing to show. */
+    fun withCopies(a: Alert?, copies: List<String>): Alert? =
+        if (copies.isEmpty()) a else (a ?: Alert()).copy(copies = copies)
 
     private fun depth(line: String) = Subtasks.depth(line)
     private fun lines(text: String) = text.replace("\r\n", "\n").split("\n")

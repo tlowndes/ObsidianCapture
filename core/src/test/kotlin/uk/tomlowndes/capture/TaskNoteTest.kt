@@ -60,6 +60,14 @@ class TaskNoteTest {
         assertEquals(note.replace("$bins\n", "$bins\n- [ ] #task Post letter 📅 2026-10-13\n"), text(ls))
     }
 
+    @Test fun `a Recurring section between Active and Archive is listed and new tasks stay above it`() {
+        val bill = "- [ ] #task Proton £17.58 #bill 🔁 every month 📅 2026-12-20"
+        val ls = lines(note.replace("$bins\n", "$bins\n\n## Recurring\n\n$bill\n"))
+        assertEquals(listOf(milk, mum, bins, bill), TaskNote.list(ls).map { it.raw })
+        TaskNote.insertActive(ls, "- [ ] #task Post letter")
+        assertEquals(note.replace("$bins\n", "$bins\n- [ ] #task Post letter\n\n## Recurring\n\n$bill\n"), text(ls))
+    }
+
     @Test fun `new task without a date`() {
         assertEquals("- [ ] #task Post letter", TaskNote.newTask("Post letter", null))
     }

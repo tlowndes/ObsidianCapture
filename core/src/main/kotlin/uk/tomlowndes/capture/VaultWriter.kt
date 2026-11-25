@@ -71,7 +71,14 @@ class VaultWriter(
     }
 
     /** Quick Task guard: what looks off right now, if anything. */
-    fun quickAlert(): QuickGuard.Alert? = guard?.let { g -> runCatching { g.seen(taskFile(false)?.let { VaultIo.read(vault, it) }) }.getOrNull() }
+    fun quickAlert(): QuickGuard.Alert? = QuickGuard.withCopies(
+        guard?.let { g -> runCatching { g.seen(taskFile(false)?.let { VaultIo.read(vault, it) }) }.getOrNull() }, strayCopies()
+    )
+
+    /** Other "⚡ Quick Task (n).md" notes in the inbox: the scan leaves them out, the banner points them out. */
+    private fun strayCopies(): List<String> = runCatching {
+        vault.list(INBOX).filter { !it.isDir }.map { "$INBOX/${it.name}" }.filter { QuickGuard.isCopy(it) }.sorted()
+    }.getOrDefault(emptyList())
 
     /** Fix it: puts flattened steps back under their parents. */
     fun fixQuick() {
@@ -125,7 +132,7 @@ class VaultWriter(
     fun listTaskLists(): TaskLists {
         val text = taskFile(false)?.let { VaultIo.read(vault, it) }
         val quick = text?.split("\n")
-        val alert = guard?.let { g -> runCatching { g.seen(text) }.getOrNull() }
+        val alert = QuickGuard.withCopies(guard?.let { g -> runCatching { g.seen(text) }.getOrNull() }, strayCopies())
         val (open, done) = VaultScan.scan(vault, cacheFile, walkTtlMs)
         return TaskLists(
             (quick?.let { TaskNote.list(it) } ?: emptyList()) + open,

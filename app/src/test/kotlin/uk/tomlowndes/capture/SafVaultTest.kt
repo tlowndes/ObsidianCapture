@@ -2,6 +2,7 @@ package uk.tomlowndes.capture
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -86,19 +87,21 @@ class SafVaultTest {
         assertEquals("body", v.read("Note.md"))
     }
 
-    @Test fun `a write swaps in a finished copy and leaves no scratch file`() {
+    @Test fun `a write goes into the same file and leaves no scratch file`() {
         val (v, root) = vault()
         v.writeOnce(v.create("", "Note", "md"), "one")
+        val note = root.findChild("Note.md")
         v.writeOnce("Note.md", "two")
         assertEquals("two", v.read("Note.md"))
+        assertSame(note, root.findChild("Note.md"))
+        assertEquals(0, root.renames)
         assertEquals(listOf("Note.md"), root.children().map { it.name })
-        assertEquals(listOf("Note.md"), v.list("").map { it.name })
     }
 
-    @Test fun `a failed swap puts the original note back`() {
+    @Test fun `a failed write puts the note back as it was`() {
         val (v, root) = vault()
         v.writeOnce(v.create("", "Note", "md"), "safe")
-        root.failTempPromote = true
+        root.failWrites = 1
         try {
             v.writeOnce("Note.md", "new")
             fail("write should have failed")
@@ -131,8 +134,10 @@ internal class MemDoc(
     override var modified: Long = 1L
     override val length get() = if (isDirectory) 0L else bytes.size.toLong()
     var allowMove = true
-    /** The temp copy refuses to take the real file's name, so the swap must restore the original. */
-    var failTempPromote = false
+    /** The next this many writes land half the bytes and then fail. */
+    var failWrites = 0
+    /** How many renames the vault asked for (a write shouldn't). */
+    var renames = 0
     /** New files report different bytes than were written, so a move must not delete the original. */
     var sabotageNewFileReads = false
     private var sabotageReads = false
@@ -159,13 +164,20 @@ internal class MemDoc(
 
     override fun open(): InputStream? = ByteArrayInputStream(if (sabotageReads) byteArrayOf(7) else bytes)
 
-    override fun writeBytes(bytes: ByteArray) { this.bytes = bytes.copyOf(); modified += 1 }
+    override fun writeBytes(bytes: ByteArray) {
+        if (root.failWrites > 0) {
+            root.failWrites--
+            this.bytes = bytes.copyOf(bytes.size / 2)
+            error("Cannot write $name")
+        }
+        this.bytes = bytes.copyOf(); modified += 1
+    }
 
     override fun delete() { parent?.kids?.remove(this) }
 
     override fun rename(displayName: String): VaultDoc? {
         val p = parent ?: return null
-        if (root.failTempPromote && name.contains(".capture-tmp")) return null
+        root.renames++
         if (p.kids.any { it !== this && it.name == displayName }) return null
         name = displayName
         modified += 1
