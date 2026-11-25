@@ -158,7 +158,7 @@ object PhoneBrain {
     private val PRICE = mapOf(FAST to (0.10 to 0.50), CLEVER to (2.00 to 10.00))
 
     /** Rough pounds per dollar, for the Settings line. */
-    const val GBP_PER_USD = 0.79
+    const val GBP_PER_USD = 0.76
 
     fun costUsd(model: String, input: Long, output: Long): Double {
         val (i, o) = PRICE[model] ?: PRICE.getValue(CLEVER)
