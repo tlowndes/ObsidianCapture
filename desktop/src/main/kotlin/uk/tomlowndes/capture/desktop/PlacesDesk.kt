@@ -71,32 +71,45 @@ internal fun PlacesSection(state: AppState) {
         val now = s ?: return
         val next = now.with(e, p)
         s = next
-        state.scope.launch { state.io("Couldn't save where things live") { Places.save(v, next) }; state.changed() }
+        state.scope.launch { state.io("Couldn't save what's in the app") { Places.save(v, next) }; state.changed() }
     }
-    Text("WHERE THINGS LIVE", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
-    Sub("Same list as your phone. Hangar keeps the Deck and Tasks quiet; Both puts it in Hangar and its usual spot.", Modifier.padding(bottom = 6.dp))
+    var showOff by remember { mutableStateOf(false) }
+    Text("WHAT'S IN THE APP", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Sub("Same list as your phone. A change on one shows on the other.", Modifier.padding(bottom = 6.dp))
     val st = s
     if (st == null) { Sub("Pick a vault first."); return }
-    Element.GROUPS.forEach { g ->
-        Text(g.uppercase(Locale.UK), fontSize = 11.sp, letterSpacing = 1.1.sp, color = Faint, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
-        Element.values().filter { it.group == g }.forEach { e ->
-            val p = st.place(e)
-            val on = p != Lives.OFF
-            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(e.icon, fontSize = 15.sp, color = if (on) TextMain else Muted, modifier = Modifier.width(30.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(e.label, fontSize = 14.sp, color = if (on) TextMain else Muted)
-                    Text(if (e.tool in PHONE_ONLY) "Phone only" else e.mainSpot, fontSize = 11.5.sp, color = Muted)
-                }
-                if (e.hangarOk) {
-                    Chip("Hangar", on && p == Lives.HANGAR, small = true, color = if (on) null else Faint) { if (on) set(e, Lives.HANGAR) }
-                    Spacer(Modifier.width(6.dp))
-                    Chip("Both", on && p == Lives.BOTH, small = true, color = if (on) null else Faint) { if (on) set(e, Lives.BOTH) }
-                    Spacer(Modifier.width(12.dp))
-                }
-                if (e == Element.NEXT_STEP) Sub("Always") else Toggle(on) { yes -> set(e, if (!yes) Lives.OFF else if (e.hangarOk) Lives.HANGAR else Lives.MAIN) }
+    @Composable
+    fun row(e: Element) {
+        val p = st.place(e)
+        val on = p != Lives.OFF
+        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(e.icon, fontSize = 15.sp, color = if (on) TextMain else Muted, modifier = Modifier.width(30.dp))
+            Column(Modifier.weight(1f)) {
+                Text(e.label, fontSize = 14.sp, color = if (on) TextMain else Muted)
+                if (e.tool in PHONE_ONLY) Text("Phone only", fontSize = 11.5.sp, color = Muted)
+            }
+            if (e == Element.NEXT_STEP) Sub("Always on")
+            else e.choices.forEachIndexed { i, c ->
+                if (i > 0) Spacer(Modifier.width(6.dp))
+                val label = when (c) { Lives.OFF -> "Off"; Lives.HANGAR -> "Hangar"; Lives.BOTH -> "Hangar + " + e.mainShort; else -> "On" }
+                Chip(label, p == c || (c == Lives.BOTH && p == Lives.MAIN), small = true) { set(e, c) }
             }
         }
+    }
+    Element.GROUPS.forEach { g ->
+        val rows = Element.values().filter { it.group == g && st.on(it) }
+        if (rows.isEmpty()) return@forEach
+        Text(g.uppercase(Locale.UK), fontSize = 11.sp, letterSpacing = 1.1.sp, color = Faint, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+        rows.forEach { row(it) }
+    }
+    val off = Element.values().filter { !st.on(it) }
+    if (off.isNotEmpty()) {
+        Text("OFF", fontSize = 11.sp, letterSpacing = 1.1.sp, color = Faint, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+        Row(Modifier.fillMaxWidth().hand().clickable { showOff = !showOff }.padding(vertical = 6.dp)) {
+            Sub("${off.size} switched off" + if (showOff) "" else " · " + off.take(3).joinToString(", ") { it.label } + if (off.size > 3) "…" else "", Modifier.weight(1f))
+            Sub(if (showOff) "Hide" else "Show ›")
+        }
+        if (showOff) off.forEach { row(it) }
     }
 }
 

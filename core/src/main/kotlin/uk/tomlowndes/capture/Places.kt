@@ -77,6 +77,27 @@ enum class Element(
         else -> "More tile"
     }
 
+    /** What it can be set to, in the order the sheet shows them (settings-cleanup-v1): Off, Hangar, Hangar + main app. */
+    val choices: List<Lives> get() = if (hangarOk) listOf(Lives.OFF, Lives.HANGAR, Lives.BOTH) else listOf(Lives.OFF, Lives.MAIN)
+
+    /** One or two words for where it shows in the main app, for the row's label ("Deck", "Tasks", "Deck + Tasks"). */
+    val mainShort: String get() = when {
+        this == BILLS || this == CHORES -> "Deck + Tasks"
+        view != null -> "Tasks"
+        card != null && card in TILE_CARDS -> "More"
+        card != null && card in PHONE_AS_TILE -> "Windows Deck"
+        card != null -> "Deck"
+        else -> "More"
+    }
+
+    /** The one coloured word on a row (settings-cleanup-v1): "Off", "Hangar", "Hangar + Deck", or "On". */
+    fun pill(p: Lives): String = when (p) {
+        Lives.OFF -> "Off"
+        Lives.HANGAR -> "Hangar"
+        Lives.BOTH -> "Hangar + $mainShort"
+        Lives.MAIN -> if (this == NEXT_STEP) "Always on" else "On"
+    }
+
     companion object {
         val GROUPS = listOf("Money", "Home", "Day", "Work and learning", "Tools")
         fun byId(id: String) = values().firstOrNull { it.id == id.trim() }

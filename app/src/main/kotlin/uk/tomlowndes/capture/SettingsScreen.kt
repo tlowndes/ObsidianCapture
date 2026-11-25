@@ -85,7 +85,7 @@ internal fun PathField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 @Composable
-fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false, onPickVault: () -> Unit, onOpenCards: () -> Unit, onOpenPlaces: () -> Unit = {}, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit, onOpenPrint: () -> Unit = {}) {
+fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false, onPickVault: () -> Unit, onOpenPlaces: () -> Unit = {}, onOpenHabits: () -> Unit, onOpenWeekly: () -> Unit, onOpenPrint: () -> Unit = {}) {
     val ctx = LocalContext.current
     var notesOpen by remember { mutableStateOf(false) }
     var cardsOn by remember { mutableStateOf<DeckLayout?>(null) }
@@ -227,8 +227,7 @@ fun SettingsScreen(vault: Uri?, prefs: AppPrefs, startOnBackups: Boolean = false
         RowsCard(listOf(
             { QuietRow("🔔", "Reminders", "›", onClick = { page = SettingsPage.REMINDERS }) },
             { QuietRow("📅", "Calendars", "›", onClick = { page = SettingsPage.CALENDARS }) },
-            { QuietRow("⌂", "Where things live", "Hangar or both ›", onClick = onOpenPlaces) },
-            { QuietRow("◎", "Cards on home", (cardsOn?.let { "${it.onCount} of ${HomeCard.values().size} " } ?: "") + "›", onClick = onOpenCards) },
+            { QuietRow("⌂", "What's in the app", "›", onClick = onOpenPlaces) },
             { QuietRow("✅", "Habits", "›", onClick = onOpenHabits) },
             { QuietRow("🗓", "Weekly review", "›", onClick = onOpenWeekly) },
         ))
