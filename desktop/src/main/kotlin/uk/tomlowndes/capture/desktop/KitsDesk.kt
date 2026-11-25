@@ -29,6 +29,7 @@ import uk.tomlowndes.capture.KitRule
 import uk.tomlowndes.capture.KitSlot
 import uk.tomlowndes.capture.KitTrigger
 import uk.tomlowndes.capture.Kits
+import uk.tomlowndes.capture.PackLists
 
 private sealed interface KitsView {
     data object List : KitsView
@@ -46,21 +47,52 @@ private sealed interface KitsView {
 @Composable
 internal fun KitsDialog(state: AppState, start: String? = null, onClose: () -> Unit) {
     val v = state.vault ?: return
-    val all = loaded(state, "Couldn't read your kits") { Kits.loadAll(v) }
+    val all = loaded(state, "Couldn't read your kits") { Kits.loadAll(v) to PackLists.loadAll(v) }
     var pick by remember { mutableStateOf(start) }
     var view by remember { mutableStateOf<KitsView>(KitsView.List) }
+    var packView by remember { mutableStateOf<PackView>(PackView.List) }
     fun save(vararg ks: Kit) = write(state, "Couldn't save the kit") { ks.forEach { Kits.save(v, it) } }
 
-    val kits = all ?: run { DialogCard("Kits", onClose) { Sub("Loading your kits…") }; return }
+    val kits = all?.first ?: run { DialogCard("Kits", onClose) { Sub("Loading your kits…") }; return }
+    val lists = all.second
     val k = kits.firstOrNull { it.name == pick } ?: kits.firstOrNull() ?: return
+    val list = lists.firstOrNull { it.name == pick }
+    val today = java.time.LocalDate.now()
+
+    @Composable
+    fun KitChips() = FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val on = list?.name ?: k.name
+        kits.forEach { kit -> Chip("${kit.emoji} ${kit.name}", selected = kit.name == on) { pick = kit.name; packView = PackView.List } }
+        lists.filter { it.inside == null || it.name == on }.forEach { l ->
+            val due = PackLists.due(l, today)
+            Chip("${l.emoji} ${l.name}" + if (due) " ·" else "", selected = l.name == on, color = if (due && l.name != on) Warn else null) { pick = l.name; packView = PackView.List }
+        }
+        Chip("＋ New kit") { pick = k.name; view = KitsView.New }
+    }
+
+    if (list != null && view == KitsView.List) {
+        DialogCard("Kits", onClose) {
+            KitChips()
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
+                PackListDesk(state, list, lists, packView, { packView = it }) { pick = it; packView = PackView.List }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("Open in Obsidian ↗", Muted) { state.openInObsidian(list.path ?: Kits.path(list.name)) }
+                Box(Modifier.weight(1f))
+                PrimaryButton("Done", onClick = onClose)
+            }
+        }
+        return
+    }
 
     when (val vw = view) {
         KitsView.List -> DialogCard("Kits", onClose) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                kits.forEach { kit -> Chip("${kit.emoji} ${kit.name}", selected = kit.name == k.name) { pick = kit.name } }
-                Chip("＋ New kit") { view = KitsView.New }
-            }
+            KitChips()
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
+                lists.filter { it.inside.equals(k.name, true) }.takeIf { it.isNotEmpty() }?.let { pouches ->
+                    Section("Pouches")
+                    pouches.forEach { pl -> EntryRow("${pl.emoji}  ${pl.name}", sub = "${PackLists.count(pl, lists)} packed", onEdit = { pick = pl.name; packView = PackView.List }, onDelete = null) }
+                }
                 Section("Use this kit when")
                 val u = k.useWhen
                 if (u == null) Sub("Every trip. Add a trigger to bring it only on some days.")
@@ -111,7 +143,7 @@ internal fun KitsDialog(state: AppState, start: String? = null, onClose: () -> U
         KitsView.New -> DialogCard("New kit", { view = KitsView.List }) {
             var emoji by remember { mutableStateOf("🏋️") }
             var name by remember { mutableStateOf("") }
-            val ok = name.isNotBlank() && kits.none { it.name.equals(name.trim(), true) }
+            val ok = name.isNotBlank() && kits.none { it.name.equals(name.trim(), true) } && lists.none { it.name.equals(name.trim(), true) }
             Sub("It comes when you tick it on, or once you add a trigger.")
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Field(emoji, { emoji = it.trim().take(8) }, Modifier.width(70.dp))
@@ -138,7 +170,7 @@ internal fun KitsDialog(state: AppState, start: String? = null, onClose: () -> U
 private fun Section(text: String) = Box(Modifier.padding(top = 12.dp, bottom = 4.dp)) { GroupLabel(text) }
 
 @Composable
-private fun EntryRow(text: String, sub: String? = null, onEdit: (() -> Unit)? = null, onUp: (() -> Unit)? = null, onDelete: () -> Unit) {
+private fun EntryRow(text: String, sub: String? = null, onEdit: (() -> Unit)? = null, onUp: (() -> Unit)? = null, onDelete: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(text, fontSize = 14.sp, color = TextMain)
@@ -146,7 +178,7 @@ private fun EntryRow(text: String, sub: String? = null, onEdit: (() -> Unit)? = 
         }
         if (onUp != null) TextAction("↑", Muted, onClick = onUp)
         if (onEdit != null) TextAction("✎", Muted, onClick = onEdit)
-        TextAction("×", Muted, onClick = onDelete)
+        if (onDelete != null) TextAction("×", Muted, onClick = onDelete)
     }
 }
 

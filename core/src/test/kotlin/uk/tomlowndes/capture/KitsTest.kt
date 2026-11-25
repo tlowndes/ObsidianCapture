@@ -34,7 +34,7 @@ class KitsTest {
     @Test fun `packs group items by kit with no repeats and say why`() {
         val packs = Kits.packs(Kits.active(listOf(pocket, backpack), trip("Work", hours = 5)), trip("Work", hours = 5))
         assertEquals(listOf("Keys", "Wallet", "Phone", "Headphones"), packs[0].items.map { it.name })
-        assertEquals(listOf("Laptop", "Charger", "Water bottle", "Snack", "Power bank"), packs[1].items.map { it.name })
+        assertEquals(listOf("Laptop", "Charger", "Snack", "Power bank"), packs[1].items.map { it.name })
         assertEquals("work", packs[1].why)
         assertNull(packs[0].why)
         val tapped = Kits.packs(listOf(pocket, backpack), trip(), on = setOf("Backpack"))
@@ -109,7 +109,7 @@ class KitsTest {
     @Test fun `night pad packs the whole backpack and only pocket extras`() {
         val night = NightPad.items(listOf(pocket, backpack), trip("Work", rain = 80))
         val bag = night.filter { it.group == KitGroup.BAG }
-        assertEquals(listOf("Umbrella", "Laptop", "Charger", "Water bottle", "Packable jacket"), bag.map { it.item.name })
+        assertEquals(listOf("Umbrella", "Laptop", "Charger", "Packable jacket"), bag.map { it.item.name })
         assertEquals("Backpack", bag.first { it.item.name == "Laptop" }.kit)
         assertEquals(listOf("Phone", "Headphones", "Power bank"), night.filter { it.group == KitGroup.CHARGE }.map { it.item.name })
         // No backpack day: no backpack items, Power bank isn't charged.

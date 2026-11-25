@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -66,6 +67,7 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var kits by remember { mutableStateOf<List<Kit>?>(null) }
+    var lists by remember { mutableStateOf<List<PackList>>(emptyList()) }
     var pick by remember { mutableStateOf(start) }
     var reload by remember { mutableIntStateOf(0) }
     var edit by remember { mutableStateOf<ItemEdit?>(null) }
@@ -75,8 +77,8 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
 
     LaunchedEffect(vault, reload) {
         val uri = vault ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) { runCatching { Kits.loadAll(appVault(ctx, uri)) } }
-            .onSuccess { kits = it }.onFailure { snack.showSnackbar("Couldn't read your kits: ${it.message}") }
+        withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); Kits.loadAll(v) to PackLists.loadAll(v) } }
+            .onSuccess { kits = it.first; lists = it.second }.onFailure { snack.showSnackbar("Couldn't read your kits: ${it.message}") }
     }
 
     /** Saves changed kits, then reloads. */
@@ -88,23 +90,68 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
         }
     }
 
-    val all = kits ?: run { Text("Loading your kits…", color = Muted, modifier = Modifier.padding(top = 12.dp)); return }
-    val k = all.firstOrNull { it.name == pick } ?: all.firstOrNull() ?: return
+    /** Saves changed list kits (Packing, the pouch, Car, Go bag), then reloads. */
+    fun saveLists(changed: List<PackList>) {
+        val uri = vault ?: return
+        lists = lists.map { l -> changed.firstOrNull { it.name == l.name } ?: l }
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); changed.forEach { PackLists.save(v, it) } } }
+                .onSuccess { reload++; onChanged() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+        }
+    }
 
-    // Tabs: one per kit, then New.
+    val all = kits ?: run { Text("Loading your kits…", color = Muted, modifier = Modifier.padding(top = 12.dp)); return }
+    val list = lists.firstOrNull { it.name == pick }
+    val k = all.firstOrNull { it.name == pick } ?: all.firstOrNull() ?: return
+    val today = java.time.LocalDate.now()
+
+    // Chips: carry kits, then packing and check lists (a pouch shows inside its bag, not as its own chip), then New.
     Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(Surface1).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        all.forEach { kit ->
-            val on = kit.name == k.name
-            Text("${kit.emoji} ${kit.name}", maxLines = 1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) TextMain else Muted,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (on) Surface2 else Surface1)
-                    .clickable { pick = kit.name }.padding(vertical = 8.dp))
+        val chips = all.map { Triple(it.name, "${it.emoji} ${it.name}", false) } +
+            lists.filter { it.inside == null || it.name == pick }.map { Triple(it.name, "${it.emoji} ${it.name}", PackLists.due(it, today)) }
+        val on = list?.name ?: k.name
+        chips.forEach { (name, label, due) ->
+            val sel = name == on
+            Text(label + if (due) " ·" else "", maxLines = 1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (sel) Amber else if (due) Warn else Muted,
+                modifier = Modifier.clip(CircleShape).background(if (sel) AmberTint else Surface1).border(1.dp, if (sel) Amber else Outline, CircleShape)
+                    .clickable { pick = name }.padding(horizontal = 12.dp, vertical = 7.dp))
         }
         Text("＋ New", maxLines = 1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Muted,
-            modifier = Modifier.clip(RoundedCornerShape(9.dp)).clickable { newKit = true }.padding(horizontal = 10.dp, vertical = 8.dp))
+            modifier = Modifier.clip(CircleShape).border(1.dp, Outline, CircleShape).clickable { newKit = true }.padding(horizontal = 12.dp, vertical = 7.dp))
+    }
+
+    if (list != null) {
+        PackListView(list, lists, snack, onOpen = { pick = it }, save = ::saveLists)
+        if (list.inside != null) Text("← Back to ${lists.firstOrNull { l -> l.items.any { it.link.equals(list.name, true) } }?.name ?: "Kits"}",
+            color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, top = 4.dp).clickable {
+                pick = lists.firstOrNull { l -> l.items.any { it.link.equals(list.name, true) } }?.name
+            }.padding(vertical = 6.dp))
+        val path = list.path ?: Kits.path(list.name)
+        Text("Saved to $path · Open in Obsidian ↗", color = Muted, fontSize = 12.sp,
+            modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 24.dp).clickable { openKitInObsidian(ctx, vault, path) }.padding(vertical = 6.dp))
+        if (newKit) NewKitSheet((all.map { it.name } + lists.map { it.name }).map { it.lowercase() }.toSet(), onDismiss = { newKit = false }) { name, emoji ->
+            newKit = false
+            val uri = vault ?: return@NewKitSheet
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { Kits.create(appVault(ctx, uri), name, emoji) } }
+                    .onSuccess { pick = it.name; reload++; onChanged() }.onFailure { snack.showSnackbar("Couldn't add the kit: ${it.message}") }
+            }
+        }
+        return
+    }
+
+    // Pouches that live in this bag (packing-list-v4, frame 6).
+    lists.filter { it.inside.equals(k.name, true) }.takeIf { it.isNotEmpty() }?.let { pouches ->
+        Section("Pouches")
+        ListCard(Modifier.padding(top = 6.dp)) {
+            pouches.forEachIndexed { i, pl ->
+                if (i > 0) HorizontalDivider(color = Outline)
+                KitRow("${pl.emoji}  ${pl.name}", end = "${PackLists.count(pl, lists)} ›") { pick = pl.name }
+            }
+        }
     }
 
     // Use when
@@ -200,7 +247,7 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
             })
     }
     if (addTrigger) TriggerSheet(onDismiss = { addTrigger = false }) { t -> addTrigger = false; save(Kits.addTrigger(k, t)) }
-    if (newKit) NewKitSheet(all.map { it.name.lowercase() }.toSet(), onDismiss = { newKit = false }) { name, emoji ->
+    if (newKit) NewKitSheet((all.map { it.name } + lists.map { it.name }).map { it.lowercase() }.toSet(), onDismiss = { newKit = false }) { name, emoji ->
         newKit = false
         val uri = vault ?: return@NewKitSheet
         scope.launch {

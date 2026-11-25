@@ -6,7 +6,7 @@ object Md {
     fun norm(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
 
     /** Index of the closing `---` of the frontmatter block, or -1 if the note has none. */
-    private fun fmEnd(lines: List<String>): Int {
+    internal fun fmEnd(lines: List<String>): Int {
         if (lines.isEmpty() || lines[0].trim() != "---") return -1
         for (i in 1 until lines.size) if (lines[i].trim() == "---") return i
         return -1
