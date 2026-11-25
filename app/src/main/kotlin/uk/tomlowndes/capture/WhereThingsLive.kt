@@ -92,106 +92,85 @@ internal object PhonePlaces {
         DeckConfig.layout(appVault(ctx, uri).read(DeckConfig.PATH)).let { HomeCard.BILLS !in it.hidden }
 }
 
-private val PLACE_FILTERS = listOf("All", "On", "In Hangar", "Off")
-
-/** Settings › Where things live: every element with a switch and Hangar or Both (where-things-live-v1). */
+/** Settings › What's in the app: every element with one word for where it is; tap it to change (settings-cleanup-v1). */
 @Composable
 fun PlacesScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<PlaceState?>(null) }
-    var filter by remember { mutableIntStateOf(0) }
-    LaunchedEffect(vault) {
+    var reload by remember { mutableIntStateOf(0) }
+    var editing by remember { mutableStateOf<Element?>(null) }
+    var showOff by remember { mutableStateOf(false) }
+    LaunchedEffect(vault, reload) {
         val uri = vault ?: return@LaunchedEffect
         state = withContext(Dispatchers.IO) { runCatching { PhonePlaces.load(ctx, uri, prefs) }.getOrNull() }
-    }
-    fun set(e: Element, p: Lives) {
-        val uri = vault ?: return
-        val now = state ?: return
-        val next = now.with(e, p)
-        state = next
-        scope.launch {
-            withContext(Dispatchers.IO) { runCatching { PhonePlaces.save(ctx, uri, prefs, next) } }
-                .onFailure { state = now; snack.showSnackbar("Couldn't save: ${it.message}") }
-        }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Muted) }
-            Text("Where things live", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("What's in the app", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
-        Text("Switch off what you don't use. Hangar keeps the main app quiet; Both puts it in Hangar and its usual spot.",
-            color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+        Text("Tap anything to switch it off or move it.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
         val s = state
         if (vault == null) { Text("Pick your vault in Settings first.", color = Muted); return@Column }
         if (s == null) { Text("Loading…", color = Muted); return@Column }
-        val counts = s.counts()
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PLACE_FILTERS.forEachIndexed { i, f -> AppChip(filter == i, { filter = i }, { Text("$f ${counts[i]}") }) }
-        }
         Element.GROUPS.forEach { g ->
-            val rows = Element.values().filter { it.group == g }.filter { e ->
-                when (filter) {
-                    1 -> s.on(e)
-                    2 -> s.place(e) == Lives.HANGAR || s.place(e) == Lives.BOTH
-                    3 -> !s.on(e)
-                    else -> true
-                }
-            }
+            val rows = Element.values().filter { it.group == g && s.on(it) }
             if (rows.isEmpty()) return@forEach
             Box(Modifier.padding(top = 16.dp, bottom = 4.dp)) { GroupLabel(g) }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)) {
                 rows.forEachIndexed { i, e ->
                     if (i > 0) HorizontalDivider(color = Outline)
-                    PlaceRow(e, s.place(e)) { set(e, it) }
+                    PlaceRow(e, s.place(e)) { editing = e }
                 }
             }
         }
-        Text("Heads Up works on the phone only. Switching a tool off keeps its notes in the vault.",
+        val off = Element.values().filter { !s.on(it) }
+        if (off.isNotEmpty()) {
+            Box(Modifier.padding(top = 16.dp, bottom = 4.dp)) { GroupLabel("Off") }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1).clickable { showOff = !showOff }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${off.size} switched off" + if (showOff) "" else " · " + off.take(3).joinToString(", ") { it.label } + if (off.size > 3) "…" else "",
+                    fontSize = 13.sp, color = Muted, modifier = Modifier.weight(1f))
+                Text(if (showOff) "Hide" else "Show ›", fontSize = 13.sp, color = Muted)
+            }
+            if (showOff) Column(Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface1)) {
+                off.forEachIndexed { i, e ->
+                    if (i > 0) HorizontalDivider(color = Outline)
+                    PlaceRow(e, Lives.OFF) { editing = e }
+                }
+            }
+        }
+        Text("Heads Up works on the phone only. Switching something off keeps its notes in the vault.",
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp, bottom = 28.dp))
     }
+    editing?.let { e -> PlaceSheet(vault, prefs, snack, e, onDone = { editing = null; reload++ }) { editing = null } }
 }
 
-/** One element: icon, name, where it is, Hangar | Both, and on/off. */
+/** One element: icon, name, and one coloured word for where it is. Tap to change. */
 @Composable
-private fun PlaceRow(e: Element, p: Lives, onSet: (Lives) -> Unit) {
+private fun PlaceRow(e: Element, p: Lives, onClick: () -> Unit) {
     val on = p != Lives.OFF
-    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    val alwaysOn = e == Element.NEXT_STEP
+    Row(Modifier.fillMaxWidth().clickable(enabled = !alwaysOn, onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
         Text(e.icon, fontSize = 17.sp, color = if (on) TextMain else Muted, modifier = Modifier.width(30.dp))
-        Column(Modifier.weight(1f)) {
-            Text(e.label, fontSize = 14.5.sp, color = if (on) TextMain else Muted)
-            Text(when (p) {
-                Lives.OFF -> "Off"
-                Lives.HANGAR -> "Hangar only"
-                Lives.BOTH -> "Hangar + " + e.mainSpot.replaceFirstChar { it.lowercase(Locale.UK) }
-                Lives.MAIN -> e.mainSpot
-            }, fontSize = 11.5.sp, color = Muted, maxLines = 1)
+        Text(e.label, fontSize = 14.5.sp, color = if (on) TextMain else Muted, modifier = Modifier.weight(1f))
+        val word = e.pill(p)
+        val (fg, bg) = when (p) {
+            Lives.HANGAR -> Primary to PrimaryTint
+            Lives.BOTH, Lives.MAIN -> Green to Green.copy(alpha = 0.14f)
+            Lives.OFF -> Muted to Surface2
         }
-        if (e.hangarOk) MiniSegment(listOf("Hangar", "Both"), if (p == Lives.BOTH) 1 else if (p == Lives.HANGAR) 0 else -1, enabled = on) { i ->
-            onSet(if (i == 0) Lives.HANGAR else Lives.BOTH)
-        }
-        Box(Modifier.padding(start = 6.dp)) {
-            // Next step is the Deck's hero: it can't be switched off.
-            if (e == Element.NEXT_STEP) Text("Always", fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(horizontal = 8.dp))
-            else AppSwitch(on) { yes -> onSet(if (!yes) Lives.OFF else if (e.hangarOk) Lives.HANGAR else Lives.MAIN) }
+        if (alwaysOn) Text(word, fontSize = 12.5.sp, color = Muted)
+        else {
+            Text(word, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg,
+                modifier = Modifier.clip(CircleShape).background(bg).padding(horizontal = 10.dp, vertical = 3.dp))
+            Text("›", fontSize = 18.sp, color = Muted, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
 
-@Composable
-private fun MiniSegment(options: List<String>, selected: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
-    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Surface2).border(1.dp, Outline, RoundedCornerShape(10.dp)).padding(2.dp)) {
-        options.forEachIndexed { i, o ->
-            val on = enabled && i == selected
-            Text(o, fontSize = 11.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (on) Primary else Muted.copy(alpha = if (enabled) 1f else 0.4f),
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) PrimaryTint else Color.Transparent)
-                    .clickable(enabled = enabled) { onSelect(i) }.padding(horizontal = 8.dp, vertical = 4.dp))
-        }
-    }
-}
-
-/** Long-press a Hangar tile (where-things-live-v1): Hangar only, Hangar and the main app, or off. */
+/** Tap a row, or long-press a Hangar tile: Off, Hangar, or Hangar + main app (settings-cleanup-v1). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlaceSheet(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, e: Element, onDone: () -> Unit, onDismiss: () -> Unit) {
@@ -204,33 +183,36 @@ internal fun PlaceSheet(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, 
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Surface2) {
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
-            Text("${e.icon} ${e.label}", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Text("Where should ${e.label} live?", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+            Text("${e.icon} ${e.label}", fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
             val s = state ?: return@Column
             val now = s.place(e)
-            listOf(
-                Lives.HANGAR to ("Hangar only" to "Tile here. Gone from the main app."),
-                Lives.BOTH to ("Hangar and main app" to "Also: " + e.mainSpot.replaceFirstChar { it.lowercase(Locale.UK) }),
-                Lives.OFF to ("Off" to "Hidden everywhere. Its notes stay in the vault."),
-            ).forEach { (p, words) ->
-                HorizontalDivider(color = Outline)
-                Row(Modifier.fillMaxWidth().clickable {
-                    val uri = vault ?: return@clickable
-                    scope.launch {
-                        withContext(Dispatchers.IO) { runCatching { PhonePlaces.save(ctx, uri, prefs, s.with(e, p)) } }
-                            .onSuccess { onDone() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
-                    }
-                }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            e.choices.forEach { p ->
+                val words = when (p) {
+                    Lives.OFF -> "Off" to (if (e == Element.BILLS) "Gone from everywhere: Deck, Tasks, Hangar, Ticket Rail, Brief and slips. Your bills stay in the vault."
+                        else "Hidden everywhere. Its notes stay in the vault.")
+                    Lives.HANGAR -> "Hangar" to "A Hangar tile only."
+                    Lives.BOTH -> "Hangar + main app" to ("Also " + e.mainSpot.replaceFirstChar { it.lowercase(Locale.UK) } + ".")
+                    Lives.MAIN -> "On" to e.mainSpot
+                }
+                val picked = p == now || (p == Lives.BOTH && now == Lives.MAIN)
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp))
+                    .background(if (picked) PrimaryTint else Color.Transparent)
+                    .border(1.dp, if (picked) Primary else Outline, RoundedCornerShape(14.dp))
+                    .clickable {
+                        val uri = vault ?: return@clickable
+                        scope.launch {
+                            withContext(Dispatchers.IO) { runCatching { PhonePlaces.save(ctx, uri, prefs, s.with(e, p)) } }
+                                .onSuccess { onDone() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+                        }
+                    }.padding(14.dp), verticalAlignment = Alignment.Top) {
+                    Text(if (picked) "●" else "○", color = if (picked) Primary else Muted, fontSize = 16.sp, modifier = Modifier.width(28.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(words.first, fontSize = 15.sp)
-                        Text(words.second, fontSize = 12.sp, color = Muted)
-                    }
-                    Box(Modifier.width(22.dp).padding(start = 4.dp)) {
-                        Text(if (p == now) "●" else "○", color = if (p == now) Primary else Muted, fontSize = 16.sp)
+                        Text(words.first, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(words.second, fontSize = 12.5.sp, color = Muted)
                     }
                 }
             }
-            Text("To move a tile, hold it and drag.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 12.dp))
+            if (e.hangarOk) Text("To move a tile, hold it and drag.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

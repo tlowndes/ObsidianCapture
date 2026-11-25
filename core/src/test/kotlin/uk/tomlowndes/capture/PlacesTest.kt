@@ -118,4 +118,15 @@ class PlacesTest {
     @Test fun `next line names the soonest day`() {
         assertEquals("£37.62 + 1 more due Tue 1 Dec", BillPage.nextLine(bills, today))
     }
+
+    @Test fun `settings clean-up gives each element plain choices and one word`() {
+        assertEquals(listOf(Lives.OFF, Lives.HANGAR, Lives.BOTH), Element.BILLS.choices)
+        assertEquals(listOf(Lives.OFF, Lives.MAIN), Element.WEATHER.choices)
+        assertEquals("Hangar", Element.BILLS.pill(Lives.HANGAR))
+        assertEquals("Hangar + Deck + Tasks", Element.BILLS.pill(Lives.BOTH))
+        assertEquals("Hangar + Deck", Element.BRIEF.pill(Lives.BOTH))
+        assertEquals("On", Element.WEATHER.pill(Lives.MAIN))
+        assertEquals("Always on", Element.NEXT_STEP.pill(Lives.MAIN))
+        assertEquals("Off", Element.BILLS.pill(Lives.OFF))
+    }
 }

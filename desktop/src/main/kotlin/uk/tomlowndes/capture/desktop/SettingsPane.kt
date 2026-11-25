@@ -171,16 +171,19 @@ private fun DeckPage(state: AppState) {
         }
     }
     PlacesSection(state)
-    Text("CARDS ON THE DECK", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
-    Sub("Shared with the phone through the vault. ↑ ↓ to reorder.", Modifier.padding(bottom = 6.dp))
+    Text("DECK ORDER", fontSize = 12.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.padding(top = 26.dp, bottom = 4.dp))
+    Sub("Shared with the phone. ↑ ↓ to reorder. Switch cards on or off in the list above.", Modifier.padding(bottom = 6.dp))
     val l = layout
     if (l == null) Sub("Pick a vault first.") else l.order.forEachIndexed { i, card ->
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(card.label, fontSize = 14.sp, color = if (card in l.hidden) Muted else TextMain, modifier = Modifier.weight(1f))
             TextAction("↑", if (i > 0) Primary else Faint) { if (i > 0) save(l.moved(i, i - 1)) }
             TextAction("↓", if (i < l.order.lastIndex) Primary else Faint) { if (i < l.order.lastIndex) save(l.moved(i, i + 1)) }
-            Spacer(Modifier.width(10.dp))
-            Toggle(card !in l.hidden) { save(l.toggled(card)) }
+            // Cards with no row in the list above keep their own switch.
+            if (uk.tomlowndes.capture.Element.values().none { it.card == card }) {
+                Spacer(Modifier.width(10.dp))
+                Toggle(card !in l.hidden) { save(l.toggled(card)) }
+            }
         }
     }
 }
