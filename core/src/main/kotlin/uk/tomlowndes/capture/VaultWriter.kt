@@ -13,7 +13,11 @@ data class TaskItem(
 data class TickedTask(val raw: String, val text: String, val done: LocalDate?, val path: String = VaultTasks.QUICK_TASK)
 
 /** Open tasks plus ticked ones (Quick Task's Archive first, newest first, then the rest of the vault). */
-data class TaskLists(val open: List<TaskItem>, val done: List<TickedTask>, val quickAlert: QuickGuard.Alert? = null)
+data class TaskLists(
+    val open: List<TaskItem>, val done: List<TickedTask>, val quickAlert: QuickGuard.Alert? = null,
+    /** Printed tasks whose `🆔` couldn't be saved on their line yet (printed-marks-v1); the app tries again next time. */
+    val unmarked: List<TaskItem> = emptyList(),
+)
 
 /**
  * Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active.
@@ -23,6 +27,11 @@ data class Completion(val doneLine: String, val nextLine: String?, val at: Int =
 
 /** Where a removed task was ([at]) and, in Quick Task, its subtasks as they were, for Undo. */
 data class Removed(val at: Int, val steps: List<String> = emptyList())
+
+private val PRINT_LOCK = Any()
+/** When a printed task's line last refused its `🆔`, by note and line, so it isn't retried on every look. */
+private val failedAt = mutableMapOf<String, Long>()
+private const val RETRY_MS = 120_000L
 
 /**
  * Tasks and quick notes in the vault. [cacheFile] keeps the vault-wide task scan between runs; [onTasksChanged]
@@ -34,6 +43,8 @@ class VaultWriter(
     private val walkTtlMs: Long = 0,
     /** Where this device keeps its Quick Task copies (quick-task-guard-v1); null turns the guard off. */
     guardDir: File? = null,
+    /** This device's list of printed tickets (printed-marks-v1, [PrintLog]); null keeps none. */
+    private val printFile: File? = null,
 ) {
     private val taskPath = "$INBOX/$TASK_FILE"
     private val guard = guardDir?.let { QuickGuard.Store(it) }
@@ -119,10 +130,64 @@ class VaultWriter(
     }
 
     /** Quick Task's open tasks first, then `#task` tasks from every other note in the vault. */
-    fun listTasks(): List<TaskItem> = listQuickTasks() + VaultScan.tasks(vault, cacheFile, walkTtlMs)
+    fun listTasks(): List<TaskItem> {
+        val open = listQuickTasks() + VaultScan.tasks(vault, cacheFile, walkTtlMs)
+        return if (healPrinted(open).first > 0) listQuickTasks() + VaultScan.tasks(vault, cacheFile, walkTtlMs) else open
+    }
 
     /** [listTasks] plus ticked tasks, from the same vault scan. */
     fun listTaskLists(): TaskLists {
+        val first = readTaskLists()
+        if (printFile == null) return first
+        val log = printed()
+        val kept = PrintLog.prune(log, first.done, java.time.LocalDateTime.now())
+        if (kept.size != log.size) synchronized(PRINT_LOCK) { savePrinted(kept) }
+        val (fixed, still) = healPrinted(first.open)
+        return (if (fixed > 0) readTaskLists() else first).copy(unmarked = still)
+    }
+
+    // ---- printed tickets (printed-marks-v1) ----
+
+    /** This device's printed tickets, newest last. */
+    fun printed(): List<Printed> = printFile?.let { f -> runCatching { PrintLog.decode(f.takeIf { it.exists() }?.readText()) }.getOrNull() } ?: emptyList()
+
+    private fun savePrinted(log: List<Printed>) {
+        val f = printFile ?: return
+        runCatching { f.parentFile?.mkdirs(); f.writeText(PrintLog.encode(log)) }
+    }
+
+    /** Notes that [items] were printed just now, before their ids go on their lines. */
+    fun recordPrinted(items: List<Printed>) {
+        if (printFile == null || items.isEmpty()) return
+        synchronized(PRINT_LOCK) { savePrinted(PrintLog.add(printed(), items)) }
+    }
+
+    /** The id this device printed [t] with, when its line lost it. */
+    fun printedId(t: TaskItem, open: List<TaskItem>): String? =
+        PrintLog.missing(printed(), open).firstOrNull { (m, _) -> m.path == t.path && m.raw == t.raw }?.second
+
+    /**
+     * Puts a lost `🆔` back on each printed task that's missing it. A line that won't take it is left for a couple of
+     * minutes before trying again. Returns how many were fixed and the tasks still without their id.
+     */
+    private fun healPrinted(open: List<TaskItem>): Pair<Int, List<TaskItem>> {
+        if (printFile == null) return 0 to emptyList()
+        val missing = PrintLog.missing(printed(), open)
+        if (missing.isEmpty()) return 0 to emptyList()
+        val now = System.currentTimeMillis()
+        var fixed = 0
+        val still = mutableListOf<TaskItem>()
+        for ((t, id) in missing) {
+            val key = t.path + "\u0000" + t.raw
+            val last = synchronized(PRINT_LOCK) { failedAt[key] }
+            if (last != null && now - last < RETRY_MS) { still += t; continue }
+            if (runCatching { giveTicketId(t, id) }.isSuccess) fixed++
+            else { still += t; synchronized(PRINT_LOCK) { failedAt[key] = now } }
+        }
+        return fixed to still
+    }
+
+    private fun readTaskLists(): TaskLists {
         val text = taskFile(false)?.let { VaultIo.read(vault, it) }
         val quick = text?.split("\n")
         val alert = guard?.let { g -> runCatching { g.seen(text) }.getOrNull() }

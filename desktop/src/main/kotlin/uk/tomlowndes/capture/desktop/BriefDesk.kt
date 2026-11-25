@@ -164,7 +164,8 @@ private fun loadOrWriteDeskBrief(state: AppState, force: Boolean): BriefDoc? {
     if (!force) DailyBrief.load(v, today)?.let { return it }
     if (!force && !DailyBrief.appMayWrite(now)) return null
     if (!hasClaude(state)) return null
-    val tasks = state.writer()!!.listTasks()
+    // Bills switched off in Where things live: the brief leaves them out too (printed-marks-v1).
+    val tasks = uk.tomlowndes.capture.Places.forBills(state.writer()!!.listTasks(), runCatching { uk.tomlowndes.capture.Places.load(v) }.getOrNull())
     val input = DailyBrief.Input(
         now, tasks, runCatching { DesktopCalendar.load(v).second }.getOrDefault(emptyList()),
         runCatching { DesktopWeather.today(state.prefs) }.getOrNull(),

@@ -206,7 +206,7 @@ object PrintNow {
         val t = TicketRail.findForPrint(lists.open, ask)
             ?: return Result.Failed("Couldn't find that task", "It isn't open in ${ask.note} any more. Was it ticked or edited?")
         // Printed before: print again with the same id, so its old ticket and the new one match.
-        val id = TicketRail.railId(t.raw) ?: TicketRail.nextId(TicketRail.prefix(t.text), TicketRail.taken(lists.open, lists.done))
+        val id = TicketRail.railId(t.raw) ?: writer.printedId(t, lists.open) ?: TicketRail.nextId(TicketRail.prefix(t.text), TicketRail.taken(lists.open, lists.done))
         val ticket = TicketRail.ticket(t, id, today, now)
         val sent = runCatching { DesktopPrinter.send(port, DesktopSlip.job(DesktopTicket.draw(ticket))) }
         if (sent.isFailure) {
@@ -215,6 +215,8 @@ object PrintNow {
                 "Is it on? \"${ticket.text}\" stays on your list and prints with tomorrow's morning run.",
             )
         }
+        // printed-marks-v1: noted first, so a line that won't take its 🆔 now gets it next time.
+        writer.recordPrinted(listOf(uk.tomlowndes.capture.PrintLog.of(t, id, java.time.LocalDateTime.now())))
         if (TicketRail.railId(t.raw) == null) runCatching { writer.giveTicketId(t, id) }
         return Result.Printed(ticket.code, ticket.text)
     }

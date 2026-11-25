@@ -107,7 +107,7 @@ object TicketRail {
     }
 
     /** A line without its checkbox, `🆔` or `✅` date, spaces evened out: how a Print now link names it. */
-    private fun body(line: String): String =
+    fun body(line: String): String =
         line.replace(Regex("^\\s*- \\[.]\\s*"), "").replace(ID_PIECE, "").replace(Regex("\\s*✅\\s*\\d{4}-\\d{2}-\\d{2}"), "")
             .replace(Regex("\\s+"), " ").trim()
 

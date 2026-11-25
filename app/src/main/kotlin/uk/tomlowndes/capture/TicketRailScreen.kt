@@ -99,7 +99,8 @@ object TicketPrint {
             openLines = lists.open
             val taken = TicketRail.taken(lists.open, lists.done).toMutableSet()
             tasks.distinctBy { it.raw }.map { t ->
-                t to (TicketRail.railId(t.raw) ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it })
+                // A task printed before whose 🆔 didn't stick keeps its old code (printed-marks-v1).
+                t to (TicketRail.railId(t.raw) ?: writer.printedId(t, lists.open) ?: TicketRail.nextId(TicketRail.prefix(t.text), taken).also { taken += it })
             }
         }
         if (ids.isEmpty() && before == null) return 0
@@ -114,10 +115,14 @@ object TicketPrint {
         }
         val job = withContext(Dispatchers.Default) { SlipRender.job(bmp) }
         withContext(Dispatchers.IO) { SlipPrinter.print(ctx, pr, job) { pc -> status("Printing on ${pr.name} · $pc%") } }
-        // Only once it's on paper: the ids go onto the tasks, so each QR finds its task again.
-        withContext(Dispatchers.IO) {
-            ids.forEach { (t, id) -> if (TicketRail.railId(t.raw) == null) runCatching { writer.giveTicketId(t, id) } }
+        // Only once it's on paper: the ids go onto the tasks, so each QR finds its task again. The phone notes what it
+        // printed first, so a line that won't take its 🆔 now gets it next time (printed-marks-v1).
+        val unsaved = withContext(Dispatchers.IO) {
+            val at = java.time.LocalDateTime.now()
+            writer.recordPrinted(ids.map { (t, id) -> PrintLog.of(t, id, at) })
+            ids.filter { (t, id) -> TicketRail.railId(t.raw) == null && runCatching { writer.giveTicketId(t, id) }.isFailure }.map { it.first }
         }
+        TicketMarks.printed(unsaved)
         return ids.size
     }
 
@@ -198,7 +203,9 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
 
     LaunchedEffect(vault, reload) {
         val uri = vault ?: return@LaunchedEffect
-        lists = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() }.getOrNull() }
+        var log = emptyList<Printed>()
+        lists = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).let { w -> w.listTaskLists().also { log = w.printed() } } }.getOrNull() }
+        lists?.let { TicketMarks.looked(it, log) }
     }
 
     fun clear(id: String) {
@@ -237,7 +244,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         scope.launch {
             val r = runCatching { TicketPrint.print(ctx, uri, tasks) { status = it } }
             busy = false
-            status = r.fold({ n -> if (n == 1) "1 ticket printed." else "$n tickets printed." }, { it.message ?: "Printing failed" })
+            status = r.fold({ n -> (if (n == 1) "1 ticket printed" else "$n tickets printed") + if (TicketMarks.warning == null) " and marked in the vault." else "." }, { it.message ?: "Printing failed" })
             if (r.isFailure) snack.showSnackbar(status!!) else picked = picked - tasks.map { it.raw }.toSet()
             reload++
         }
@@ -273,6 +280,8 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         if (vault == null) { Text("Pick your vault in Settings first.", color = Muted, modifier = Modifier.padding(top = 12.dp)); return@Column }
         if (l == null) { Text("Loading…", color = Muted, modifier = Modifier.padding(start = 4.dp, top = 8.dp)); return@Column }
         val rail = TicketRail.onRail(l.open)
+        // When each ticket printed, from this phone's own list (printed-marks-v1).
+        fun stampOf(id: String): String? = PrintLog.at(TicketMarks.log, id)?.let { PrintLog.stamp(it, today) }
         val later = rail.filter { TicketRail.isLater(it, today) }
         val railNow = rail - later.toSet()
         val clearedToday = TicketRail.clearedOn(l.done, today)
@@ -293,7 +302,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
             if (rail.isEmpty()) Text("Nothing hanging yet. Print the morning run, or Print ticket from any task.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(4.dp))
             railNow.forEach { t ->
                 val id = TicketRail.railId(t.raw)!!
-                RailRow(TicketRail.code(id), Tags.strip(t.text), TicketRail.slot(t.due, today).let { (a, b) -> listOf(a, b).filter { it.isNotBlank() }.joinToString(" · ") },
+                RailRow(TicketRail.code(id), Tags.strip(t.text), (TicketRail.slot(t.due, today).let { (a, b) -> listOf(a, b) } + listOfNotNull(stampOf(id))).filter { it.isNotBlank() }.joinToString(" · "),
                     onReprint = { print(listOf(t)) }, onClear = { clear(id) })
             }
             if (later.isNotEmpty()) {
@@ -304,7 +313,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
                 later.forEach { t ->
                     val id = TicketRail.railId(t.raw)!!
                     val (slot, note) = TicketRail.slot(t.due, today)
-                    RailRow(TicketRail.code(id), Tags.strip(t.text), listOf(slot, note).filter { it.isNotBlank() }.joinToString(" · "),
+                    RailRow(TicketRail.code(id), Tags.strip(t.text), (listOf(slot, note) + listOfNotNull(stampOf(id))).filter { it.isNotBlank() }.joinToString(" · "),
                         dayTag = TicketRail.dayTag(t.due!!, today), onReprint = { print(listOf(t)) }, onClear = { clear(id) })
                 }
             }
@@ -375,7 +384,12 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
             Switch(withSlip, { withSlip = it; prefs.ticketsWithSlip = it },
                 colors = SwitchDefaults.colors(checkedTrackColor = Paper, checkedThumbColor = PaperInk))
         }
-        status?.let { Text(it, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 10.dp)) }
+        status?.takeIf { it != TicketMarks.warning }?.let { Text(it, color = if (it.endsWith("marked in the vault.")) Green else Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 10.dp)) }
+        // printed-marks-v1: a ticket whose 🆔 didn't save is said plainly, not lost.
+        TicketMarks.warning?.let {
+            Text("⚠ $it", color = Color(0xFFFFCF7A), fontSize = 12.5.sp, lineHeight = 17.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF3A2A12)).padding(horizontal = 12.dp, vertical = 10.dp))
+        }
 
         Text(
             "Scan a ticket", color = PaperInk, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center,

@@ -213,8 +213,10 @@ fun TasksScreen(
                 withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listQuickTasks() } }
                     .onSuccess { tasks.clear(); tasks.addAll(it) }
             }
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).listTaskLists() } }
+            var printedLog = emptyList<Printed>()
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).let { w -> w.listTaskLists().also { printedLog = w.printed() } } } }
             r.onSuccess {
+                TicketMarks.looked(it, printedLog)
                 TaskSnapshot.save(ctx, it)
                 quickAlert = it.quickAlert
                 // Only touch the lists when something changed, so an unchanged refresh doesn't redraw every row.
@@ -804,7 +806,7 @@ fun TasksScreen(
                 if (uri != null) scope.launch {
                     val r = runCatching { TicketPrint.print(ctx, uri, listOf(t)) }
                     reload()
-                    snack.showSnackbar(r.fold({ "Ticket printed. It's on the rail" }, { "Couldn't print: ${it.message}" }))
+                    snack.showSnackbar(r.fold({ TicketMarks.warning ?: "Ticket printed. It's on the rail" }, { "Couldn't print: ${it.message}" }))
                 }
             }) else null,
         )

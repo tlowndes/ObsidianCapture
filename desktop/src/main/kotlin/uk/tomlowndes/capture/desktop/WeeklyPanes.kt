@@ -117,7 +117,8 @@ fun WeeklyPane(state: AppState) {
             val done = WeeklyReview.done(v, today)
             val rc = Recaps.build(done, FlightNotes.loadSince(v, today.minusDays(6)), runCatching { Habits.load(v) }.getOrNull(),
                 runCatching { Jobs.list(v) }.getOrDefault(emptyList()), today)
-            WeeklyReview.build(done, w.listTasks(), today) to rc
+            // Bills switched off in Where things live: the review leaves them out too (printed-marks-v1).
+            WeeklyReview.build(done, uk.tomlowndes.capture.Places.forBills(w.listTasks(), runCatching { uk.tomlowndes.capture.Places.load(v) }.getOrNull()), today) to rc
         }?.let { (r, rc) -> review = r; recap = rc }
     }
 

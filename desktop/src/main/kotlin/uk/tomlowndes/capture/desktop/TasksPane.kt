@@ -513,6 +513,9 @@ private fun AddTaskBox(state: AppState, onAdded: () -> Unit) {
     if (repeatOpen) RepeatDialog(repeat, onPick = { repeatOpen = false; repeat = it }, onDismiss = { repeatOpen = false })
 }
 
+private val TicketPaper = androidx.compose.ui.graphics.Color(0xFFE9D9B4)
+private val TicketInk = androidx.compose.ui.graphics.Color(0xFF1D1608)
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TaskRow(
@@ -551,6 +554,12 @@ private fun TaskRow(
                     modifier = Modifier.weight(1f, fill = false).hand().clickable { open() }
                 )
                 TaskViews.tags(t).take(3).forEach { TagMini(it) }
+                // printed-marks-v1: a printed task carries its paper tag, with its code on hover.
+                if (uk.tomlowndes.capture.TicketRail.railId(t.raw) != null) Text(
+                    uk.tomlowndes.capture.PrintLog.tag(t, today), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = TicketInk, maxLines = 1,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(5.dp)).background(TicketPaper).padding(horizontal = 6.dp, vertical = 1.dp)
+                )
                 Deck.minutes(t)?.let { Text(TaskRules.minutesLabel(it), fontSize = 11.5.sp, color = Muted, modifier = Modifier.padding(start = 8.dp)) }
                 if (steps > 0) Text(
                     "$steps step${if (steps > 1) "s" else ""} ${if (stepsOpen) "▴" else "▾"}", fontSize = 11.sp, color = Primary, maxLines = 1,

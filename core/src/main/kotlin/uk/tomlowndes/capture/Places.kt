@@ -211,6 +211,13 @@ object Places {
     fun load(v: Vault, phoneHangar: List<HangarTool>? = null, phoneTiles: List<HangarTool>? = null): PlaceState =
         state(v.read(DeckConfig.PATH), phoneHangar, phoneTiles)
 
+    /**
+     * [tasks] as the Daily Brief, the slips and Weekly review see them (printed-marks-v1): with Bills switched off in
+     * Where things live, the `#bill` lines are left out there too. They stay in Quick Task, so switching on brings them back.
+     */
+    fun forBills(tasks: List<TaskItem>, s: PlaceState?): List<TaskItem> =
+        if (s == null || s.on(Element.BILLS)) tasks else tasks.filterNot { Deck.isBill(it) }
+
     fun save(v: Vault, s: PlaceState, at: Long = System.currentTimeMillis()) {
         val path = DeckConfig.PATH
         if (v.entry(path) == null) {

@@ -105,6 +105,13 @@ internal fun EditTaskSheet(
                 modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(CircleShape).background(PrimaryTint)
                     .clickable(onClick = onBreakDown).padding(vertical = 10.dp)
             )
+            // printed-marks-v1: a printed task says so, with when.
+            printedTag(t)?.let { tag ->
+                Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PrintedChip(tag)
+                    TicketMarks.line(t)?.let { Text(it, color = Paper, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 8.dp)) }
+                }
+            }
             if (onPrintTicket != null) Text(
                 if (TicketRail.railId(t.raw) != null) "▤ Reprint ticket ${TicketRail.code(TicketRail.railId(t.raw)!!)}" else "▤ Print ticket",
                 color = PaperInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
