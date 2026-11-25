@@ -46,7 +46,8 @@ object TicketMarks {
     fun line(t: TaskItem, today: LocalDate = LocalDate.now()): String? {
         val id = TicketRail.railId(t.raw) ?: return null
         val at = PrintLog.at(log, id)
-        val early = t.due != null && t.due.isAfter(today) && at != null && at.toLocalDate().isBefore(t.due)
+        val due = t.due
+        val early = due != null && due.isAfter(today) && at != null && at.toLocalDate().isBefore(due)
         return TicketRail.code(id) + (at?.let { " · " + PrintLog.words(it, today) + if (early) ", early" else "" } ?: "")
     }
 }
