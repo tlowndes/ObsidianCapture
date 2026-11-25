@@ -128,7 +128,7 @@ fun copyImage(img: BufferedImage) {
 }
 
 /** Sends [img] to the saved printer. Returns false when there's no printer saved yet. */
-private suspend fun printImage(state: AppState, img: BufferedImage, progress: (Float?) -> Unit): Boolean {
+internal suspend fun printImage(state: AppState, img: BufferedImage, progress: (Float?) -> Unit): Boolean {
     val port = state.prefs.printerAddress ?: return false
     progress(0f)
     val ok = state.io("Couldn't print. Is the printer on and paired?") {

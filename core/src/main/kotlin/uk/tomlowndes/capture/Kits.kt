@@ -57,7 +57,6 @@ object Kits {
         ## Always
         - 💻 Laptop
         - 🔌 Charger
-        - 💧 Water bottle
 
         ## When
         - long 4 · 🍎 Snack, 🔋 Power bank
@@ -146,14 +145,30 @@ object Kits {
     /** Every kit, Pocket first. The first time, the old Launch Pad kit note moves to Kits/Pocket.md and Backpack is added. */
     fun loadAll(v: Vault): List<Kit> {
         ensure(v)
-        return v.list(DIR).filter { !it.isDir && it.name.endsWith(".md") }
-            .map { e -> val name = e.name.removeSuffix(".md"); parse(name, VaultIo.read(v, join(DIR, e.name)), join(DIR, e.name)) }
+        val all = v.list(DIR).filter { !it.isDir && it.name.endsWith(".md") }
+            .mapNotNull { e ->
+                val p = join(DIR, e.name)
+                val text = VaultIo.read(v, p)
+                if (PackLists.isList(text)) null else parse(cleanName(e.name.removeSuffix(".md")), text, p)
+            }
+        return dedupe(all, { it.name }, { it.path })
             .sortedWith(compareBy<Kit> { !it.name.equals(POCKET, true) }.thenBy { it.name.lowercase(Locale.UK) })
     }
 
+    private val CLASH = Regex("\\s*\\(# ?Name clash[^)]*\\)\\s*$", RegexOption.IGNORE_CASE)
+
+    /** A kit's name from its file name, without an Obsidian Sync clash tag: "Pocket (# Name clash 2026-11-24 ygoka3C #)" is Pocket. */
+    fun cleanName(file: String): String = file.replace(CLASH, "").trim().ifEmpty { file }
+
+    /** One kit per name: the plain file wins over a Sync clash copy. */
+    fun <T> dedupe(all: List<T>, name: (T) -> String, path: (T) -> String?): List<T> =
+        all.groupBy { name(it).lowercase(Locale.UK) }.values.map { same ->
+            same.firstOrNull { p -> path(p)?.let { nameOf(it).removeSuffix(".md") }.equals(name(p), true) } ?: same.first()
+        }
+
     /** Makes the Kits folder once, moving the old single kit note into it. Never runs again once a kit exists. */
     fun ensure(v: Vault) {
-        if (v.entry(DIR) != null && v.list(DIR).any { !it.isDir && it.name.endsWith(".md") }) return
+        if (v.entry(DIR) != null && v.list(DIR).any { !it.isDir && it.name.endsWith(".md") && !PackLists.isList(VaultIo.read(v, join(DIR, it.name))) }) return
         v.mkdirs(DIR)
         val old = if (v.entry(LaunchPad.KIT) != null) VaultIo.read(v, LaunchPad.KIT) else null
         val pocket = old?.let { o -> retitle(NightPad.upgrade(o) ?: o, "👖 $POCKET") } ?: POCKET_STARTER
