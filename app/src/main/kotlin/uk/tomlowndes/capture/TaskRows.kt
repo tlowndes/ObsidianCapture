@@ -55,11 +55,24 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private const val PRINTED_CHIP = "printed"
+
+/** The PRINTED chip as inline text content, sized to fit [tag] (10sp monospace, about 0.62em a character). */
+private fun printedInline(tag: String) = mapOf(
+    PRINTED_CHIP to InlineTextContent(
+        Placeholder(width = (tag.length * 6.9f + 16f).sp, height = 17.sp, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter)
+    ) { PrintedChip(tag) }
+)
 
 /**
  * One task line as Flight Deck draws it: optional work/personal edge, tick box, text with up to two tags, then
@@ -94,12 +107,15 @@ internal fun TaskLine(
                 Deck.minutes(t)?.let { m ->
                     withStyle(SpanStyle(color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)) { append(" ${TaskRules.minutesLabel(m)}") }
                 }
-                // printed-marks-v1: a printed task carries its paper tag.
+                // printed-marks-v1: a printed task carries its paper tag, drawn as the rounded PrintedChip so it
+                // stays in one piece and wraps to the next line whole.
                 printedTag(t)?.let { tag ->
-                    withStyle(SpanStyle(color = PaperInk, background = Paper, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)) { append(" $tag ") }
+                    append(" ")
+                    appendInlineContent(PRINTED_CHIP, tag)
                 }
             },
             fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            inlineContent = printedTag(t)?.let { printedInline(it) } ?: emptyMap(),
             color = if (faded) Muted else TextMain,
             modifier = Modifier.weight(1f).padding(vertical = 9.dp)
                 .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)

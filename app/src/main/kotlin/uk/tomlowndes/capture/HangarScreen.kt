@@ -639,7 +639,8 @@ internal data class RailStatus(val onRail: Int, val cleared: Int, val toPrint: I
     companion object {
         fun load(ctx: Context, vault: Uri, today: LocalDate = LocalDate.now()): RailStatus {
             val l = VaultWriter(ctx, vault).listTaskLists()
-            return RailStatus(TicketRail.onRail(l.open).size, TicketRail.clearedOn(l.done, today).size, TicketRail.morningRun(l.open, today).size)
+            val open = Places.forBills(l.open, runCatching { PhonePlaces.load(ctx, vault, AppPrefs(ctx)) }.getOrNull())
+            return RailStatus(TicketRail.onRail(open).size, TicketRail.clearedOn(l.done, today).size, TicketRail.morningRun(open, today).size)
         }
     }
 }

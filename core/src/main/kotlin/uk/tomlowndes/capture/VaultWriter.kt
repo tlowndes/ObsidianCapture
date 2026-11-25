@@ -23,7 +23,17 @@ data class TaskLists(
  * Result of ticking a task: the archived line and, for recurring tasks, the follow-up line left in Active.
  * In Quick Task, [at] is the line it was on and [steps] its subtasks as they were, so Undo can put both back.
  */
-data class Completion(val doneLine: String, val nextLine: String?, val at: Int = -1, val steps: List<String> = emptyList())
+/**
+ * A ticked task. [at] and [steps] are where it was and its sub-tasks as they were; [doneSteps] are those
+ * sub-tasks as ticking the parent left them (ticked too), so Undo can find and reopen them.
+ */
+data class Completion(
+    val doneLine: String,
+    val nextLine: String?,
+    val at: Int = -1,
+    val steps: List<String> = emptyList(),
+    val doneSteps: List<String> = emptyList(),
+)
 
 /** Where a removed task was ([at]) and, in Quick Task, its subtasks as they were, for Undo. */
 data class Removed(val at: Int, val steps: List<String> = emptyList())
@@ -220,12 +230,13 @@ class VaultWriter(
 
     /**
      * Ticks the task. In Quick Task it moves to the top of "## Archive"; in any other note it is ticked where it is.
+     * Its open sub-tasks are ticked with it (they go along to the Archive in Quick Task); Undo reopens them.
      * With [recurring], a task that has a 🔁 rule also leaves its next occurrence in place, like the Tasks plugin does.
      */
     fun completeTask(t: TaskItem, recurring: Boolean = true): Completion {
         val c = TaskNote.completion(t.raw, LocalDate.now(), recurring)
         var out = c
-        edit(noteOf(t)) { if (isQuick(t)) out = TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
+        edit(noteOf(t)) { out = if (isQuick(t)) TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
         return out
     }
 

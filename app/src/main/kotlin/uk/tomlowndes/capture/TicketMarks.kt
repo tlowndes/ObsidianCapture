@@ -59,8 +59,10 @@ internal fun printedTag(t: TaskItem, today: LocalDate = LocalDate.now()): String
 /** The paper-coloured printed tag (printed-marks-v1). */
 @Composable
 internal fun PrintedChip(label: String, modifier: Modifier = Modifier) {
+    // A soft rounded pill of ticket paper, like the tag pills beside it.
     Text(
-        label, color = PaperInk, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, maxLines = 1,
-        modifier = modifier.clip(RoundedCornerShape(5.dp)).background(Paper).padding(horizontal = 6.dp, vertical = 1.dp)
+        label, color = PaperInk, fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 0.4.sp,
+        fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+        modifier = modifier.clip(RoundedCornerShape(50)).background(Paper).padding(horizontal = 7.dp, vertical = 2.dp)
     )
 }

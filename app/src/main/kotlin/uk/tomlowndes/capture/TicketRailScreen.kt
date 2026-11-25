@@ -144,7 +144,10 @@ object TicketPrint {
 
     /** The morning run for [today], from the vault. */
     suspend fun morning(ctx: Context, vault: Uri, today: LocalDate = LocalDate.now()): List<TaskItem> =
-        withContext(Dispatchers.IO) { TicketRail.morningRun(VaultWriter(ctx, vault).listTasks(), today) }
+        withContext(Dispatchers.IO) {
+            val places = runCatching { PhonePlaces.load(ctx, vault, AppPrefs(ctx)) }.getOrNull()
+            TicketRail.morningRun(Places.forBills(VaultWriter(ctx, vault).listTasks(), places), today)
+        }
 }
 
 /** What happened when a ticket was scanned. */
@@ -190,6 +193,8 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var lists by remember { mutableStateOf<TaskLists?>(null) }
+    // Where things live: with Bills off, #bill tasks stay off the rail, the morning run and Coming up.
+    var places by remember { mutableStateOf<PlaceState?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -206,6 +211,7 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         var log = emptyList<Printed>()
         lists = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).let { w -> w.listTaskLists().also { log = w.printed() } } }.getOrNull() }
         lists?.let { TicketMarks.looked(it, log) }
+        places = withContext(Dispatchers.IO) { runCatching { PhonePlaces.load(ctx, uri, prefs) }.getOrNull() }
     }
 
     fun clear(id: String) {
@@ -279,14 +285,15 @@ fun TicketRailScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, cle
         val l = lists
         if (vault == null) { Text("Pick your vault in Settings first.", color = Muted, modifier = Modifier.padding(top = 12.dp)); return@Column }
         if (l == null) { Text("Loading…", color = Muted, modifier = Modifier.padding(start = 4.dp, top = 8.dp)); return@Column }
-        val rail = TicketRail.onRail(l.open)
+        val open = Places.forBills(l.open, places)
+        val rail = TicketRail.onRail(open)
         // When each ticket printed, from this phone's own list (printed-marks-v1).
         fun stampOf(id: String): String? = PrintLog.at(TicketMarks.log, id)?.let { PrintLog.stamp(it, today) }
         val later = rail.filter { TicketRail.isLater(it, today) }
         val railNow = rail - later.toSet()
         val clearedToday = TicketRail.clearedOn(l.done, today)
-        val run = TicketRail.morningRun(l.open, today)
-        val up = TicketRail.comingUp(l.open, today, upDays)
+        val run = TicketRail.morningRun(open, today)
+        val up = TicketRail.comingUp(open, today, upDays)
         // Paper each print will take (ticket-adaptive-v1): tickets are as long as their job now.
         fun paper(ts: List<TaskItem>): String {
             val now = LocalTime.now()
