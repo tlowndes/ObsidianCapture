@@ -230,10 +230,15 @@ object PackLists {
         STARTERS.forEach { (name, text) -> if (v.entry(Kits.path(name)) == null) VaultIo.write(v, v.create(Kits.DIR, name, "md"), text) }
     }
 
+    private val writing = Any()
+
+    /** One list write at a time: quick ticks used to race on the same temp file and fail ("Missing file … capture-tmp"). */
     fun save(v: Vault, p: PackList) {
-        val path = p.path ?: Kits.path(p.name)
-        if (v.entry(path) == null) { v.mkdirs(Kits.DIR); VaultIo.write(v, v.create(Kits.DIR, p.name, "md"), render(p)); return }
-        VaultIo.write(v, path, render(p))
+        synchronized(writing) {
+            val path = p.path ?: Kits.path(p.name)
+            if (v.entry(path) == null) { v.mkdirs(Kits.DIR); VaultIo.write(v, v.create(Kits.DIR, p.name, "md"), render(p)) }
+            else VaultIo.write(v, path, render(p))
+        }
     }
 
     // ---- Starters, from Bags & Pouches (05 - Resources/Go bag & EDC) ----

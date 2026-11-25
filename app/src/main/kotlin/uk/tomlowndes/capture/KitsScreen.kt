@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -68,6 +70,8 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
     val scope = rememberCoroutineScope()
     var kits by remember { mutableStateOf<List<Kit>?>(null) }
     var lists by remember { mutableStateOf<List<PackList>>(emptyList()) }
+    val pending = remember { mutableMapOf<String, PackList>() }
+    val writeLock = remember { Mutex() }
     var pick by remember { mutableStateOf(start) }
     var reload by remember { mutableIntStateOf(0) }
     var edit by remember { mutableStateOf<ItemEdit?>(null) }
@@ -91,12 +95,18 @@ internal fun KitsView(vault: Uri?, snack: SnackbarHostState, start: String? = nu
     }
 
     /** Saves changed list kits (Packing, the pouch, Car, Go bag), then reloads. */
+    // Ticks show at once; writes queue behind one lock and only the newest copy of each list is written.
     fun saveLists(changed: List<PackList>) {
         val uri = vault ?: return
         lists = lists.map { l -> changed.firstOrNull { it.name == l.name } ?: l }
+        changed.forEach { pending[it.name] = it }
         scope.launch {
-            withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); changed.forEach { PackLists.save(v, it) } } }
-                .onSuccess { reload++; onChanged() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            writeLock.withLock {
+                val batch = pending.values.toList().also { pending.clear() }
+                if (batch.isEmpty()) return@withLock
+                withContext(Dispatchers.IO) { runCatching { val v = appVault(ctx, uri); batch.forEach { PackLists.save(v, it) } } }
+                    .onSuccess { onChanged() }.onFailure { snack.showSnackbar("Couldn't save: ${it.message}") }
+            }
         }
     }
 
