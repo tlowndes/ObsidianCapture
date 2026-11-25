@@ -54,8 +54,8 @@ class StageSixTest {
         ClaudeCap.saveCap(v, 5.0, true)
 
         val s = ClaudeCap.sync(v, "phone", ClaudeCap.ledger(raw, nov), 0.31, nov)
-        // Phone $1.75 + PC $3 at 0.79, plus the box's 31p.
-        assertEquals(1.75 * 0.79 + 3.0 * 0.79 + 0.31, s.spentGbp, 1e-6)
+        // Phone $1.75 + PC $3 at 0.76, plus the box's 31p.
+        assertEquals(1.75 * 0.76 + 3.0 * 0.76 + 0.31, s.spentGbp, 1e-6)
         assertEquals("Jarvis", s.byFeature.keys.first())
         assertTrue(ClaudeCap.BOX in s.byFeature)
         assertEquals("£4.06 of £5", ClaudeCap.label(s))
@@ -72,7 +72,7 @@ class StageSixTest {
         // Not shared: only this phone counts.
         ClaudeCap.saveCap(v, 5.0, false)
         val alone = ClaudeCap.sync(v, "phone", ClaudeCap.ledger(raw, nov), 0.31, nov)
-        assertEquals(1.75 * 0.79, alone.spentGbp, 1e-6)
+        assertEquals(1.75 * 0.76, alone.spentGbp, 1e-6)
         assertNull(ClaudeCap.banner(alone))
         assertFalse(ClaudeCap.paused())
 
