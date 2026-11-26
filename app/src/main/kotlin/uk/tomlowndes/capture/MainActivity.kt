@@ -579,39 +579,3 @@ fun App(prefs: AppPrefs, request: Pair<Tab, String?>?, onRequestHandled: () -> U
         }
     }
 }
-
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-private fun NavBar(selected: Tab?, hangarOpen: Boolean, needs: Int, onHangar: () -> Unit, onPeek: () -> Unit, onSelect: (Tab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(NavBg)) {
-        HorizontalDivider(color = Outline)
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().height(66.dp),
-            horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically
-        ) {
-            Tab.NAV.forEach { t ->
-                val on = t == selected
-                Column(Modifier.combinedClickable(onLongClick = if (t == Tab.TASKS) onPeek else null) { onSelect(t) }.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).background(if (on) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
-                        Text(t.icon, fontSize = 18.sp, color = if (on) Primary else Muted)
-                    }
-                    Text(t.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Primary else Muted)
-                }
-            }
-            Column(Modifier.clickable(onClick = onHangar).padding(horizontal = 2.dp).semantics { contentDescription = "Hangar" + if (needs > 0) ", $needs need you" else "" },
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Box {
-                    Box(Modifier.clip(CircleShape).background(if (hangarOpen) PrimaryTint else Color.Transparent).padding(horizontal = 12.dp, vertical = 3.dp)) {
-                        Text("⌂", fontSize = 18.sp, color = if (hangarOpen) Primary else Muted)
-                    }
-                    // Badge clear of the icon, at the pill's top-right corner, with a ring in the bar's colour (four-fixes-v1 A).
-                    if (needs > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp).defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-                        .border(2.dp, NavBg, CircleShape).clip(CircleShape).background(Green).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                        Text("$needs", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0B1A12))
-                    }
-                }
-                Text("Hangar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (hangarOpen) Primary else Muted)
-            }
-        }
-    }
-}

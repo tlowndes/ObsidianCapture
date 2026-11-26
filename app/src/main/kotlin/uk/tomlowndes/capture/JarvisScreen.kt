@@ -98,10 +98,6 @@ private val RecRed = Color(0xFFFF8A80)
 private val RecRing1 = Color(0xFF3A1D1D)
 private val RecRing2 = Color(0xFF241414)
 private val MicRing = Color(0xFF1B2440)
-private val DoneBg = Color(0xFF14271F)
-private val DoneBorder = Color(0xFF24493A)
-private val ErrBg = Color(0xFF2A1716)
-private val ErrBorder = Color(0xFF4A2523)
 
 private enum class Phase { IDLE, RECORDING, SENDING }
 
@@ -112,41 +108,6 @@ private data class ApiOutcome(
     val text: String, val sorted: SortResult?, val handoffs: List<PhoneBrain.Handoff>,
     val inTok: Long, val outTok: Long, val model: String,
 )
-
-/** OGG/Opus from the mic into a cache file. */
-private class Recorder(private val ctx: Context) {
-    private var rec: MediaRecorder? = null
-    var file: File? = null; private set
-
-    fun start(): File {
-        val f = File(ctx.cacheDir, "jarvis-${System.currentTimeMillis()}.ogg")
-        val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else @Suppress("DEPRECATION") MediaRecorder()
-        r.setAudioSource(MediaRecorder.AudioSource.MIC)
-        r.setOutputFormat(MediaRecorder.OutputFormat.OGG)
-        r.setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)
-        r.setAudioSamplingRate(48_000)
-        r.setAudioEncodingBitRate(32_000)
-        r.setOutputFile(f.absolutePath)
-        r.prepare()
-        r.start()
-        rec = r; file = f
-        return f
-    }
-
-    /** 0..1, for the level bars. */
-    fun level(): Float = runCatching { (rec?.maxAmplitude ?: 0) / 32767f }.getOrDefault(0f).coerceIn(0f, 1f)
-
-    /** Stops and returns the file, or null if nothing usable was recorded. */
-    fun stop(): File? {
-        val r = rec ?: return null
-        rec = null
-        val ok = runCatching { r.stop() }.isSuccess
-        r.release()
-        return file?.takeIf { ok && it.length() > 0 }
-    }
-
-    fun cancel() { stop()?.delete(); file = null }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -818,119 +779,37 @@ fun JarvisScreen(
             if (inChat || sendingText != null) Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 chat.messages.forEach { m ->
                     if (m.mine) MineBubble(m.text, (if (m.spoken) "🎙 spoken" else "⌨ typed") + " · " + hhmm(m.at))
-                    else if (m.via == "box") Text(
-                        m.text, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = Muted, lineHeight = 17.sp,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface2)
-                            .border(1.dp, Outline, RoundedCornerShape(12.dp)).padding(horizontal = 11.dp, vertical = 8.dp)
+                    else if (m.via == "box") JarvisRouteLine(m.text)
+                    else JarvisAnswer(
+                        m, who, idle = phase == Phase.IDLE, phoneVoice = phoneVoice, reading = speakingId == m.at.toString(),
+                        audio = m.audio?.let { a -> JarvisAudio(here = loaded == a, playing = playing, pos = pos, durMs = durMs) },
+                        speed = speed,
+                        onSaveNote = { onFound(SortResult(emptyList(), emptyList(), m.text, noteTitle = Sorting.titleFrom(m.text))) },
+                        onTryServer = { askTheBox(m) },
+                        onReadOut = { sayAloud(m) },
+                        onPlay = { m.audio?.let { toggle(it) } },
+                        onSpeed = {
+                            speed = Jarvis.nextSpeed(speed); prefs.jarvisSpeed = speed
+                            player[0]?.let { if (playing) setSpeed(it, speed) }
+                        },
                     )
-                    else Column(
-                        Modifier.padding(end = 36.dp).clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).background(Surface1)
-                            .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
-                    ) {
-                        val nano = m.via == NanoRoute.VIA
-                        Text(
-                            (m.via?.let { if (nano) "on this phone" else it } ?: who).uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp,
-                            fontFamily = FontFamily.Monospace, color = if (m.via != null && !nano) Amber else Primary
-                        )
-                        Text(remember(m.text) { chatMarkdown(m.text) }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
-                        // Tower notes: any reply can be kept as a note; it waits on Check and save like a ramble does.
-                        Text(
-                            "📝 Save as note", fontSize = 12.sp, color = Primary,
-                            modifier = Modifier.padding(top = 8.dp).clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
-                                .clickable { onFound(SortResult(emptyList(), emptyList(), m.text, noteTitle = Sorting.titleFrom(m.text))) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                        if (nano) {
-                            Text("on phone · free", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
-                            Text(
-                                "Try the server", fontSize = 12.sp, color = if (phase == Phase.IDLE) Primary else Muted,
-                                modifier = Modifier.padding(top = 8.dp).clip(CircleShape).background(PrimaryTint).border(1.dp, NextBorder, CircleShape)
-                                    .clickable(enabled = phase == Phase.IDLE) { askTheBox(m) }.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                        if (m.audio == null && phoneVoice) {
-                            val here = speakingId == m.at.toString()
-                            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Box(
-                                    Modifier.size(28.dp).clip(CircleShape).background(PrimaryTint).clickable { sayAloud(m) },
-                                    contentAlignment = Alignment.Center
-                                ) { Text(if (here) "■" else "▶", fontSize = 11.sp, color = Primary) }
-                                Text(if (here) "Reading out…" else "Read out · ${Jarvis.speedLabel(speed)}", fontSize = 11.5.sp, color = Muted)
-                            }
-                        }
-                        m.audio?.let { a ->
-                            val here = loaded == a
-                            Row(
-                                Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    Modifier.size(28.dp).clip(CircleShape).background(PrimaryTint).clickable { toggle(a) },
-                                    contentAlignment = Alignment.Center
-                                ) { Text(if (here && playing) "❚❚" else "▶", fontSize = 11.sp, color = Primary) }
-                                if (here) {
-                                    Box(Modifier.width(90.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface2)) {
-                                        Box(Modifier.fillMaxWidth(pos.coerceIn(0f, 1f)).height(4.dp).background(Primary))
-                                    }
-                                    Text("${msClock((durMs * pos).toLong())} / ${msClock(durMs)}", fontSize = 11.5.sp, color = Muted)
-                                    Text(
-                                        Jarvis.speedLabel(speed), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary,
-                                        modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable {
-                                            speed = Jarvis.nextSpeed(speed); prefs.jarvisSpeed = speed
-                                            player[0]?.let { if (playing) setSpeed(it, speed) }
-                                        }.padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                } else Text("Play · ${Jarvis.speedLabel(speed)}", fontSize = 11.5.sp, color = Muted)
-                            }
-                        }
-                    }
                 }
                 sendingText?.let { MineBubble(it, (if (wasTyped) "⌨ typed" else "🎙 spoken") + " · sending") }
                 val so = streaming
-                if (so != null && so.isNotEmpty()) Column(
-                    Modifier.padding(end = 36.dp).clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).background(Surface1)
-                        .border(1.dp, Outline, RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)).padding(horizontal = 13.dp, vertical = 10.dp)
-                ) {
-                    Text((if (streamingVia == NanoRoute.VIA) "on this phone" else who).uppercase(Locale.UK), fontSize = 10.sp, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace, color = Primary)
-                    Text(remember(so) { chatMarkdown("$so ▍") }, fontSize = 14.5.sp, lineHeight = 21.sp, color = TextMain, modifier = Modifier.padding(top = 3.dp))
-                    Text(if (streamingVia == NanoRoute.VIA) "📱 on phone…" else "⚡ streaming…", fontSize = 10.5.sp, fontFamily = FontFamily.Monospace, color = Muted, modifier = Modifier.padding(top = 6.dp))
-                }
-                else if (phase == Phase.SENDING) Text(
-                    "• • •", fontSize = 16.sp, color = Muted, letterSpacing = 3.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(18.dp))
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                )
+                if (so != null && so.isNotEmpty()) JarvisStreaming(so, nano = streamingVia == NanoRoute.VIA, who = who)
+                else if (phase == Phase.SENDING) JarvisTyping()
             }
 
             error?.let { msg ->
-                Column(
-                    Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(14.dp)).background(ErrBg)
-                        .border(1.dp, ErrBorder, RoundedCornerShape(14.dp)).padding(14.dp)
-                ) {
-                    Text(msg, fontSize = 13.sp, color = Warn, fontWeight = FontWeight.SemiBold)
-                    Text(if (pendingText != null) "Your message is kept." else "Your recording is kept.", fontSize = 13.sp, color = Muted)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(
-                            onClick = { pendingText?.let { sendText(it) } ?: pending?.let { send(it) } },
-                            enabled = (pending != null || pendingText != null) && phase == Phase.IDLE
-                        ) { Text("Retry", color = Primary) }
-                        TextButton(onClick = { pending?.delete(); pending = null; pendingText = null; error = null }) { Text("Discard", color = Muted) }
-                    }
-                }
+                JarvisError(
+                    msg, textKept = pendingText != null,
+                    canRetry = (pending != null || pendingText != null) && phase == Phase.IDLE,
+                    onRetry = { pendingText?.let { sendText(it) } ?: pending?.let { send(it) } },
+                    onDiscard = { pending?.delete(); pending = null; pendingText = null; error = null },
+                )
             }
 
-            found?.let { r ->
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(16.dp)).background(PrimaryTint)
-                        .border(1.dp, NextBorder, RoundedCornerShape(16.dp)).clickable(onClick = onCheck).padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("✨", fontSize = 16.sp)
-                    Text(foundLabel(r), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Text("Check and save", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OnPrimary,
-                        modifier = Modifier.clip(CircleShape).background(Primary).padding(horizontal = 12.dp, vertical = 7.dp))
-                }
-            }
+            found?.let { r -> JarvisFound(r, onCheck) }
             if (demo) Text("Demo mode: no server, replies are canned.", fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 14.dp))
         }
         }
@@ -938,24 +817,7 @@ fun JarvisScreen(
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Bg).padding(horizontal = 18.dp, vertical = 10.dp)) {
             // In a chat the mic is the small button by the box, so its timer and Send / Cancel sit here.
             if (rec && inChat) Column(Modifier.padding(bottom = if (locked) 8.dp else 64.dp)) { RecordingPanel() }
-            done?.let { d ->
-                Row(
-                    Modifier.padding(bottom = 8.dp).fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp)).background(DoneBg).border(1.dp, DoneBorder, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
-                        Text("✓", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0B2117))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(d.title, fontSize = 13.sp)
-                        if (d.detail.isNotBlank()) Text(d.detail, fontSize = 11.5.sp, color = Muted, maxLines = 1)
-                    }
-                    Text("Open", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Green, modifier = Modifier.clickable { openDone = d })
-                    Text("✕", fontSize = 13.sp, color = Muted, modifier = Modifier.clickable { done = null }.padding(start = 4.dp))
-                }
-            }
+            done?.let { d -> JarvisDone(d, onOpen = { openDone = d }, onClose = { done = null }) }
             Box {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
@@ -1047,117 +909,3 @@ internal fun setSpeed(p: MediaPlayer, speed: Float) {
 
 private fun hhmm(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm", Locale.UK))
-
-/** An answer's Markdown as styled text: bold, italic, code, link text, headings in bold, and "- " bullets as "•". */
-internal fun chatMarkdown(md: String): AnnotatedString = buildAnnotatedString {
-    fun inline(p: String) = appendInline(p, underline = false, tapLinks = false)
-    md.trim().lines().forEachIndexed { i, raw ->
-        if (i > 0) append("\n")
-        val line = raw.trimEnd()
-        val head = Regex("^#{1,6}\\s+(.*)").find(line)
-        val bullet = Regex("^(\\s*)[-*+]\\s+(.*)").find(line)
-        when {
-            head != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline(head.groupValues[1]) }
-            bullet != null -> { append(bullet.groupValues[1] + "• "); inline(bullet.groupValues[2]) }
-            else -> inline(line)
-        }
-    }
-}
-
-/** One of Tom's messages: right-aligned, with how it was sent and when. */
-@Composable
-private fun MineBubble(text: String, caption: String) {
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-        Column(
-            Modifier.padding(start = 48.dp).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(Primary)
-                .padding(horizontal = 13.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(text, fontSize = 14.5.sp, lineHeight = 21.sp, color = OnPrimary)
-            Text(caption, fontSize = 10.5.sp, color = OnPrimary.copy(alpha = 0.7f), modifier = Modifier.padding(top = 2.dp))
-        }
-    }
-}
-
-private fun foundLabel(r: SortResult): String = listOfNotNull(
-    if (r.note != null) "1 note" else null,
-    r.tasks.size.takeIf { it > 0 }?.let { if (it == 1) "1 task" else "$it tasks" },
-    r.ideas.size.takeIf { it > 0 }?.let { if (it == 1) "1 idea" else "$it ideas" },
-).joinToString(" · ")
-
-private fun msClock(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
-
-/**
- * Settings › Jarvis › Voice. Lists the server's voices (GET /voices); ▶ plays a voice's sample when the server has one.
- * [onPick] gets the id ("" for the server's default) and a label for the row.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun JarvisVoiceSheet(prefs: AppPrefs, onPick: (String, String) -> Unit, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val address = remember { prefs.jarvisAddress }
-    val token = remember { SecretStore(ctx).jarvisToken.orEmpty() }
-    var voices by remember { mutableStateOf<List<Jarvis.Voice>?>(null) }
-    var failed by remember { mutableStateOf<String?>(null) }
-    var sampling by remember { mutableStateOf<String?>(null) }
-    val player = remember { arrayOfNulls<MediaPlayer>(1) }
-    DisposableEffect(Unit) { onDispose { player[0]?.release(); player[0] = null } }
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { runCatching { Jarvis.voices(address, token) } }
-            .onSuccess { voices = it }
-            .onFailure { voices = emptyList(); failed = "Couldn't load the voices: ${it.message ?: "no answer"}" }
-    }
-    fun sample(v: Jarvis.Voice) {
-        val url = v.sampleUrl ?: return
-        sampling = v.id
-        scope.launch {
-            val f = File(ctx.cacheDir, "jarvis-sample.ogg")
-            val ok = withContext(Dispatchers.IO) { runCatching { Jarvis.fetchAudio(address, token, url, f) }.isSuccess }
-            if (ok) {
-                player[0]?.release()
-                player[0] = MediaPlayer().apply {
-                    runCatching {
-                        setDataSource(f.absolutePath); prepare(); start(); setSpeed(this, prefs.jarvisSpeed)
-                        setOnCompletionListener { sampling = null }
-                    }.onFailure { sampling = null }
-                }
-            } else {
-                sampling = null
-            }
-        }
-    }
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Surface1) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Text("${prefs.assistantName}'s voice", fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-            val list = voices
-            if (list == null) Text("Loading…", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp))
-            val rows = list.orEmpty() + Jarvis.Voice("", "Server default", "Whatever the server is set to", null)
-            if (list != null) rows.forEach { v ->
-                val on = v.id == prefs.jarvisVoice
-                Row(
-                    Modifier.fillMaxWidth().clickable { onPick(v.id, if (v.id.isEmpty()) "" else v.label) }.padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RadioButton(
-                        selected = on, onClick = { onPick(v.id, if (v.id.isEmpty()) "" else v.label) },
-                        colors = RadioButtonDefaults.colors(selectedColor = Primary, unselectedColor = Muted)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(v.label, fontSize = 15.sp)
-                        if (v.detail.isNotBlank()) Text(v.detail, fontSize = 12.sp, color = Muted)
-                    }
-                    if (v.sampleUrl != null) Box(
-                        Modifier.size(30.dp).clip(CircleShape).background(PrimaryTint).clickable { sample(v) },
-                        contentAlignment = Alignment.Center
-                    ) { Text(if (sampling == v.id) "…" else "▶", fontSize = 11.sp, color = Primary) }
-                }
-            }
-            failed?.let { Text(it, fontSize = 12.5.sp, color = Warn, modifier = Modifier.padding(top = 6.dp)) }
-            if (list != null && list.isEmpty() && failed == null)
-                Text("Your server doesn't list its voices yet, so it uses its own default.", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
-            else Text("The list comes from your server. ▶ plays a short sample.", fontSize = 12.5.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
-        }
-    }
-}
