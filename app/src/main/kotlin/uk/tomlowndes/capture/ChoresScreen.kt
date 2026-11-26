@@ -48,12 +48,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 /** The bar colour for a chore: green when fresh, blue filling, amber near due, red past due (home-life-v1). */
-internal fun choreColour(fill: Double): Color = when {
-    fill >= Chores.OVERDUE -> Warn
-    fill >= 0.75 -> Amber
-    fill >= 0.4 -> Primary
-    else -> Green
-}
+internal fun choreColour(fill: Double): Color = Tones.chore(fill).colour
 
 /** A chore's fill bar. */
 @Composable

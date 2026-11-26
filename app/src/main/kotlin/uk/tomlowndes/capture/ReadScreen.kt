@@ -443,32 +443,6 @@ private fun BarButton(icon: String, label: String, onClick: () -> Unit) {
 
 // ---------------------------------------------------------------- markdown (blocks are parsed by MdBlocks in core)
 
-private object MdInline {
-    fun inline(s: String): AnnotatedString = buildAnnotatedString { appendInline(s) }
-
-    private fun AnnotatedString.Builder.appendInline(s: String) {
-        var at = 0
-        for (m in MdBlocks.INLINE.findAll(s)) {
-            append(s.substring(at, m.range.first))
-            val g = m.groups
-            when {
-                m.value.startsWith("!") -> Unit
-                g[1] != null -> {
-                    pushStringAnnotation("url", g[2]!!.value)
-                    withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) { appendInline(g[1]!!.value) }
-                    pop()
-                }
-                g[3] != null || g[4] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendInline((g[3] ?: g[4])!!.value) }
-                g[5] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Surface2)) { append(g[5]!!.value) }
-                g[6] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendInline(g[6]!!.value) }
-                g[7] != null -> withStyle(SpanStyle(color = Primary)) { append((g[8] ?: g[7])!!.value) }
-            }
-            at = m.range.last + 1
-        }
-        append(s.substring(at))
-    }
-}
-
 private val HighlightTint = Color(0x33F5C451)
 
 /** Inline markdown text: tap a link to open it, long-press anywhere for [onLongPress]. */
@@ -476,7 +450,7 @@ private val HighlightTint = Color(0x33F5C451)
 private fun Rich(
     text: String, style: TextStyle, onLink: (String) -> Unit, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null
 ) {
-    val s = remember(text) { MdInline.inline(text) }
+    val s = remember(text) { inlineText(text) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     BasicText(
         s, style = style, onTextLayout = { layout = it },

@@ -342,34 +342,9 @@ private fun BlockWithHighlight(key: String?, on: Boolean, toggle: (String) -> Un
 private fun savedLabel(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK))
 
-/** Inline markdown as styled text, with links tagged for clicking. */
-private fun inline(s: String): AnnotatedString = buildAnnotatedString { appendInline(s) }
-
-private fun AnnotatedString.Builder.appendInline(s: String) {
-    var at = 0
-    for (m in MdBlocks.INLINE.findAll(s)) {
-        append(s.substring(at, m.range.first))
-        val g = m.groups
-        when {
-            m.value.startsWith("!") -> Unit
-            g[1] != null -> {
-                pushStringAnnotation("url", g[2]!!.value)
-                withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) { appendInline(g[1]!!.value) }
-                pop()
-            }
-            g[3] != null || g[4] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendInline((g[3] ?: g[4])!!.value) }
-            g[5] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Surface2)) { append(g[5]!!.value) }
-            g[6] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendInline(g[6]!!.value) }
-            g[7] != null -> withStyle(SpanStyle(color = Primary)) { append((g[8] ?: g[7])!!.value) }
-        }
-        at = m.range.last + 1
-    }
-    append(s.substring(at))
-}
-
 @Composable
 private fun Rich(text: String, style: TextStyle, onLink: (String) -> Unit, modifier: Modifier = Modifier) {
-    val s = remember(text) { inline(text) }
+    val s = remember(text) { inlineText(text) }
     ClickableText(s, modifier, style) { off -> s.getStringAnnotations("url", off, off).firstOrNull()?.let { onLink(it.item) } }
 }
 

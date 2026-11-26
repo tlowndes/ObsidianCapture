@@ -36,6 +36,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
+import uk.tomlowndes.capture.dayChip
 
 private val ESTIMATES = TaskRules.ESTIMATE_CHOICES
 

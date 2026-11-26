@@ -93,6 +93,8 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import uk.tomlowndes.capture.greeting
+import uk.tomlowndes.capture.duePhrase
 
 private const val OWNER = "Tom"
 private const val SHORT_MIN = TaskViews.SHORT_MIN
@@ -124,12 +126,6 @@ private data class DeckData(
     val chores: List<uk.tomlowndes.capture.Chore> = emptyList(),
     val passages: List<uk.tomlowndes.capture.Passage> = emptyList(),
 )
-
-private fun greeting(now: LocalTime = LocalTime.now()) = when {
-    now.hour < 12 -> "good morning"
-    now.hour < 18 -> "good afternoon"
-    else -> "good evening"
-}
 
 /** Flight Deck on Windows: the phone's home cards in two columns, from the same vault and card settings. */
 @Composable
@@ -524,13 +520,6 @@ private fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Modi
             .then(if (primary) Modifier.background(Primary) else Modifier.border(1.dp, Outline, CircleShape))
             .hand().clickable(onClick = onClick).padding(horizontal = 22.dp, vertical = 9.dp)
     )
-}
-
-private fun duePhrase(d: LocalDate, today: LocalDate = LocalDate.now()) = when {
-    d.isBefore(today) -> "overdue"
-    d == today -> "due today"
-    d == today.plusDays(1) -> "due tomorrow"
-    else -> "due " + d.format(DateTimeFormatter.ofPattern("EEE d", Locale.UK))
 }
 
 private fun clock(ms: Long): String {

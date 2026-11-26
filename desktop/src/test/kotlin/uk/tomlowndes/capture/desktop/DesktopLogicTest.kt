@@ -9,6 +9,8 @@ import java.io.ByteArrayInputStream
 import java.time.LocalDate
 import java.util.prefs.Preferences
 import javax.imageio.ImageIO
+import uk.tomlowndes.capture.dayChip
+import uk.tomlowndes.capture.dueLabel
 
 /** Pure desktop logic: date labels, the hotkey choice, image shrink, settings, and the Obsidian link. */
 class DesktopLogicTest {

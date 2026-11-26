@@ -59,6 +59,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import uk.tomlowndes.capture.dayChip
 
 /** Where a dragged task can land: a day (just the date) or a free gap (date and start time). */
 private data class DropTarget(val date: LocalDate, val start: LocalTime? = null)

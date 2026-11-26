@@ -88,12 +88,6 @@ private const val SHORT_MIN = TaskViews.SHORT_MIN
 /** Energy chip on Flight Deck. Low brings Stuck? to the top and short tasks; High shows 3 top tasks. */
 enum class Energy(val label: String) { LOW("Low"), MED("Med"), HIGH("High") }
 
-internal fun greeting(now: LocalTime = LocalTime.now()) = when {
-    now.hour < 12 -> "good morning"
-    now.hour < 18 -> "good afternoon"
-    else -> "good evening"
-}
-
 /** What Flight Deck reads from the vault in one go. */
 internal data class DeckData(
     val tasks: List<TaskItem> = emptyList(),
@@ -776,13 +770,6 @@ internal fun CardHead(title: String, trailing: String? = null, onTrailing: (() -
 }
 
 private fun firstTag(t: TaskItem) = TaskViews.tags(t).firstOrNull()
-
-private fun duePhrase(d: LocalDate, today: LocalDate = LocalDate.now()) = when {
-    d.isBefore(today) -> "overdue"
-    d == today -> "due today"
-    d == today.plusDays(1) -> "due tomorrow"
-    else -> "due " + d.format(DateTimeFormatter.ofPattern("EEE d", Locale.UK))
-}
 
 @Composable
 internal fun DeckButton(text: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {

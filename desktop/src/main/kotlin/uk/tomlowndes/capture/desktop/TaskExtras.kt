@@ -42,16 +42,12 @@ import uk.tomlowndes.capture.Triage
 import uk.tomlowndes.capture.Upcoming
 import java.time.LocalDate
 import java.time.LocalTime
+import uk.tomlowndes.capture.dayChip
+import uk.tomlowndes.capture.Tones
 
 /** Flag colours (priority-flags-v1), the same as the phone. */
-fun priorityColours(p: Priority): Pair<Color, Color> = when (p) {
-    Priority.HIGHEST -> Color(0xFFFF6B6B) to Color(0xFF3A1D22)
-    Priority.HIGH -> Color(0xFFFFA36B) to Color(0xFF3A2618)
-    Priority.MEDIUM -> Color(0xFFF5C06A) to Color(0xFF2E2616)
-    Priority.LOW -> Color(0xFF7AA2FF) to Color(0xFF1A2340)
-    Priority.LOWEST -> Color(0xFF5C6478) to Color(0xFF1C212C)
-    Priority.NONE -> Muted to Color.Transparent
-}
+fun priorityColours(p: Priority): Pair<Color, Color> =
+    Tones.priority(p)?.let { (fg, tint) -> Color(fg) to Color(tint) } ?: (Muted to Color.Transparent)
 
 /** The small "!!" / "↓" flag before a task's text. Nothing for no priority. */
 @Composable

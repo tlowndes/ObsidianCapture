@@ -46,6 +46,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import uk.tomlowndes.capture.ColourRole
 
 // ---- design tokens (the Flight Deck palette, mirrors the Android app's Ui.kt) ----
 val Bg = Color(0xFF0F131C)
@@ -103,24 +104,13 @@ fun CaptureTheme(content: @Composable () -> Unit) {
     )
 }
 
-fun dueLabel(d: LocalDate): String {
-    val today = LocalDate.now()
-    return when (d) {
-        today -> "today"
-        today.plusDays(1) -> "tomorrow"
-        else -> d.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
-    }
-}
-
-/** "Tue 7 Oct" style label used on due chips. */
-fun dayChip(d: LocalDate): String {
-    val today = LocalDate.now()
-    return when (d) {
-        today -> "Today"
-        today.plusDays(1) -> "Tomorrow"
-        else -> if (d.year == today.year) d.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))
-        else d.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK))
-    }
+/** A core [ColourRole] as this theme's colour (the rules for which thing gets which tone live in core). */
+val ColourRole.colour: Color get() = when (this) {
+    ColourRole.WARN -> Warn
+    ColourRole.AMBER -> Amber
+    ColourRole.PRIMARY -> Primary
+    ColourRole.GREEN -> TaskGreen
+    ColourRole.PURPLE -> Purple
 }
 
 fun Modifier.hand() = pointerHoverIcon(PointerIcon.Hand)

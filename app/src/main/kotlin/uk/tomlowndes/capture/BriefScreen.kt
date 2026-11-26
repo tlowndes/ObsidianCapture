@@ -462,7 +462,6 @@ private fun Progress(modifier: Modifier = Modifier) {
     }
 }
 
-private fun mmss(s: Int) = "${s / 60}:${"%02d".format(s % 60)}"
 
 @Composable
 private fun Seg(options: List<String>, selected: Int, modifier: Modifier = Modifier, onPick: (Int) -> Unit) {

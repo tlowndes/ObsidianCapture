@@ -872,7 +872,7 @@ fun JarvisScreen(
                                     Box(Modifier.width(90.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface2)) {
                                         Box(Modifier.fillMaxWidth(pos.coerceIn(0f, 1f)).height(4.dp).background(Primary))
                                     }
-                                    Text("${mmss((durMs * pos).toLong())} / ${mmss(durMs)}", fontSize = 11.5.sp, color = Muted)
+                                    Text("${msClock((durMs * pos).toLong())} / ${msClock(durMs)}", fontSize = 11.5.sp, color = Muted)
                                     Text(
                                         Jarvis.speedLabel(speed), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Primary,
                                         modifier = Modifier.clip(CircleShape).background(PrimaryTint).clickable {
@@ -1050,24 +1050,7 @@ private fun hhmm(at: Long): String =
 
 /** An answer's Markdown as styled text: bold, italic, code, link text, headings in bold, and "- " bullets as "•". */
 internal fun chatMarkdown(md: String): AnnotatedString = buildAnnotatedString {
-    fun inline(p: String) {
-        var at = 0
-        for (m in MdBlocks.INLINE.findAll(p)) {
-            append(p.substring(at, m.range.first))
-            val g = m.groups
-            when {
-                m.value.startsWith("!") -> Unit
-                g[1] != null -> withStyle(SpanStyle(color = Primary)) { append(g[1]!!.value) }
-                g[3] != null || g[4] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline((g[3] ?: g[4])!!.value) }
-                g[5] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Surface2)) { append(g[5]!!.value) }
-                g[6] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(g[6]!!.value) }
-                g[7] != null -> append((g[8] ?: g[7])!!.value)
-                else -> append(m.value)
-            }
-            at = m.range.last + 1
-        }
-        append(p.substring(at))
-    }
+    fun inline(p: String) = appendInline(p, underline = false, tapLinks = false)
     md.trim().lines().forEachIndexed { i, raw ->
         if (i > 0) append("\n")
         val line = raw.trimEnd()
@@ -1102,7 +1085,7 @@ private fun foundLabel(r: SortResult): String = listOfNotNull(
     r.ideas.size.takeIf { it > 0 }?.let { if (it == 1) "1 idea" else "$it ideas" },
 ).joinToString(" · ")
 
-private fun mmss(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
+private fun msClock(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
 
 /**
  * Settings › Jarvis › Voice. Lists the server's voices (GET /voices); ▶ plays a voice's sample when the server has one.
