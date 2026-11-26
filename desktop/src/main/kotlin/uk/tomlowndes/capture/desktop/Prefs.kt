@@ -1,14 +1,33 @@
 package uk.tomlowndes.capture.desktop
 
 import uk.tomlowndes.capture.ReminderSettings
-import uk.tomlowndes.capture.VaultPrefs
+import uk.tomlowndes.capture.KeyStore
+import uk.tomlowndes.capture.SharedSettings
 import com.sun.jna.platform.win32.Crypt32Util
 import java.io.File
 import java.util.Base64
 import java.util.prefs.Preferences
 
-/** Settings kept in the Windows user registry (java.util.prefs), the desktop twin of the Android app's AppPrefs. */
-class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/tomlowndes/capture")) : VaultPrefs {
+/** The Windows registry node as core's [KeyStore]; every write is flushed. */
+private class RegistryStore(private val p: Preferences) : KeyStore {
+    override fun string(key: String): String? = p.get(key, null)
+    override fun putString(key: String, value: String?) { if (value == null) p.remove(key) else p.put(key, value); p.flush() }
+    override fun bool(key: String, def: Boolean) = p.getBoolean(key, def)
+    override fun putBool(key: String, value: Boolean) { p.putBoolean(key, value); p.flush() }
+    override fun int(key: String, def: Int) = p.getInt(key, def)
+    override fun putInt(key: String, value: Int) { p.putInt(key, value); p.flush() }
+    override fun long(key: String, def: Long) = p.getLong(key, def)
+    override fun putLong(key: String, value: Long) { p.putLong(key, value); p.flush() }
+    override fun float(key: String, def: Float) = p.getFloat(key, def)
+    override fun putFloat(key: String, value: Float) { p.putFloat(key, value); p.flush() }
+}
+
+/**
+ * Settings kept in the Windows user registry (java.util.prefs), the desktop twin of the Android app's AppPrefs.
+ * The settings the phone has too live in core ([SharedSettings]); this adds the PC's own.
+ */
+class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/tomlowndes/capture")) :
+    SharedSettings(RegistryStore(p), readerSizeDefault = 18f, readerSerifDefault = true, jarvisSpeakDefault = false) {
 
     private fun str(key: String, def: String) = p.get(key, def)
     private fun put(key: String, v: String?) { if (v == null) p.remove(key) else p.put(key, v); p.flush() }
@@ -17,24 +36,15 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = p.get("vault", null)?.let(::File)
         set(v) = put("vault", v?.absolutePath)
 
-    /** Tasks tab: group by due date (true) or keep the note's own order (false). */
-    var sortByDue: Boolean
-        get() = p.getBoolean("sort_by_due", true)
-        set(v) { p.putBoolean("sort_by_due", v); p.flush() }
-
     /** Tasks tab order (windows-catchup-v1): "due", "priority" or "note". */
     var taskOrder: String
         get() = p.get("task_order", null) ?: if (sortByDue) "due" else "note"
         set(v) = put("task_order", v)
 
-
     /** Claude from this PC (windows-settings-gaps-v1). The key is encrypted for this Windows user, never in the vault. */
     var pcBrain: Boolean
         get() = p.getBoolean("pc_brain", false)
         set(v) { p.putBoolean("pc_brain", v); p.flush() }
-    var brainClever: Boolean
-        get() = p.getBoolean("brain_clever", false)
-        set(v) { p.putBoolean("brain_clever", v); p.flush() }
     var claudeKey: String?
         get() = p.get("claude_key", null)?.let { enc ->
             runCatching { String(Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(enc)), Charsets.UTF_8) }.getOrNull()
@@ -43,73 +53,17 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
             val t = v?.trim()?.ifEmpty { null }
             put("claude_key", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
         }
-    var brainSpend: uk.tomlowndes.capture.PhoneBrain.Spend
-        get() = uk.tomlowndes.capture.PhoneBrain.Spend(str("brain_month", ""), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
-        set(v) { p.put("brain_month", v.month); p.putLong("brain_micro_usd", v.microUsd); p.putInt("brain_answers", v.answers); p.flush() }
-    /** This month's Claude spend by feature (ClaudeCap ledger). */
-    var spendByFeature: String
-        get() = str("spend_by_feature", "")
-        set(v) { p.put("spend_by_feature", v); p.flush() }
-    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
-    fun spend(feature: String, usd: Double) {
-        brainSpend = brainSpend.add(usd)
-        spendByFeature = uk.tomlowndes.capture.ClaudeCap.added(spendByFeature, feature, usd)
-        uk.tomlowndes.capture.ClaudeCap.ownUsd = uk.tomlowndes.capture.ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
-    }
-
-    /** Energy reshuffle (energy-reshuffle-v1): actions that fit on a 100% day. */
-    var reshuffleUsual: Int
-        get() = p.getInt("reshuffle_usual", uk.tomlowndes.capture.Reshuffle.USUAL)
-        set(v) { p.putInt("reshuffle_usual", v.coerceIn(1, 30)); p.flush() }
-
-    /** Steps open under their task (true) or in a side panel (false). */
-    var subtasksInline: Boolean
-        get() = p.getBoolean("subtasks_inline", true)
-        set(v) { p.putBoolean("subtasks_inline", v); p.flush() }
-
-    /** Piholegotchi's address on the home network; blank is off. */
-    var piholegotchiAddress: String
-        get() = str("piholegotchi_address", "")
-        set(v) = put("piholegotchi_address", v.trim().ifEmpty { null })
 
     /** Background sync with Obsidian Headless (windows-nav-sync-v1). */
     var bgSync: Boolean
         get() = p.getBoolean("bg_sync", false)
         set(v) { p.putBoolean("bg_sync", v); p.flush() }
 
-    /** Projects tab: last updated first (true) or by title A–Z (false). */
-    var ideasByUpdated: Boolean
-        get() = p.getBoolean("ideas_by_updated", true)
-        set(v) { p.putBoolean("ideas_by_updated", v); p.flush() }
-
-    /** Ticking a 🔁 task also creates its next occurrence. */
-    /** Quick Task guard (quick-task-guard-v1): keep copies of Quick Task on this PC and flag odd changes. */
-    var quickGuard: Boolean
-        get() = p.getBoolean("quick_guard", true)
-        set(v) { p.putBoolean("quick_guard", v); p.flush() }
-    var recurring: Boolean
-        get() = p.getBoolean("recurring", true)
-        set(v) { p.putBoolean("recurring", v); p.flush() }
-
-    override var ideasDir: String
-        get() = str("ideas_dir", "03 - Projects")
-        set(v) = put("ideas_dir", v.trim().trim('/'))
-
-    override var imagesDir: String
-        get() = str("images_dir", "99 - Meta/Assets")
-        set(v) = put("images_dir", v.trim().trim('/'))
 
     /** The quick capture shortcut, one of [Hotkey.CHOICES]. */
     var hotkey: String
         get() = str("hotkey", Hotkey.CHOICES.first().label)
         set(v) = put("hotkey", v)
-
-    var readerSize: Float
-        get() = p.getFloat("reader_size", 18f)
-        set(v) { p.putFloat("reader_size", v); p.flush() }
-    var readerSerif: Boolean
-        get() = p.getBoolean("reader_serif", true)
-        set(v) { p.putBoolean("reader_serif", v); p.flush() }
 
     /** How far through an article you got (0..1), keyed by file name; 0 clears it. */
     fun readPos(file: String): Float = p.getFloat("pos_${file.hashCode()}", 0f)
@@ -118,20 +72,6 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     }
 
     /** Next-step tasks put off with Later, by their line. Only today's count; tomorrow they come back. */
-    /** Talk me through it: tasks hidden with "Not today" (TalkThrough keys and until dates). */
-    var talkSnoozed: String?
-        get() = p.get("talk_snoozed", null)
-        set(v) { put("talk_snoozed", v) }
-
-    /** What helps you: the month (yyyy-mm) whose card was closed. */
-    var helpsClosed: String?
-        get() = p.get("helps_closed", null)
-        set(v) { put("helps_closed", v) }
-
-    var stepGoal: Int
-        get() = p.getInt("step_goal", 7000)
-        set(v) { p.putInt("step_goal", v); p.flush() }
-
     var laterToday: Set<String>
         get() = if (str("later_day", "") == java.time.LocalDate.now().toString()) str("later", "").split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
         set(v) { put("later_day", java.time.LocalDate.now().toString()); put("later", v.joinToString("\n")) }
@@ -153,17 +93,6 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
     var deckLeft: Set<String>?
         get() = p.get("deck_left", null)?.split(",")?.filter { it.isNotEmpty() }?.toSet()
         set(v) = put("deck_left", v?.joinToString(","))
-
-    var weatherStrip: Boolean
-        get() = p.getBoolean("weather_strip", false)
-        set(v) { p.putBoolean("weather_strip", v); p.flush() }
-    /** Daily Brief's player (daily-brief-v1): Full or Short, and the reading speed. */
-    var briefFull: Boolean
-        get() = p.getBoolean("brief_full", true)
-        set(v) { p.putBoolean("brief_full", v); p.flush() }
-    var briefSpeed: Float
-        get() = p.getFloat("brief_speed", 1f)
-        set(v) { p.putFloat("brief_speed", v); p.flush() }
 
     /** The town the weather is for, as typed in Settings, and where Open-Meteo found it. */
     var weatherPlace: String
@@ -195,20 +124,6 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
             put("github_token", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
         }
 
-    /** In-app updater: check GitHub on launch, the tag Later hid, and the last check. */
-    var updateChecks: Boolean
-        get() = p.getBoolean("update_checks", true)
-        set(v) { p.putBoolean("update_checks", v); p.flush() }
-    var updateSkip: String?
-        get() = p.get("update_skip", null)
-        set(v) = put("update_skip", v)
-    var updateCheckedAt: Long
-        get() = p.getLong("update_checked_at", 0)
-        set(v) { p.putLong("update_checked_at", v); p.flush() }
-    var updateLatest: String?
-        get() = p.get("update_latest", null)
-        set(v) = put("update_latest", v)
-
     /** Settings › Reminders (windows-reminders-v1). */
     var reminders: ReminderSettings
         get() = ReminderSettings(
@@ -234,20 +149,6 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
         get() = str("rem_shown", "").split("\n").filter { it.isNotEmpty() }.toSet()
         set(v) = put("rem_shown", v.joinToString("\n").ifEmpty { null })
 
-    /** The assistant's name. Blank becomes Tower. The jarvis_* keys stay so the address and token survive. */
-    var assistantName: String
-        get() = uk.tomlowndes.capture.AssistantName.clean(str("assistant_name", ""))
-        set(v) = put("assistant_name", uk.tomlowndes.capture.AssistantName.clean(v))
-
-    /** Key findings length. Long is the default. */
-    var findingsLength: uk.tomlowndes.capture.KeyFindings.Length
-        get() = uk.tomlowndes.capture.KeyFindings.Length.fromStored(str("findings_length", ""))
-        set(v) = put("findings_length", v.stored)
-
-    /** Settings › Jarvis (windows-jarvis-v1). The token is encrypted for this Windows user, never in the vault. */
-    var jarvisAddress: String
-        get() = str("jarvis_address", "")
-        set(v) = put("jarvis_address", v.trim().ifEmpty { null })
     var jarvisToken: String?
         get() = p.get("jarvis_token", null)?.let { enc ->
             runCatching { String(Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(enc)), Charsets.UTF_8) }.getOrNull()
@@ -256,15 +157,6 @@ class DesktopPrefs(private val p: Preferences = Preferences.userRoot().node("uk/
             val t = v?.trim()?.ifEmpty { null }
             put("jarvis_token", t?.let { Base64.getEncoder().encodeToString(Crypt32Util.cryptProtectData(it.toByteArray(Charsets.UTF_8))) })
         }
-    var jarvisWorker: String
-        get() = str("jarvis_worker", "jarvis")
-        set(v) = put("jarvis_worker", v)
-    var jarvisSpeak: Boolean
-        get() = p.getBoolean("jarvis_speak", false)
-        set(v) { p.putBoolean("jarvis_speak", v); p.flush() }
-    var jarvisSpeed: Float
-        get() = p.getFloat("jarvis_speed", 1f)
-        set(v) { p.putFloat("jarvis_speed", v); p.flush() }
     var jarvisHoldSpace: Boolean
         get() = p.getBoolean("jarvis_hold_space", true)
         set(v) { p.putBoolean("jarvis_hold_space", v); p.flush() }
