@@ -1,25 +1,35 @@
 package uk.tomlowndes.capture
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 
-/** Typed wrapper over the app's SharedPreferences. Cheap to construct anywhere. */
-class AppPrefs(ctx: Context) : VaultPrefs {
-    private val p = ctx.applicationContext.getSharedPreferences("capture", Context.MODE_PRIVATE)
+/** SharedPreferences as core's [KeyStore]. */
+private class AndroidStore(private val p: SharedPreferences) : KeyStore {
+    override fun string(key: String): String? = p.getString(key, null)
+    override fun putString(key: String, value: String?) { p.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply() }
+    override fun bool(key: String, def: Boolean) = p.getBoolean(key, def)
+    override fun putBool(key: String, value: Boolean) { p.edit().putBoolean(key, value).apply() }
+    override fun int(key: String, def: Int) = p.getInt(key, def)
+    override fun putInt(key: String, value: Int) { p.edit().putInt(key, value).apply() }
+    override fun long(key: String, def: Long) = p.getLong(key, def)
+    override fun putLong(key: String, value: Long) { p.edit().putLong(key, value).apply() }
+    override fun float(key: String, def: Float) = p.getFloat(key, def)
+    override fun putFloat(key: String, value: Float) { p.edit().putFloat(key, value).apply() }
+}
+
+private fun prefsOf(ctx: Context) = ctx.applicationContext.getSharedPreferences("capture", Context.MODE_PRIVATE)
+
+/**
+ * Typed wrapper over the app's SharedPreferences. Cheap to construct anywhere. The settings Windows has too live
+ * in core ([SharedSettings]); this adds the phone's own.
+ */
+class AppPrefs(ctx: Context) : SharedSettings(AndroidStore(prefsOf(ctx)), readerSizeDefault = 16.5f, readerSerifDefault = false, jarvisSpeakDefault = true) {
+    private val p = prefsOf(ctx)
 
     var vault: Uri?
         get() = p.getString("vault", null)?.let(Uri::parse)
         set(v) { p.edit().putString("vault", v?.toString()).apply() }
-
-    /** Tasks tab: group by due date (true) or keep the note's own order (false). */
-    var sortByDue: Boolean
-        get() = p.getBoolean("sort_by_due", true)
-        set(v) { p.edit().putBoolean("sort_by_due", v).apply() }
-
-    /** Ideas tab: last updated first (true) or by title A–Z (false). */
-    var ideasByUpdated: Boolean
-        get() = p.getBoolean("ideas_by_updated", true)
-        set(v) { p.edit().putBoolean("ideas_by_updated", v).apply() }
 
     /** Tasks tab: the tag and side filters last used, so they stay on between visits. */
     var tasksTag: String?
@@ -84,13 +94,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("highlights_seen", "").orEmpty().split("\u0001").filter { it.isNotEmpty() }.toSet()
         set(v) { p.edit().putString("highlights_seen", v.toList().takeLast(500).joinToString("\u0001")).apply() }
     /** Subtasks pop out under their task in place (true) or in a sheet (false). */
-    /** Quick Task guard (quick-task-guard-v1): keep copies of Quick Task and flag odd changes. */
-    var quickGuard: Boolean
-        get() = p.getBoolean("quick_guard", true)
-        set(v) { p.edit().putBoolean("quick_guard", v).apply() }
-    var subtasksInline: Boolean
-        get() = p.getBoolean("subtasks_inline", true)
-        set(v) { p.edit().putBoolean("subtasks_inline", v).apply() }
     /** Swipe a task right to tick, left to reschedule or remove. */
     var taskSwipe: Boolean
         get() = p.getBoolean("task_swipe", true)
@@ -106,19 +109,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = SwipeChoice.of(p.getString("swipe_long_left", null), SwipeChoice.REMOVE)
         set(v) { p.edit().putString("swipe_long_left", v.name).apply() }
 
-    /** Ticking a 🔁 task also creates its next occurrence. */
-    var recurring: Boolean
-        get() = p.getBoolean("recurring", true)
-        set(v) { p.edit().putBoolean("recurring", v).apply() }
-
-    override var ideasDir: String
-        get() = p.getString("ideas_dir", "03 - Projects")!!
-        set(v) { p.edit().putString("ideas_dir", v.trim().trim('/')).apply() }
-
-    override var imagesDir: String
-        get() = p.getString("images_dir", "99 - Meta/Assets")!!
-        set(v) { p.edit().putString("images_dir", v.trim().trim('/')).apply() }
-
     /** The morning and evening reminders on the Tasks tab. */
     var morningOn: Boolean
         get() = p.getBoolean("morning_on", true)
@@ -132,24 +122,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var eveningMinute: Int
         get() = p.getInt("evening_min", 21 * 60)
         set(v) { p.edit().putInt("evening_min", v).apply() }
-
-    /** In-app updater: check GitHub for a new release when the app opens. */
-    var updateChecks: Boolean
-        get() = p.getBoolean("update_checks", true)
-        set(v) { p.edit().putBoolean("update_checks", v).apply() }
-
-    /** The release tag Later was pressed on; its banner stays hidden until a newer one comes out. */
-    var updateSkip: String?
-        get() = p.getString("update_skip", null)
-        set(v) { p.edit().putString("update_skip", v).apply() }
-
-    /** When GitHub was last asked, and the latest tag it gave. */
-    var updateCheckedAt: Long
-        get() = p.getLong("update_checked_at", 0)
-        set(v) { p.edit().putLong("update_checked_at", v).apply() }
-    var updateLatest: String?
-        get() = p.getString("update_latest", null)
-        set(v) { p.edit().putString("update_latest", v).apply() }
 
     /** Hangar's tools in order ("didi,launch"); null until Hangar is first set up. */
     var hangarTools: String?
@@ -180,15 +152,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var hangarBriefAdded: Boolean
         get() = p.getBoolean("hangar_brief_added", false)
         set(v) { p.edit().putBoolean("hangar_brief_added", v).apply() }
-
-    /** Daily Brief's player: Full (every section) or Short (the 2-minute rundown), and the reading speed. */
-    var briefFull: Boolean
-        get() = p.getBoolean("brief_full", true)
-        set(v) { p.edit().putBoolean("brief_full", v).apply() }
-
-    var briefSpeed: Float
-        get() = p.getFloat("brief_speed", 1f)
-        set(v) { p.edit().putFloat("brief_speed", v).apply() }
 
     /** Ticket Rail: print the morning's task tickets on the end of the Daily Slip. */
     var ticketsWithSlip: Boolean
@@ -289,27 +252,13 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         else Energy.MED
         set(v) { p.edit().putString("energy", v.name).putString("energy_day", java.time.LocalDate.now().toString()).apply() }
 
-    /** Energy reshuffle (energy-reshuffle-v1): actions on a 100% day, set in Settings › Tasks. */
-    var reshuffleUsual: Int
-        get() = p.getInt("reshuffle_usual", Reshuffle.USUAL)
-        set(v) { p.edit().putInt("reshuffle_usual", v.coerceIn(1, 30)).apply() }
     /** Today's reshuffle level, once one is saved. Null on other days, so it resets each morning like [energy]. */
     var reshuffleLevel: Reshuffle.Level?
         get() = if (p.getString("reshuffle_day", null) == java.time.LocalDate.now().toString())
             Reshuffle.Level.values().firstOrNull { it.name == p.getString("reshuffle_level", null) } else null
         set(v) { p.edit().putString("reshuffle_level", v?.name).putString("reshuffle_day", java.time.LocalDate.now().toString()).apply() }
 
-    /** Weather card: Morning / Afternoon / Evening strip, shown after a tap on the card. */
-    var weatherStrip: Boolean
-        get() = p.getBoolean("weather_strip", false)
-        set(v) { p.edit().putBoolean("weather_strip", v).apply() }
-
     /** Tasks put off with "Later" on Next step (raw lines). Cleared the next day; due dates stay as they are. */
-    /** Talk me through it: tasks hidden with "Not today", as TalkThrough keys with their until dates. */
-    var talkSnoozed: String?
-        get() = p.getString("talk_snoozed", null)
-        set(v) { p.edit().putString("talk_snoozed", v).apply() }
-
     var laterToday: Set<String>
         get() = if (p.getString("later_day", null) == java.time.LocalDate.now().toString())
             p.getStringSet("later", null).orEmpty() else emptySet()
@@ -381,14 +330,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("vault_searches", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
         set(v) { p.edit().putString("vault_searches", v.joinToString("\u0001")).apply() }
 
-    /** Reader text size in sp, and serif (true) or sans body text. */
-    var readerSize: Float
-        get() = p.getFloat("reader_size", 16.5f)
-        set(v) { p.edit().putFloat("reader_size", v).apply() }
-    var readerSerif: Boolean
-        get() = p.getBoolean("reader_serif", false)
-        set(v) { p.edit().putBoolean("reader_serif", v).apply() }
-
     /** Where you got to in an article (pixels), keyed by file name; 0 clears it. */
     fun scrollPos(file: String): Int = p.getInt("scroll_$file", 0)
     fun setScrollPos(file: String, y: Int) {
@@ -403,11 +344,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var fallbackStaleMin: Int
         get() = p.getInt("fallback_stale_min", 5)
         set(v) { p.edit().putInt("fallback_stale_min", v).apply() }
-
-    /** Piholegotchi (the e-ink screen at home): its address on the home Wi-Fi, blank for off. */
-    var piholegotchiAddress: String
-        get() = p.getString("piholegotchi_address", "").orEmpty()
-        set(v) { p.edit().putString("piholegotchi_address", v.trim()).apply() }
 
     /** Door Ink (hangar-phase4): the door screen's address on the home Wi-Fi, blank for off. */
     var doorInkAddress: String
@@ -433,29 +369,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
         get() = p.getString("ha_address", "").orEmpty()
         set(v) { p.edit().putString("ha_address", v.trim()).apply() }
 
-    /**
-     * The assistant's name, shown and spoken in the app. Blank becomes Tower.
-     * Kept separate from the jarvis_* keys so an update does not drop the address, token or chats.
-     */
-    var assistantName: String
-        get() = AssistantName.clean(p.getString("assistant_name", null))
-        set(v) { p.edit().putString("assistant_name", AssistantName.clean(v)).apply() }
-
-    /** Key findings length. Long is the default. */
-    var findingsLength: KeyFindings.Length
-        get() = KeyFindings.Length.fromStored(p.getString("findings_length", null))
-        set(v) { p.edit().putString("findings_length", v.stored).apply() }
-
-    /** Jarvis voice tab. The token is in [SecretStore], never here. "demo" as the address needs no server. */
-    var jarvisAddress: String
-        get() = p.getString("jarvis_address", "").orEmpty()
-        set(v) { p.edit().putString("jarvis_address", v.trim()).apply() }
-    var jarvisWorker: String
-        get() = p.getString("jarvis_worker", "jarvis") ?: "jarvis"
-        set(v) { p.edit().putString("jarvis_worker", v).apply() }
-    var jarvisSpeak: Boolean
-        get() = p.getBoolean("jarvis_speak", true)
-        set(v) { p.edit().putBoolean("jarvis_speak", v).apply() }
     /** Voice id sent with each recording ("" = the server's default) and its label for Settings. */
     var jarvisVoice: String
         get() = p.getString("jarvis_voice", "").orEmpty()
@@ -463,25 +376,14 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var jarvisVoiceLabel: String
         get() = p.getString("jarvis_voice_label", "").orEmpty()
         set(v) { p.edit().putString("jarvis_voice_label", v).apply() }
-    /** Reply playback speed, done on the phone. */
-    var jarvisSpeed: Float
-        get() = p.getFloat("jarvis_speed", 1f)
-        set(v) { p.edit().putFloat("jarvis_speed", v).apply() }
     /** Jarvis thinks on the phone (Claude direct) when a Claude key is set; off sends everything to the box. */
     /** Sleep and steps (body-people-errands-v1): read from Health Connect, step goal, and easy day after a short night. */
     var healthOn: Boolean
         get() = p.getBoolean("health_on", false)
         set(v) { p.edit().putBoolean("health_on", v).apply() }
-    var stepGoal: Int
-        get() = p.getInt("step_goal", 7000)
-        set(v) { p.edit().putInt("step_goal", v).apply() }
     var easyAfterShort: Boolean
         get() = p.getBoolean("easy_after_short", true)
         set(v) { p.edit().putBoolean("easy_after_short", v).apply() }
-    /** What helps you: the month whose Deck card was closed with ✕. */
-    var helpsClosed: String?
-        get() = p.getString("helps_closed", null)
-        set(v) { p.edit().putString("helps_closed", v).apply() }
 
     /** People: the day the birthday gift tasks were last checked. */
     var giftsCheckedOn: String?
@@ -500,9 +402,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var nanoToBox: Boolean
         get() = p.getBoolean("nano_to_box", true)
         set(v) { p.edit().putBoolean("nano_to_box", v).apply() }
-    var brainClever: Boolean
-        get() = p.getBoolean("brain_clever", false)
-        set(v) { p.edit().putBoolean("brain_clever", v).apply() }
     /** Android's own speech-to-text instead of recording for Whisper on the box. */
     var phoneSpeech: Boolean
         get() = p.getBoolean("phone_speech", true)
@@ -511,20 +410,6 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     var phoneVoice: Boolean
         get() = p.getBoolean("phone_voice", true)
         set(v) { p.edit().putBoolean("phone_voice", v).apply() }
-    /** What the phone brain has cost this month (kept on the phone only). */
-    var brainSpend: PhoneBrain.Spend
-        get() = PhoneBrain.Spend(p.getString("brain_month", "").orEmpty(), p.getLong("brain_micro_usd", 0), p.getInt("brain_answers", 0))
-        set(v) { p.edit().putString("brain_month", v.month).putLong("brain_micro_usd", v.microUsd).putInt("brain_answers", v.answers).apply() }
-    /** This month's Claude spend by feature (ClaudeCap ledger). */
-    var spendByFeature: String
-        get() = p.getString("spend_by_feature", "").orEmpty()
-        set(v) { p.edit().putString("spend_by_feature", v).apply() }
-    /** Records a Claude answer's cost under [feature] and keeps the cap gate fresh. */
-    fun spend(feature: String, usd: Double) {
-        brainSpend = brainSpend.add(usd)
-        spendByFeature = ClaudeCap.added(spendByFeature, feature, usd)
-        ClaudeCap.ownUsd = ClaudeCap.ledger(spendByFeature).values.sum() / 1e6
-    }
     /** Finished-job ids already shown or dismissed, so the Done line doesn't come back. Keeps the last 50. */
     var jarvisSeenDone: List<String>
         get() = p.getString("jarvis_seen_done", "").orEmpty().split("\u0001").filter { it.isNotBlank() }
