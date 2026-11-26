@@ -125,7 +125,6 @@ internal fun TaskPeekSheet(vault: Uri?, snack: SnackbarHostState, onAll: () -> U
                             gone.value = gone.value + t.raw
                             scope.launch {
                                 val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, AppPrefs(ctx).recurring) } }
-                                r.onSuccess { c -> AppPrefs(ctx).logTick(c.doneLine, c.nextLine) }
                                 r.onFailure { gone.value = gone.value - t.raw; snack.showSnackbar("Failed: ${it.message}") }
                                 reload++
                             }

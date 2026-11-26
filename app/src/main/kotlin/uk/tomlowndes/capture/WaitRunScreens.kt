@@ -140,7 +140,6 @@ fun WaitingScreen(vault: Uri?, snack: SnackbarHostState, onOpenArticle: (ReadRef
             val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, prefs.recurring) } }
             r.onFailure { snack.showSnackbar("Couldn't tick it: ${it.message}") }
             r.onSuccess { c ->
-                prefs.logTick(c.doneLine, c.nextLine)
                 reload++
                 if (snack.showSnackbar("Done. Nice use of a queue.", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                     withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, c) } }
@@ -272,7 +271,6 @@ fun ErrandRunScreen(vault: Uri?, snack: SnackbarHostState, onPlaces: () -> Unit,
                     val res = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, prefs.recurring) } }
                     res.onFailure { ticked = ticked - key; snack.showSnackbar("Couldn't tick it: ${it.message}") }
                     res.onSuccess { c ->
-                        prefs.logTick(c.doneLine, c.nextLine)
                         if (snack.showSnackbar("Ticked ${item.text}", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                             withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, c) } }
                             ticked = ticked - key

@@ -543,19 +543,15 @@ class AppPrefs(ctx: Context) : VaultPrefs {
     }
 
     /**
-     * Tasks the app ticked: done line -> (when, the repeat's follow-up line or ""). Orders Completed and lets
-     * un-tick remove the follow-up. Keeps the last 30.
+     * The tick log this device kept here before it moved into core ([TickLog], recent-ticks.txt). Returns it once
+     * and clears it, so the new log can start from it.
      */
-    var tickLog: List<Triple<String, Long, String>>
-        get() = p.getString("tick_log", "").orEmpty().split("\u0002").filter { it.isNotBlank() }.mapNotNull {
+    fun takeOldTicks(): List<TickLog.Tick>? {
+        val old = p.getString("tick_log", null)?.takeIf { it.isNotBlank() } ?: return null
+        p.edit().remove("tick_log").apply()
+        return old.split("\u0002").mapNotNull {
             val f = it.split("\u0001")
-            if (f.size == 3) Triple(f[0], f[1].toLongOrNull() ?: 0L, f[2]) else null
+            if (f.size == 3) TickLog.Tick(f[0], f[1].toLongOrNull() ?: 0L, f[2].ifBlank { null }) else null
         }
-        set(v) {
-            p.edit().putString("tick_log", v.takeLast(30).joinToString("\u0002") { "${it.first}\u0001${it.second}\u0001${it.third}" }).apply()
-        }
-
-    fun logTick(doneLine: String, nextLine: String?) {
-        tickLog = tickLog.filter { it.first != doneLine } + Triple(doneLine, System.currentTimeMillis(), nextLine.orEmpty())
     }
 }
