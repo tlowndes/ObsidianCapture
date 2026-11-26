@@ -76,6 +76,8 @@ import uk.tomlowndes.capture.VaultTasks
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import uk.tomlowndes.capture.dueLabel
+import uk.tomlowndes.capture.dayChip
 
 @Composable
 fun TasksPane(state: AppState, upcoming: Boolean) {

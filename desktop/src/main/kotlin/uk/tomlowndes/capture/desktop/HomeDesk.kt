@@ -68,16 +68,12 @@ import java.io.File
 import java.time.LocalDate
 import java.util.Base64
 import javax.imageio.ImageIO
+import uk.tomlowndes.capture.Tones
 
 // ---- Home: chores that decay (home-life-v1) ----
 
 /** The bar colour for a chore: green when fresh, blue filling, amber near due, red past due. */
-internal fun choreColour(fill: Double): Color = when {
-    fill >= Chores.OVERDUE -> Warn
-    fill >= 0.75 -> Amber
-    fill >= 0.4 -> Primary
-    else -> TaskGreen
-}
+internal fun choreColour(fill: Double): Color = Tones.chore(fill).colour
 
 @Composable
 internal fun ChoreBar(fill: Double, modifier: Modifier = Modifier) {

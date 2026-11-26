@@ -91,6 +91,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import uk.tomlowndes.capture.relativeDay
 
 private fun parentOf(path: String) = path.substringBeforeLast('/', "")
 private fun nameOf(path: String) = path.substringAfterLast('/')
@@ -501,52 +502,12 @@ private fun TagEditor(current: List<String>, known: List<Pair<String, Int>>, onC
     }
 }
 
-private val TAG_IN_TEXT = Regex("(?<![\\w#/&])#[\\p{L}\\p{N}_/-]*[\\p{L}_/-][\\p{L}\\p{N}_/-]*")
 private val CHECK = Regex("^\\[([ xX])]\\s+")
-
-private fun noteInline(s: String): AnnotatedString = buildAnnotatedString {
-    fun plain(p: String) {
-        var at = 0
-        for (m in TAG_IN_TEXT.findAll(p)) {
-            append(p.substring(at, m.range.first))
-            val tag = Tags.norm(m.value)
-            if (tag == null || tag == "#task") append(m.value) else withStyle(SpanStyle(color = tagColour(tag).first)) { append(m.value) }
-            at = m.range.last + 1
-        }
-        append(p.substring(at))
-    }
-    fun inline(p: String) {
-        var at = 0
-        for (m in MdBlocks.INLINE.findAll(p)) {
-            plain(p.substring(at, m.range.first))
-            val g = m.groups
-            when {
-                m.value.startsWith("!") -> Unit
-                g[1] != null -> {
-                    pushStringAnnotation("url", g[2]!!.value)
-                    withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) { append(g[1]!!.value) }
-                    pop()
-                }
-                g[3] != null || g[4] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline((g[3] ?: g[4])!!.value) }
-                g[5] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Surface2)) { append(g[5]!!.value) }
-                g[6] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(g[6]!!.value) }
-                g[7] != null -> {
-                    pushStringAnnotation("wiki", g[7]!!.value)
-                    withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) { append((g[8] ?: g[7])!!.value) }
-                    pop()
-                }
-            }
-            at = m.range.last + 1
-        }
-        plain(p.substring(at))
-    }
-    inline(s)
-}
 
 @Suppress("DEPRECATION")
 @Composable
 private fun Rich(text: String, style: TextStyle, modifier: Modifier, onTap: () -> Unit, onLink: (String) -> Unit, onUrl: (String) -> Unit) {
-    val s = remember(text) { noteInline(text) }
+    val s = remember(text) { inlineText(text, tags = true, tapWiki = true) }
     ClickableText(s, modifier.hand(), style) { off ->
         s.getStringAnnotations("wiki", off, off).firstOrNull()?.let { onLink(it.item); return@ClickableText }
         s.getStringAnnotations("url", off, off).firstOrNull()?.let { onUrl(it.item); return@ClickableText }
@@ -609,14 +570,6 @@ private fun Chunk(c: NoteChunk, lines: List<String>, body: TextStyle, onEdit: ()
 }
 
 // ---------------------------------------------------------------- query blocks
-
-/** "today", "yesterday", "tomorrow" or "5 Nov". */
-private fun dayWord(d: LocalDate, today: LocalDate): String = when (d) {
-    today -> "today"
-    today.minusDays(1) -> "yesterday"
-    today.plusDays(1) -> "tomorrow"
-    else -> DataViews.shortDate(d, today)
-}
 
 /**
  * A ```tasks or ```dataview block, run against the vault index ([DataViews]) and shown as a card. Ticks write to
@@ -737,13 +690,13 @@ private fun QueryTaskRow(qt: QueryTask, today: LocalDate, onTick: () -> Unit, on
             contentAlignment = Alignment.Center
         ) { if (qt.done) Text("✓", fontSize = 11.sp, color = Color(0xFF0D2A1D), fontWeight = FontWeight.ExtraBold) }
         Column(Modifier.weight(1f).hand().clickable(onClick = onOpen)) {
-            val s = remember(qt.text) { noteInline(qt.text) }
+            val s = remember(qt.text) { inlineText(qt.text, tags = true, tapWiki = true) }
             Text(s, fontSize = 14.sp, lineHeight = 20.sp, color = if (qt.done) Muted else TextMain,
                 textDecoration = if (qt.done) TextDecoration.LineThrough else null)
             val (label, late) = when {
-                qt.due != null -> "due ${dayWord(qt.due!!, today)}" to (!qt.done && qt.due!! <= today)
-                qt.scheduled != null -> "scheduled ${dayWord(qt.scheduled!!, today)}" to false
-                qt.start != null -> "starts ${dayWord(qt.start!!, today)}" to false
+                qt.due != null -> "due ${relativeDay(qt.due!!, today)}" to (!qt.done && qt.due!! <= today)
+                qt.scheduled != null -> "scheduled ${relativeDay(qt.scheduled!!, today)}" to false
+                qt.start != null -> "starts ${relativeDay(qt.start!!, today)}" to false
                 else -> "" to false
             }
             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {

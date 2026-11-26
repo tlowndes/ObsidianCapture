@@ -98,23 +98,13 @@ fun CaptureTheme(content: @Composable () -> Unit) {
     )
 }
 
-internal fun dueLabel(d: LocalDate): String {
-    val today = LocalDate.now()
-    return when (d) {
-        today -> "today"
-        today.plusDays(1) -> "tomorrow"
-        else -> d.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
-    }
-}
-
-/** "Tue 7 Oct" style label used on due chips. */
-internal fun dayChip(d: LocalDate): String {
-    val today = LocalDate.now()
-    return when (d) {
-        today -> "Today"
-        today.plusDays(1) -> "Tomorrow"
-        else -> d.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK))
-    }
+/** A core [ColourRole] as this theme's colour (the rules for which thing gets which tone live in core). */
+internal val ColourRole.colour: Color get() = when (this) {
+    ColourRole.WARN -> Warn
+    ColourRole.AMBER -> Amber
+    ColourRole.PRIMARY -> Primary
+    ColourRole.GREEN -> Green
+    ColourRole.PURPLE -> Purple
 }
 
 @Composable

@@ -70,6 +70,8 @@ import java.awt.datatransfer.DataFlavor
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import uk.tomlowndes.capture.dueLabel
+import uk.tomlowndes.capture.dayChip
 
 /** The whole clipboard or field is one http(s) link, with nothing else around it. */
 internal fun isBareUrl(text: String) = Regex("^https?://\\S+$").matches(text.trim())

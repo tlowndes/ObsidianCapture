@@ -47,6 +47,7 @@ import uk.tomlowndes.capture.TodayRow
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import uk.tomlowndes.capture.dayChip
 
 /** One thing waiting at the top of the Deck (tidy-v1 "Now" line): plan, shut down or mood. */
 sealed class NowItem {

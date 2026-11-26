@@ -51,10 +51,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Work amber, Personal green, the rest purple; with the tinted fill a selected chip uses. */
-internal fun tagColour(tag: String): Pair<Color, Color> = when (Tags.kind(tag)) {
-    TagKind.WORK -> Amber to AmberTint
-    TagKind.PERSONAL -> Green to TaskTint
-    TagKind.OTHER -> if (tag == "#bill") Amber to AmberTint else Purple to TagTint
+internal fun tagColour(tag: String): Pair<Color, Color> = Tones.tag(tag).let { t ->
+    t.colour to when (t) { ColourRole.GREEN -> TaskTint; ColourRole.PURPLE -> TagTint; else -> AmberTint }
 }
 
 /** Pinned tags (from capture-config.json) and the tags the vault's tasks already use, for the Tag row. */

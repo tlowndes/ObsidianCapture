@@ -58,6 +58,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import uk.tomlowndes.capture.mmss
 
 // ---- Daily Brief on Windows (daily-brief-v1) ----
 
@@ -181,7 +182,6 @@ private val DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 private val Orange = Color(0xFFFFB36B)
 private val Pink = Color(0xFFFF8AC0)
 private val Teal = Color(0xFF5FC8D3)
-private fun mmss(s: Int) = "${s / 60}:${"%02d".format(s % 60)}"
 
 /** ☀️ Brief on the Deck header: opens the Brief page in Hangar. */
 @Composable

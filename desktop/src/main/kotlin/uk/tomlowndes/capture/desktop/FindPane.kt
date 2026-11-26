@@ -38,6 +38,7 @@ import uk.tomlowndes.capture.DateWords
 import uk.tomlowndes.capture.NoteSearch
 import uk.tomlowndes.capture.VaultNote
 import java.time.LocalDate
+import uk.tomlowndes.capture.dayChip
 
 /** Find a note by name or folder, then add a task (under its "## Tasks") or a line at its end. */
 @Composable
