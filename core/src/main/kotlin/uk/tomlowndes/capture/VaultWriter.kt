@@ -39,6 +39,7 @@ data class Completion(
 data class Removed(val at: Int, val steps: List<String> = emptyList())
 
 private val PRINT_LOCK = Any()
+private val TICK_LOCK = Any()
 /** When a printed task's line last refused its `🆔`, by note and line, so it isn't retried on every look. */
 private val failedAt = mutableMapOf<String, Long>()
 private const val RETRY_MS = 120_000L
@@ -55,6 +56,8 @@ class VaultWriter(
     guardDir: File? = null,
     /** This device's list of printed tickets (printed-marks-v1, [PrintLog]); null keeps none. */
     private val printFile: File? = null,
+    /** This device's recent ticks ([TickLog]), so un-tick can take a repeat's follow-up away; null keeps none. */
+    private val tickFile: File? = null,
 ) {
     private val taskPath = "$INBOX/$TASK_FILE"
     private val guard = guardDir?.let { QuickGuard.Store(it) }
@@ -209,8 +212,30 @@ class VaultWriter(
         )
     }
 
-    /** Un-ticks [d]; [nextLine] is the follow-up a repeat left when it was ticked, removed again if still there. */
-    fun untickTask(d: TickedTask, nextLine: String? = null) {
+    /** This device's recent ticks, newest last. */
+    fun ticks(): List<TickLog.Tick> = tickFile?.let { f -> runCatching { TickLog.decode(f.takeIf { it.exists() }?.readText()) }.getOrNull() } ?: emptyList()
+
+    private fun saveTicks(change: (List<TickLog.Tick>) -> List<TickLog.Tick>) {
+        val f = tickFile ?: return
+        synchronized(TICK_LOCK) { runCatching { f.parentFile?.mkdirs(); f.writeText(TickLog.encode(change(ticks()))) } }
+    }
+
+    /** Starts this device's tick log from [log] (ticks kept elsewhere before), if it has none yet. */
+    fun seedTicks(log: List<TickLog.Tick>) {
+        val f = tickFile ?: return
+        if (log.isNotEmpty() && !f.exists()) saveTicks { log.takeLast(TickLog.KEEP) }
+    }
+
+    /**
+     * Un-ticks [d]; [nextLine] is the follow-up a repeat left when it was ticked, removed again if still there.
+     * With no [nextLine], the tick log is asked for it.
+     */
+    fun untickTask(d: TickedTask, nextLine: String? = TickLog.nextFor(ticks(), d.raw)) {
+        untickAt(d, nextLine)
+        saveTicks { TickLog.remove(it, d.raw) }
+    }
+
+    private fun untickAt(d: TickedTask, nextLine: String?) {
         if (d.path == VaultTasks.QUICK_TASK) {
             val file = taskFile(false) ?: error("Task note not found")
             edit(file) { TaskNote.untick(it, d.raw, nextLine) }
@@ -237,6 +262,7 @@ class VaultWriter(
         val c = TaskNote.completion(t.raw, LocalDate.now(), recurring)
         var out = c
         edit(noteOf(t)) { out = if (isQuick(t)) TaskNote.complete(it, t.raw, c) else VaultTasks.completeInPlace(it, t.raw, c) }
+        saveTicks { TickLog.add(it, TickLog.Tick(out.doneLine, System.currentTimeMillis(), out.nextLine)) }
         return out
     }
 
@@ -320,6 +346,7 @@ class VaultWriter(
         } else {
             edit(noteOf(t)) { VaultTasks.restoreInPlace(it, t.raw, done, replace, at?.at) }
         }
+        if (done != null) saveTicks { TickLog.remove(it, done.doneLine) }
     }
 
     /** Every note in the vault except dot-folders, for quick search. */

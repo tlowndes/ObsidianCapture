@@ -247,7 +247,6 @@ fun BillsScreen(vault: Uri?, prefs: AppPrefs, snack: SnackbarHostState, onBack: 
         scope.launch {
             val done = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(r.bill.task, prefs.recurring) } }
             done.onFailure { paying = paying - r.bill.task.raw; snack.showSnackbar("Couldn't save: ${it.message}"); return@launch }
-            done.onSuccess { c -> prefs.logTick(c.doneLine, c.nextLine) }
             reload++
             if (snack.showSnackbar("${r.bill.name} paid", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                 withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(r.bill.task, done.getOrThrow()) } }

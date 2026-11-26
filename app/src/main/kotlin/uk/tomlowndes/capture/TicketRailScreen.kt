@@ -165,7 +165,6 @@ object TicketClear {
         val t = TicketRail.find(lists.open, id)
             ?: return@withContext TicketRail.findDone(lists.done, id)?.let { ClearResult.Already(it) } ?: ClearResult.NotFound
         val c = w.completeTask(t, prefs.recurring)
-        prefs.logTick(c.doneLine, c.nextLine)
         ClearResult.Cleared(t, c, LocalTime.now())
     }
 

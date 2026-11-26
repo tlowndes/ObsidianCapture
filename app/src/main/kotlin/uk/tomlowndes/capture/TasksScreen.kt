@@ -95,6 +95,8 @@ fun TasksScreen(
     val leaving = remember { mutableStateListOf<TaskItem>() }
     val haptics = LocalHapticFeedback.current
     var loaded by remember { mutableStateOf(snapshot != null) }
+    // When this device ticked each done line ([TickLog]), for the recently-done list.
+    var tickStamps by remember { mutableStateOf(emptyMap<String, Long>()) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var tag by remember { mutableStateOf(prefs.tasksTag) }
     var filtering by remember { mutableStateOf(false) }
@@ -214,8 +216,12 @@ fun TasksScreen(
                     .onSuccess { tasks.clear(); tasks.addAll(it) }
             }
             var printedLog = emptyList<Printed>()
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).let { w -> w.listTaskLists().also { printedLog = w.printed() } } } }
+            var stamps = emptyMap<String, Long>()
+            val r = withContext(Dispatchers.IO) {
+                runCatching { VaultWriter(ctx, uri).let { w -> w.listTaskLists().also { printedLog = w.printed(); stamps = w.ticks().associate { it.doneLine to it.at } } } }
+            }
             r.onSuccess {
+                tickStamps = stamps
                 TicketMarks.looked(it, printedLog)
                 TaskSnapshot.save(ctx, it)
                 quickAlert = it.quickAlert
@@ -246,25 +252,33 @@ fun TasksScreen(
         }
     }
 
-    /** Writes the tick, after the row has shown it. */
-    fun complete(t: TaskItem) {
+    /**
+     * Runs a task action from core ([TaskOps]) off the main thread, reloads, and offers its Undo.
+     * [onFail] runs if the write failed; [afterUndo] after Undo has put things back.
+     */
+    fun change(
+        op: (VaultWriter) -> TaskChange, onFail: () -> Unit = {}, afterUndo: () -> Unit = {},
+        duration: SnackbarDuration = SnackbarDuration.Short,
+    ) {
         val uri = vault ?: return
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).completeTask(t, prefs.recurring) } }
-            r.onSuccess { c -> prefs.logTick(c.doneLine, c.nextLine) }
-            r.onFailure { leaving.remove(t) }
+            val r = withContext(Dispatchers.IO) { runCatching { op(VaultWriter(ctx, uri)) } }
+            r.onFailure { onFail() }
             reload()
-            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess { c ->
-                val nextDue = c.nextLine?.let { TaskRules.due(it) }
-                val msg = if (nextDue != null) "Done · next: ${dueLabel(nextDue)}" else "Task completed"
-                if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, c) } }
-                    reload()
-                }
+            val c = r.getOrElse {
+                snack.showSnackbar(if (it is TaskOps.NoneChanged) it.message.orEmpty() else "Failed: ${it.message}")
+                return@launch
+            }
+            if (snack.showSnackbar(c.message, "Undo", duration = duration) == SnackbarResult.ActionPerformed) {
+                withContext(Dispatchers.IO) { runCatching { c.undo(VaultWriter(ctx, uri)) } }
+                afterUndo()
+                reload()
             }
         }
     }
+
+    /** Writes the tick, after the row has shown it. */
+    fun complete(t: TaskItem) = change({ w -> TaskOps.complete(w, t, prefs.recurring) }, onFail = { leaving.remove(t) })
 
     /** Ticks [t] on screen at once; a second tap within the hold takes it back before anything is written. */
     fun tick(t: TaskItem) {
@@ -283,63 +297,26 @@ fun TasksScreen(
 
     fun untick(d: TickedTask) {
         val uri = vault ?: return
-        val next = prefs.tickLog.firstOrNull { it.first == d.raw }?.third?.ifBlank { null }
         scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).untickTask(d, next) } }
-            r.onSuccess { prefs.tickLog = prefs.tickLog.filter { it.first != d.raw } }
+            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).untickTask(d) } }
             reload()
             r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
         }
     }
 
-    fun save(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority? = null) {
-        val uri = vault ?: return
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, text, due, recurrence, minutes, priority) } }
-            reload()
-            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess { newRaw ->
-                if (snack.showSnackbar("Task updated", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
-                    reload()
-                }
-            }
-        }
-    }
+    fun save(t: TaskItem, text: String, due: LocalDate?, recurrence: String?, minutes: Int?, priority: Priority? = null) =
+        change({ w -> TaskOps.edit(w, t, text, due, recurrence, minutes, priority) })
 
     fun remove(t: TaskItem) {
-        val uri = vault ?: return
+        if (vault == null) return
         leaving.add(t)
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).deleteTask(t) } }
-            r.onFailure { leaving.remove(t) }
-            reload()
-            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess { at ->
-                if (snack.showSnackbar("Task removed", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, at = at) } }
-                    reload()
-                }
-            }
-        }
+        change({ w -> TaskOps.remove(w, t) }, onFail = { leaving.remove(t) })
     }
 
     /** Gives [t] a new due date (null clears it), with Undo. */
     fun move(t: TaskItem, due: LocalDate?) {
-        val uri = vault ?: return
         if (due == t.due) return
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).editTask(t, t.text, due, t.recurrence, Deck.minutes(t)) } }
-            reload()
-            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess { newRaw ->
-                val msg = due?.let { "Moved to " + if (it == LocalDate.now() || it == LocalDate.now().plusDays(1)) dueLabel(it) else dayChip(it) } ?: "Date cleared"
-                if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
-                    reload()
-                }
-            }
-        }
+        change({ w -> TaskOps.move(w, t, due) })
     }
 
     /** Energy reshuffle: gives each task its new due date, sets today's energy to match, with one Undo for them all. */
@@ -347,44 +324,12 @@ fun TasksScreen(
         reshuffling = false
         prefs.reshuffleLevel = level; reshuffled = level
         prefs.energy = when (level) { Reshuffle.Level.REST, Reshuffle.Level.LOW -> Energy.LOW; Reshuffle.Level.HALF -> Energy.MED; Reshuffle.Level.FULL -> Energy.HIGH }
-        val uri = vault ?: return
         if (moves.isEmpty()) return
-        scope.launch {
-            val done = mutableListOf<Pair<TaskItem, String>>()
-            val r = withContext(Dispatchers.IO) {
-                runCatching {
-                    val w = VaultWriter(ctx, uri)
-                    moves.forEach { m -> done += m.task to w.editTask(m.task, m.task.text, m.to, m.task.recurrence, Deck.minutes(m.task)) }
-                }
-            }
-            reload()
-            r.onFailure { snack.showSnackbar("Moved ${done.size} of ${moves.size}: ${it.message}") }
-            if (done.isEmpty()) return@launch
-            val msg = "Moved ${done.size} task" + (if (done.size == 1) "" else "s") + " to later days"
-            if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-                withContext(Dispatchers.IO) { runCatching { val w = VaultWriter(ctx, uri); done.asReversed().forEach { (t, newRaw) -> w.restoreTask(t, null, newRaw) } } }
-                prefs.reshuffleLevel = null; reshuffled = null
-                reload()
-            }
-        }
+        change({ w -> TaskOps.reshuffle(w, moves) }, afterUndo = { prefs.reshuffleLevel = null; reshuffled = null }, duration = SnackbarDuration.Long)
     }
 
     /** Drag to a free gap (drag-to-slot-v1): due [date] at [start] for its estimate, with Undo. */
-    fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) {
-        val uri = vault ?: return
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).planAt(t, date, start) } }
-            reload()
-            r.onFailure { snack.showSnackbar("Failed: ${it.message}") }
-            r.onSuccess { newRaw ->
-                val day = if (date == LocalDate.now()) "today" else if (date == LocalDate.now().plusDays(1)) "tomorrow" else dayChip(date)
-                if (snack.showSnackbar("Planned for ${"%02d:%02d".format(start.hour, start.minute)} $day", "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    withContext(Dispatchers.IO) { runCatching { VaultWriter(ctx, uri).restoreTask(t, null, newRaw) } }
-                    reload()
-                }
-            }
-        }
-    }
+    fun plan(t: TaskItem, date: LocalDate, start: java.time.LocalTime) = change({ w -> TaskOps.plan(w, t, date, start) })
 
     /** Visual day: gives [t] a time today (keeping its length), or clears it. */
     fun setTime(t: TaskItem, time: java.time.LocalTime?) {
@@ -397,47 +342,17 @@ fun TasksScreen(
         }
     }
 
-    /**
-     * Runs [op] on each of [items] in turn, then offers one Undo for all of them (multiselect-swipes-v1).
-     * [op] does the write and returns how to take it back; the undos run newest first so line numbers hold.
-     */
-    fun bulk(items: List<TaskItem>, done: (Int) -> String, op: (VaultWriter, TaskItem) -> (VaultWriter) -> Unit) {
-        val uri = vault ?: return
+    /** Multi-select actions (multiselect-swipes-v1): one Undo for all of them. */
+    fun bulk(items: List<TaskItem>, op: (VaultWriter, List<TaskItem>) -> TaskChange) {
         selected.clear()
         if (items.isEmpty()) return
-        scope.launch {
-            val undos = mutableListOf<(VaultWriter) -> Unit>()
-            val failed = withContext(Dispatchers.IO) {
-                val w = VaultWriter(ctx, uri)
-                items.count { t -> runCatching { op(w, t) }.onSuccess { undos.add(it) }.isFailure }
-            }
-            reload()
-            if (undos.isEmpty()) { snack.showSnackbar("Couldn't change ${items.size} task${if (items.size == 1) "" else "s"}"); return@launch }
-            val msg = done(undos.size) + if (failed > 0) " · $failed failed" else ""
-            if (snack.showSnackbar(msg, "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                withContext(Dispatchers.IO) { val w = VaultWriter(ctx, uri); undos.asReversed().forEach { u -> runCatching { u(w) } } }
-                reload()
-            }
-        }
+        change({ w -> op(w, items) })
     }
-    fun plural(n: Int) = "$n task${if (n == 1) "" else "s"}"
-    fun bulkDue(items: List<TaskItem>, due: LocalDate) = bulk(items, { n ->
-        "${if (n == 1) "1" else "$n"} moved to " + if (due == LocalDate.now() || due == LocalDate.now().plusDays(1)) dueLabel(due).lowercase() else dayChip(due)
-    }) { w, t -> val raw = w.editTask(t, t.text, due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) } }
-    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items, { n -> if (p == Priority.NONE) "Flag cleared on ${plural(n)}" else "${plural(n)} flagged ${p.title.lowercase()}" }) { w, t ->
-        val raw = w.editTask(t, t.text, t.due, t.recurrence, Deck.minutes(t), p); { u -> u.restoreTask(t, null, raw) }
-    }
-    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items, { n -> "$tag added to ${plural(n)}" }) { w, t ->
-        val raw = w.editTask(t, Tags.add(t.text, tag), t.due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) }
-    }
-    fun bulkDone(items: List<TaskItem>) = bulk(items, { n -> "${plural(n)} done" }) { w, t ->
-        val c = w.completeTask(t, prefs.recurring)
-        prefs.logTick(c.doneLine, c.nextLine);
-        { u -> u.restoreTask(t, c) }
-    }
-    fun bulkRemove(items: List<TaskItem>) = bulk(items, { n -> "${plural(n)} removed" }) { w, t ->
-        val at = w.deleteTask(t); { u -> u.restoreTask(t, null, at = at) }
-    }
+    fun bulkDue(items: List<TaskItem>, due: LocalDate) = bulk(items) { w, l -> TaskOps.bulkMove(w, l, due) }
+    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items) { w, l -> TaskOps.bulkPriority(w, l, p) }
+    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items) { w, l -> TaskOps.bulkTag(w, l, tag) }
+    fun bulkDone(items: List<TaskItem>) = bulk(items) { w, l -> TaskOps.bulkDone(w, l, prefs.recurring) }
+    fun bulkRemove(items: List<TaskItem>) = bulk(items) { w, l -> TaskOps.bulkRemove(w, l) }
 
     /** What a swipe does, as set in Settings › Swipes. */
     fun swiped(t: TaskItem, c: SwipeChoice) {
@@ -626,8 +541,7 @@ fun TasksScreen(
                 }
             }
         } else {
-        val stamps = remember(ticked.toList()) { prefs.tickLog.associate { it.first to it.second } }
-        val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, stamps)
+        val recent = TaskViews.recentDone(ticked.filter { note == null || it.path == note }, tickStamps)
         LazyColumn(Modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = PaddingValues(bottom = if (selecting) 96.dp else 16.dp, top = 4.dp)) {
             quickAlert?.let { a ->
                 item(key = "quick-guard") {
@@ -741,7 +655,7 @@ fun TasksScreen(
     removingAll?.let { items ->
         AlertDialog(
             onDismissRequest = { removingAll = null }, containerColor = Surface1,
-            title = { Text("Remove ${plural(items.size)}?") },
+            title = { Text("Remove ${TaskOps.plural(items.size)}?") },
             text = { Text("They come out of their notes. You can undo straight after.", color = Muted) },
             confirmButton = { TextButton(onClick = { removingAll = null; bulkRemove(items) }) { Text("Remove", color = Warn) } },
             dismissButton = { TextButton(onClick = { removingAll = null }) { Text("Cancel", color = Muted) } },

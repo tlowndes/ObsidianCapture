@@ -314,10 +314,14 @@ private class AndroidDoc(
 /** How long Android reuses the vault's note list before walking every folder again (the app's own writes show at once). */
 const val TASK_WALK_TTL_MS = 120_000L
 
-fun VaultWriter(ctx: Context, tree: Uri) =
-    VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json"), { Widgets.tasksChanged(ctx) }, TASK_WALK_TTL_MS,
-        guardDir = if (AppPrefs(ctx).quickGuard) File(ctx.filesDir, "quick-task-copies") else null,
-        printFile = File(ctx.filesDir, "printed-tickets.json"))
+fun VaultWriter(ctx: Context, tree: Uri): VaultWriter {
+    val prefs = AppPrefs(ctx)
+    return VaultWriter(appVault(ctx, tree), File(ctx.cacheDir, "vault-tasks.json"), { Widgets.tasksChanged(ctx) }, TASK_WALK_TTL_MS,
+        guardDir = if (prefs.quickGuard) File(ctx.filesDir, "quick-task-copies") else null,
+        printFile = File(ctx.filesDir, "printed-tickets.json"),
+        tickFile = File(ctx.filesDir, "recent-ticks.txt"),
+    ).also { w -> prefs.takeOldTicks()?.let { w.seedTicks(it) } }
+}
 
 fun ReadStore(ctx: Context, tree: Uri) = ReadStore(appVault(ctx, tree)) { Widgets.readChanged(ctx) }
 

@@ -78,6 +78,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import uk.tomlowndes.capture.dueLabel
 import uk.tomlowndes.capture.dayChip
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import uk.tomlowndes.capture.TaskChange
+import uk.tomlowndes.capture.TaskOps
 
 @Composable
 fun TasksPane(state: AppState, upcoming: Boolean) {
@@ -120,14 +124,15 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
         if (upcoming) state.io { DesktopCalendar.load(v) }?.let { calendar = it }
     }
 
-    fun tick(t: TaskItem) = scope.launch {
-        val c = state.io { state.writer()!!.completeTask(t, state.prefs.recurring) } ?: return@launch
+    /** Runs a task action from core ([TaskOps]) off the UI thread, reloads, and offers its Undo. */
+    fun change(failure: String = "Failed", op: (VaultWriter) -> TaskChange) = scope.launch {
+        val r = withContext(Dispatchers.IO) { runCatching { op(state.writer()!!) } }
         reload()
-        val next = c.nextLine?.let { TaskRules.due(it) }
-        state.offerUndo(if (next != null) "Done · next “${t.text}”: ${dueLabel(next)}" else "Task completed") {
-            state.io { state.writer()!!.restoreTask(t, c) }; reload()
-        }
+        val c = r.getOrElse { state.say(if (it is TaskOps.NoneChanged) it.message.orEmpty() else "$failure: ${it.message}"); return@launch }
+        state.offerUndo(c.message) { state.io { c.undo(state.writer()!!) }; reload() }
     }
+
+    fun tick(t: TaskItem) = change { w -> TaskOps.complete(w, t, state.prefs.recurring) }
 
     fun untick(d: TickedTask) = scope.launch {
         state.io { state.writer()!!.untickTask(d) } ?: return@launch
@@ -135,40 +140,16 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
         state.say("Back on the list")
     }
 
-    fun move(t: TaskItem, date: LocalDate?) = scope.launch {
-        val newRaw = state.io { state.writer()!!.rescheduleTask(t, date) } ?: return@launch
-        reload()
-        state.offerUndo(if (date == null) "Due date cleared" else "Moved to ${dueLabel(date)}") {
-            state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload()
-        }
-    }
+    fun move(t: TaskItem, date: LocalDate?) = change { w -> TaskOps.move(w, t, date) }
 
-    fun plan(t: TaskItem, date: LocalDate, start: LocalTime) = scope.launch {
-        val newRaw = state.io { state.writer()!!.planAt(t, date, start) } ?: return@launch
-        reload()
-        state.offerUndo("Planned for ${dueLabel(date)} at ${"%02d:%02d".format(start.hour, start.minute)}") {
-            state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload()
-        }
-    }
+    fun plan(t: TaskItem, date: LocalDate, start: LocalTime) = change { w -> TaskOps.plan(w, t, date, start) }
 
-    fun remove(t: TaskItem) = scope.launch {
-        val at = state.io { state.writer()!!.deleteTask(t) } ?: return@launch
-        reload()
-        state.offerUndo("Task removed") { state.io { state.writer()!!.restoreTask(t, null, at = at) }; reload() }
-    }
+    fun remove(t: TaskItem) = change { w -> TaskOps.remove(w, t) }
 
-    fun drop(t: TaskItem) = scope.launch {
-        val today = LocalDate.now()
-        state.io { state.writer()!!.cancelTask(t, today) } ?: return@launch
-        reload()
-        state.offerUndo("Dropped") { state.io { state.writer()!!.restoreTask(t, null, WeeklyReview.cancelled(t.raw, today)) }; reload() }
-    }
+    fun drop(t: TaskItem) = change { w -> TaskOps.drop(w, t) }
 
-    fun edit(t: TaskItem, text: String, due: LocalDate?, rule: String?, minutes: Int?, priority: Priority? = null) = scope.launch {
-        val newRaw = state.io { state.writer()!!.editTask(t, text, due, rule, minutes, priority) } ?: return@launch
-        reload()
-        state.offerUndo("Task updated") { state.io { state.writer()!!.restoreTask(t, null, newRaw) }; reload() }
-    }
+    fun edit(t: TaskItem, text: String, due: LocalDate?, rule: String?, minutes: Int?, priority: Priority? = null) =
+        change { w -> TaskOps.edit(w, t, text, due, rule, minutes, priority) }
 
     fun setPriority(t: TaskItem, p: Priority) = edit(t, t.text, t.due, t.recurrence, Deck.minutes(t), p)
 
@@ -187,36 +168,16 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
     var bulkTagFor by remember { mutableStateOf<List<TaskItem>?>(null) }
     var bulkRemove by remember { mutableStateOf<List<TaskItem>?>(null) }
 
-    /** Runs [op] on each task, then one Undo for them all (newest first, so line numbers hold). */
-    fun bulk(items: List<TaskItem>, msg: (Int) -> String, op: (VaultWriter, TaskItem) -> (VaultWriter) -> Unit) = scope.launch {
+    /** Multi-select actions (multiselect-swipes-v1): one Undo for all of them. */
+    fun bulk(items: List<TaskItem>, op: (VaultWriter, List<TaskItem>) -> TaskChange) {
         selected = emptySet(); anchor = null
-        val undos = state.io("Couldn't change the tasks") {
-            val w = state.writer()!!
-            items.mapNotNull { t -> runCatching { op(w, t) }.getOrNull() }
-        } ?: return@launch
-        reload()
-        if (undos.isEmpty()) { state.say("Couldn't change the tasks"); return@launch }
-        val failed = items.size - undos.size
-        state.offerUndo(msg(undos.size) + if (failed > 0) " · $failed failed" else "") {
-            state.io { val w = state.writer()!!; undos.asReversed().forEach { u -> runCatching { u(w) } } }; reload()
-        }
+        change("Couldn't change the tasks") { w -> op(w, items) }
     }
-    fun plural(n: Int) = "$n task${if (n == 1) "" else "s"}"
-    fun bulkDue(items: List<TaskItem>, d: LocalDate) = bulk(items, { "${plural(it)} moved to ${dueLabel(d)}" }) { w, t ->
-        val raw = w.rescheduleTask(t, d); { u -> u.restoreTask(t, null, raw) }
-    }
-    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items, { if (p == Priority.NONE) "Flag cleared on ${plural(it)}" else "${plural(it)} flagged ${p.title.lowercase()}" }) { w, t ->
-        val raw = w.editTask(t, t.text, t.due, t.recurrence, Deck.minutes(t), p); { u -> u.restoreTask(t, null, raw) }
-    }
-    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items, { "$tag added to ${plural(it)}" }) { w, t ->
-        val raw = w.editTask(t, Tags.add(t.text, tag), t.due, t.recurrence, Deck.minutes(t)); { u -> u.restoreTask(t, null, raw) }
-    }
-    fun bulkDone(items: List<TaskItem>) = bulk(items, { "${plural(it)} done" }) { w, t ->
-        val c = w.completeTask(t, state.prefs.recurring); { u -> u.restoreTask(t, c) }
-    }
-    fun bulkDelete(items: List<TaskItem>) = bulk(items, { "${plural(it)} removed" }) { w, t ->
-        val at = w.deleteTask(t); { u -> u.restoreTask(t, null, at = at) }
-    }
+    fun bulkDue(items: List<TaskItem>, d: LocalDate) = bulk(items) { w, l -> TaskOps.bulkMove(w, l, d) }
+    fun bulkPriority(items: List<TaskItem>, p: Priority) = bulk(items) { w, l -> TaskOps.bulkPriority(w, l, p) }
+    fun bulkTag(items: List<TaskItem>, tag: String) = bulk(items) { w, l -> TaskOps.bulkTag(w, l, tag) }
+    fun bulkDone(items: List<TaskItem>) = bulk(items) { w, l -> TaskOps.bulkDone(w, l, state.prefs.recurring) }
+    fun bulkDelete(items: List<TaskItem>) = bulk(items) { w, l -> TaskOps.bulkRemove(w, l) }
 
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var addingBill by remember { mutableStateOf(false) }
@@ -260,17 +221,9 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
     val sel = SelectState(selecting, selected, ::select)
     // Energy reshuffle (energy-reshuffle-v1): each task to its own new day, one Undo for them all.
     var reshuffling by remember { mutableStateOf(false) }
-    fun reshuffle(moves: List<uk.tomlowndes.capture.Reshuffle.Move>) = scope.launch {
+    fun reshuffle(moves: List<uk.tomlowndes.capture.Reshuffle.Move>) {
         reshuffling = false
-        val undos = state.io("Couldn't move the tasks") {
-            val w = state.writer()!!
-            moves.mapNotNull { m -> runCatching { val raw = w.rescheduleTask(m.task, m.to); m.task to raw }.getOrNull() }
-        } ?: return@launch
-        reload()
-        if (undos.isEmpty()) { state.say("Couldn't move the tasks"); return@launch }
-        state.offerUndo("Moved ${plural(undos.size)} to later days" + if (undos.size < moves.size) " · ${moves.size - undos.size} failed" else "") {
-            state.io { val w = state.writer()!!; undos.asReversed().forEach { (t, raw) -> runCatching { w.restoreTask(t, null, raw) } } }; reload()
-        }
+        if (moves.isNotEmpty()) change("Couldn't move the tasks") { w -> TaskOps.reshuffle(w, moves) }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -400,7 +353,7 @@ fun TasksPane(state: AppState, upcoming: Boolean) {
     bulkFlag?.let { items -> BulkPriorityDialog(items.size, onPick = { p -> bulkFlag = null; bulkPriority(items, p) }, onDismiss = { bulkFlag = null }) }
     bulkTagFor?.let { items -> BulkTagDialog(items.size, pinned, onPick = { tag -> bulkTagFor = null; bulkTag(items, tag) }, onDismiss = { bulkTagFor = null }) }
     bulkRemove?.let { items ->
-        DialogCard("Remove ${plural(items.size)}?", { bulkRemove = null }) {
+        DialogCard("Remove ${TaskOps.plural(items.size)}?", { bulkRemove = null }) {
             Sub("They come out of their notes. You can undo straight after.", Modifier.padding(bottom = 14.dp))
             DialogButtons({ bulkRemove = null }) { PrimaryButton("Remove") { bulkRemove = null; bulkDelete(items) } }
         }
