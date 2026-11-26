@@ -815,6 +815,8 @@ private fun NoteTagRow(tags: List<String>, onEdit: () -> Unit) {
     }
 }
 
+private val CHECK = Regex("^\\[([ xX])]\\s+")
+
 /** Text that opens links and wikilinks when tapped on one, and does [onTap] anywhere else. */
 @Composable
 private fun NoteRich(text: String, style: TextStyle, modifier: Modifier, onTap: () -> Unit, onLink: (String) -> Unit, onUrl: (String) -> Unit) {
